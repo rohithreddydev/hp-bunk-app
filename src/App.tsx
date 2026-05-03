@@ -344,7 +344,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const deleteTransaction = async (id: string) => { const { error } = await supabase.from('transactions').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setTransactions(transactions.filter(t => t.id !== id)); showAlert("Record deleted."); };
 
   const addMorningEntry = async (e: any) => { const { data, error } = await supabase.from('morning_entries').insert([{ bunk_id: bId, entry_date: e.date, petrol_dip_today: e.petrolDip, diesel_dip_today: e.dieselDip, petrol_sold_litres: e.petrolSold, diesel_sold_litres: e.dieselSold, net_profit: e.netProfit, collection_variance: e.variance, collections_cash: e.collectionsCash, collections_sbi: e.collectionsBank, collections_hppay: e.collectionsDigital, collection_dtp: e.collectionDtp, collections_paytm: e.collectionsCard, collections_credit: e.collectionsCredit, period_expenses: e.periodExpenses, balance_sbi: e.balanceBank, balance_hp: e.balanceDigital, balnce_od: e.balnceOd, balance_cash: e.balanceCash, bunk_net_value: e.netValue }]).select(); if (error) return showAlert("Failed to save ledger: " + error.message); if (data && data.length > 0) setMorningEntries([{ ...e, id: data[0].id }, ...morningEntries]); };
-  const updateMorningEntry = async (id: string, updates: any) => { const { error } = await supabase.from('morning_entries').update({ petrol_dip_today: updates.petrolDip, diesel_dip_today: updates.dieselDip, petrol_sold_litres: updates.petrolSold, diesel_sold_litres: updates.dieselSold, net_profit: updates.netProfit, collection_variance: updates.variance, collections_cash: updates.collectionsCash, collections_sbi: updates.collectionsBank, collections_hppay: updates.collectionsDigital, collection_dtp: updates.collectionDtp, collections_paytm: updates.collectionsCard, collections_credit: updates.collectionsCredit, period_expenses: updates.periodExpenses, balance_sbi: updates.balanceBank, balance_hp: updates.balanceDigital, balnce_od: updates.balnceOd, balance_cash: updates.balanceCash, bunk_net_value: updates.netValue }).eq('id', id); if (error) return showAlert("Update Failed: " + error.message); setMorningEntries(morningEntries.map(m => m.id === id ? { ...m, ...updates } : m)); showAlert("Entry updated."); };
+  const updateMorningEntry = async (id: string, updates: any) => { const { error } = await supabase.from('morning_entries').upsert({ id, bunk_id: bId, entry_date: updates.date, petrol_dip_today: updates.petrolDip, diesel_dip_today: updates.dieselDip, petrol_sold_litres: updates.petrolSold, diesel_sold_litres: updates.dieselSold, net_profit: updates.netProfit, collection_variance: updates.variance, collections_cash: updates.collectionsCash, collections_sbi: updates.collectionsBank, collections_hppay: updates.collectionsDigital, collection_dtp: updates.collectionDtp, collections_paytm: updates.collectionsCard, collections_credit: updates.collectionsCredit, period_expenses: updates.periodExpenses, balance_sbi: updates.balanceBank, balance_hp: updates.balanceDigital, balnce_od: updates.balnceOd, balance_cash: updates.balanceCash, bunk_net_value: updates.netValue }, { onConflict: 'id' }); if (error) return showAlert("Update Failed: " + error.message); setMorningEntries(morningEntries.map(m => m.id === id ? { ...m, ...updates } : m)); showAlert("Entry updated successfully."); };
   const deleteMorningEntry = async (id: string) => { const { error } = await supabase.from('morning_entries').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setMorningEntries(morningEntries.filter(m => m.id !== id)); showAlert("Morning entry deleted."); };
 
   const addExpense = async (e: any) => { const { data, error } = await supabase.from('expenses').insert([{ bunk_id: bId, date: e.date, category: e.category, amount: e.amount, description: e.description, vendor: e.vendor, payment_mode: e.mode }]).select(); if (error) return showAlert("Failed to record expense: " + error.message); if (data && data.length > 0) setExpenses([{ ...e, id: data[0].id }, ...expenses]); showAlert("Expense recorded."); };
@@ -667,7 +667,10 @@ const Dashboard = () => {
   
   const strictlyLiquidAssets = latestEntry ? ((Number(latestEntry.collectionsCash) || 0) + (Number(latestEntry.balanceBank) || 0) + (Number(latestEntry.balanceDigital) || 0)) : 0;
   const fuelStockValue = (latestEntry ? latestEntry.petrolDip : (settings?.initialPetrolDip || 0)) * (settings?.petrolRate || 0) + (latestEntry ? latestEntry.dieselDip : (settings?.initialDieselDip || 0)) * (settings?.dieselRate || 0);
-  const currentOdBalance = latestEntry ? Number(latestEntry.balnceOd || 0) : Number(settings?.currentOdBalance || 0);
+  const odLimitDash = Number(settings?.odLimit) || 3000000;
+  const rawOdDebt = latestEntry ? Number(latestEntry.balnceOd || 0) : Number(settings?.currentOdBalance || 0);
+  const currentOdBalance = rawOdDebt; // stored as debt (negative = drawn)
+  const odAvailableDisplay = rawOdDebt + odLimitDash; // actual available = limit - abs(debt) = debt + limit
   const bunkNetValue = totalReceivables + strictlyLiquidAssets + fuelStockValue + currentOdBalance;
 
   // --- 2. PERIOD ANALYTICS (Dynamic Math) ---
@@ -789,8 +792,9 @@ const Dashboard = () => {
                  <p className="text-base md:text-lg font-bold">{formatLakhs(fuelStockValue)}</p>
               </div>
               <div className="bg-red-900/30 p-3 rounded-xl border border-red-500/20">
-                 <p className="text-[10px] md:text-xs text-red-300 uppercase tracking-wider font-bold mb-1">OD Balance (Debt)</p>
-                 <p className="text-base md:text-lg font-bold text-red-200">{currentOdBalance < 0 ? '- ' : ''}{formatRs(Math.abs(currentOdBalance))}</p>
+                 <p className="text-[10px] md:text-xs text-red-300 uppercase tracking-wider font-bold mb-1">OD Available</p>
+                 <p className="text-base md:text-lg font-bold text-red-200">{formatRs(Math.max(0, odAvailableDisplay))}</p>
+                 <p className="text-[10px] text-red-400 mt-0.5">Used: {formatRs(Math.max(0, odLimitDash - odAvailableDisplay))}</p>
               </div>
            </div>
         </div>
@@ -1327,7 +1331,7 @@ const CreditLedger = () => {
   if (dataLoading) return <div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 lg:h-[calc(100dvh-100px)]">
+    <div className="flex flex-col lg:flex-row gap-6">
       <div className="lg:w-1/3 lg:overflow-y-auto pr-2 pb-10 space-y-4 relative">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
           <div className="flex border-b mb-6 text-sm"><button disabled={!!editId && tab !== 'sale'} className={`flex-1 pb-2 font-bold transition-colors ${tab === 'sale' ? 'text-blue-800 border-b-2 border-blue-800' : 'text-gray-400 hover:text-gray-600 disabled:opacity-50'}`} onClick={() => setTab('sale')}>+ Sale / Advance</button><button disabled={!!editId && tab !== 'payment'} className={`flex-1 pb-2 font-bold transition-colors ${tab === 'payment' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-400 hover:text-gray-600 disabled:opacity-50'}`} onClick={() => setTab('payment')}>+ Payment</button></div>
@@ -1361,8 +1365,8 @@ const CreditLedger = () => {
         </div>
       </div>
 
-      <div className="lg:w-2/3 lg:overflow-y-auto pl-2 pb-10 flex flex-col relative h-full">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full">
+      <div className="lg:w-2/3 pl-2 pb-10 flex flex-col relative">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
           <div className="p-4 border-b bg-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
              <h3 className="font-bold text-gray-800 text-xl">Daily Ledger History</h3>
              <div className="relative w-full sm:w-64">
@@ -1607,7 +1611,7 @@ const MorningEntryForm = () => {
     )
   }
 
-  if (submitted) return (<div className="bg-green-50 text-green-800 p-8 rounded-2xl text-center border border-green-200"><CheckCircle2 size={64} className="mx-auto mb-4 text-green-500" /><h2 className="text-2xl font-bold mb-2">Morning Entry {editId ? 'Updated' : 'Submitted'}</h2><button onClick={() => {setSubmitted(false); resetForm();}} className="mt-6 px-6 py-2 bg-green-600 text-white rounded-lg font-bold shadow-sm">Start New Entry</button></div>);
+  if (submitted) return (<div className="bg-green-50 text-green-800 p-8 rounded-2xl text-center border border-green-200"><CheckCircle2 size={64} className="mx-auto mb-4 text-green-500" /><h2 className="text-2xl font-bold mb-2">Morning Entry {editId ? 'Updated' : 'Submitted'}</h2><p className="text-sm text-green-700 mb-4">Stock and balance values will update for the next entry.</p><button onClick={() => {setSubmitted(false); setEditId(null); setStep(0); setForm({ petrolDip: '', dieselDip: '', openingBalance: '', cashRaw: '', bankRaw: '', digitalRaw: '', dtpRaw: '', cardRaw: '', bankBal: '', odBal: '', digitalBal: '' }); setNozzleForm({ p1: '', p2: '', d1: '', d2: '' }); setNozzleSynced(false);}} className="mt-6 px-6 py-2 bg-green-600 text-white rounded-lg font-bold shadow-sm">Start New Entry</button></div>);
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -1666,7 +1670,7 @@ const MorningEntryForm = () => {
                   <label className="block text-sm font-bold text-orange-700 mb-1">Opening Cash (Float) *</label>
                   <input type="number" value={form.openingBalance} onChange={e=>setForm({...form, openingBalance: e.target.value})} className="w-full p-3 border-2 border-orange-300 bg-orange-50 rounded-lg outline-none text-base font-bold text-orange-900" placeholder="0" />
                 </div>
-                <div><label className="block text-sm font-medium mb-1">End of Day Vault Cash (can be negative if returned) *</label><input type="number" value={form.cashRaw} onChange={e=>setForm({...form, cashRaw: e.target.value})} className="w-full p-3 border rounded-lg outline-none text-base" placeholder="0" /></div>
+                <div><label className="block text-sm font-medium mb-1">End of Day Vault Cash *</label><input type="number" value={form.cashRaw} onChange={e=>setForm({...form, cashRaw: e.target.value})} className="w-full p-3 border rounded-lg outline-none text-base" placeholder="0" /></div>
                 <div><label className="block text-sm font-medium mb-1">Bank Transfer (Rs)</label><input type="number" value={form.bankRaw} onChange={e=>setForm({...form, bankRaw: e.target.value})} className="w-full p-3 border rounded-lg outline-none text-base" placeholder="0" /></div>
                 <div><label className="block text-sm font-medium mb-1">Digital App (Rs)</label><input type="number" value={form.digitalRaw} onChange={e=>setForm({...form, digitalRaw: e.target.value})} className="w-full p-3 border rounded-lg outline-none text-base" placeholder="0" /></div>
                 <div><label className="block text-sm font-medium mb-1">DTP Pay (Rs)</label><input type="number" value={form.dtpRaw} onChange={e=>setForm({...form, dtpRaw: e.target.value})} className="w-full p-3 border rounded-lg outline-none text-base bg-blue-50 border-blue-200" placeholder="0" /></div>
