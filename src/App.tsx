@@ -62,7 +62,7 @@ interface Customer { id: string; category: string; companyName: string; ownerNam
 interface Transaction { id: string; customerId: string; type: 'credit_sale' | 'payment' | 'opening_balance' | 'advance'; date: string; product?: string; quantity?: number; rate?: number; amount: number; mode?: string; vehicleNumber?: string; remarks?: string; }
 interface MorningEntry { id: string; date: string; petrolDip: number; dieselDip: number; petrolSold: number; dieselSold: number; netProfit: number; variance: number; submitted: boolean; netValue: number; collectionsCash: number; balanceCash: number; collectionsBank: number; collectionsDigital: number; collectionDtp: number; collectionsCard: number; collectionsCredit: number; periodExpenses: number; balanceBank: number; balanceDigital: number; balnceOd: number; }
 interface Expense { id: string; date: string; category: string; amount: number; description: string; vendor: string; mode: string; }
-interface FuelPurchase { id: string; date: string; vendor: string; invoiceNumber: string; mode: string; petrolLitres: number; petrolRate: number; dieselLitres: number; dieselRate: number; totalAmount: number; }
+interface FuelPurchase { id: string; date: string; product: string; litres: number; rate: number; amount: number; supplier: string; invoice: string; mode: string; }
 
 interface AppContextType {
   user: User | null; dataLoading: boolean; unsavedForm: boolean; setUnsavedForm: (v: boolean) => void;
@@ -158,7 +158,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const showConfirm = (message: string, onConfirm: () => void) => { setConfirmDialog({ message, onConfirm }); };
 
   const validateInputs = (amounts: number[], litres: number[]) => {
-    for (const a of amounts) { if (a < 0) { showAlert("Amount cannot be negative."); return false; } if (a > 10000000) { showAlert("Amount seems too high, please verify."); return false; } }
+    for (const a of amounts) { if (a > 10000000) { showAlert("Amount seems too high, please verify."); return false; } }
     for (const l of litres) { if (l < 0) { showAlert("Litres cannot be negative."); return false; } if (l > 50000) { showAlert("Litres seem too high, please verify."); return false; } }
     return true;
   };
@@ -231,7 +231,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         if (custData) setCustomers(custData.map((d: any) => ({ id: String(d.id), category: d.category || 'Other', companyName: d.company_name || 'Unknown', ownerName: d.owner_name || '', address: d.address || '', paymentTerms: d.payment_terms || 'Monthly', phone: d.phone || '', driverName: d.driver_name || '', driverPhone: d.driver_phone || '', vehicleNumbers: d.vehicle_numbers || '', creditLimit: Number(d.credit_limit) || 0, status: d.status || 'Active', pin: d.portal_pin || '', portalAccess: Boolean(d.portal_access), notifyOnCredit: d.notify_on_credit })));
         if (txData) setTransactions(txData.map(mapTx));
         if (expData) setExpenses(expData.map((d: any) => ({ id: String(d.id), date: String(d.date || getTodayIST()), category: d.category || 'Other', amount: Number(d.amount) || 0, description: d.description || '', vendor: d.vendor || '', mode: d.payment_mode || '' })));
-        if (fuelData) setFuelPurchases(fuelData.map((d: any) => ({ id: String(d.id), date: String(d.date || getTodayIST()), vendor: d.vendor || '', invoiceNumber: d.invoice_number || '', mode: d.payment_mode || '', petrolLitres: Number(d.petrol_litres) || 0, petrolRate: Number(d.petrol_rate) || 0, dieselLitres: Number(d.diesel_litres) || 0, dieselRate: Number(d.diesel_rate) || 0, totalAmount: Number(d.total_amount) || 0 })));
+        if (fuelData) setFuelPurchases(fuelData.map((d: any) => ({ id: String(d.id), date: String(d.date || getTodayIST()), product: d.product || 'Diesel', litres: Number(d.litres) || 0, rate: Number(d.rate) || 0, amount: Number(d.amount) || Number(d.total_amount) || 0, supplier: d.supplier || d.vendor || '', invoice: d.invoice || d.invoice_number || '', mode: d.payment_mode || '' })));
         if (profData) setUsers(profData.map((d: any) => ({ id: String(d.id), name: d.name || 'Staff', email: d.email || '', role: String(d.role || 'supervisor').toLowerCase(), bunkId: String(d.bunk_id) } as any)));
         if (morningData) setMorningEntries(morningData.map((d: any) => ({
           id: String(d.id), date: String(d.entry_date || getTodayIST()), petrolDip: Number(d.petrol_dip_today) || 0, dieselDip: Number(d.diesel_dip_today) || 0, petrolSold: Number(d.petrol_sold_litres) || 0, dieselSold: Number(d.diesel_sold_litres) || 0, netProfit: Number(d.net_profit) || 0, variance: Number(d.collection_variance) || 0, submitted: true, netValue: Number(d.bunk_net_value) || 0,
@@ -351,8 +351,37 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const updateExpense = async (id: string, updates: any) => { const { error } = await supabase.from('expenses').update({ date: updates.date, category: updates.category, amount: updates.amount, description: updates.description, vendor: updates.vendor }).eq('id', id); if (error) return showAlert("Update Failed: " + error.message); setExpenses(expenses.map(e => e.id === id ? { ...e, ...updates } : e)); showAlert("Expense updated."); };
   const deleteExpense = async (id: string) => { const { error } = await supabase.from('expenses').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setExpenses(expenses.filter(e => e.id !== id)); showAlert("Expense deleted."); };
 
-  const addFuelPurchase = async (purchases: any[]) => { const { data, error } = await supabase.from('fuel_purchases').insert(purchases.map(f => ({ bunk_id: bId, date: f.date, vendor: f.vendor, invoice_number: f.invoiceNumber, payment_mode: f.paymentMode, petrol_litres: f.petrolLitres, petrol_rate: f.petrolRate, diesel_litres: f.dieselLitres, diesel_rate: f.dieselRate, total_amount: f.totalAmount }))).select(); if (error) return showAlert("Failed to record fuel: " + error.message); if (data && data.length > 0) { const newPurchases = data.map((d: any) => ({ id: String(d.id), date: String(d.date), vendor: d.vendor, invoiceNumber: d.invoice_number, mode: d.payment_mode, petrolLitres: Number(d.petrol_litres), petrolRate: Number(d.petrol_rate), dieselLitres: Number(d.diesel_litres), dieselRate: Number(d.diesel_rate), totalAmount: Number(d.total_amount) })); setFuelPurchases(prev => [...newPurchases, ...prev]); } showAlert("Fuel receipt recorded successfully."); };
-  const updateFuelPurchase = async (id: string, updates: any) => { const { error } = await supabase.from('fuel_purchases').update({ date: updates.date, vendor: updates.vendor, invoice_number: updates.invoiceNumber, payment_mode: updates.paymentMode, petrol_litres: updates.petrolLitres, petrol_rate: updates.petrolRate, diesel_litres: updates.dieselLitres, diesel_rate: updates.dieselRate, total_amount: updates.totalAmount }).eq('id', id); if (error) return showAlert("Update Failed: " + error.message); setFuelPurchases(fuelPurchases.map(f => f.id === id ? { ...f, ...updates } : f)); showAlert("Fuel receipt updated."); };
+  const addFuelPurchase = async (purchases: any[]) => {
+    const rows = purchases.map(f => ({
+      bunk_id: bId, date: f.date, product: f.product,
+      litres: f.litres, rate: f.rate, amount: f.amount,
+      supplier: f.supplier || '', invoice: f.invoice || '',
+      payment_mode: f.mode || 'Bank Transfer'
+    }));
+    const { data, error } = await supabase.from('fuel_purchases').insert(rows).select();
+    if (error) return showAlert('Failed to record fuel: ' + error.message);
+    if (data && data.length > 0) {
+      const newPurchases = data.map((d: any) => ({
+        id: String(d.id), date: String(d.date || getTodayIST()),
+        product: d.product || 'Diesel', litres: Number(d.litres) || 0,
+        rate: Number(d.rate) || 0, amount: Number(d.amount) || 0,
+        supplier: d.supplier || '', invoice: d.invoice || '', mode: d.payment_mode || ''
+      }));
+      setFuelPurchases(prev => [...newPurchases, ...prev]);
+    }
+    showAlert('Fuel receipt recorded successfully.');
+  };
+  const updateFuelPurchase = async (id: string, updates: any) => {
+    const { error } = await supabase.from('fuel_purchases').update({
+      date: updates.date, product: updates.product,
+      litres: updates.litres, rate: updates.rate, amount: updates.amount,
+      supplier: updates.supplier || '', invoice: updates.invoice || '',
+      payment_mode: updates.mode || 'Bank Transfer'
+    }).eq('id', id);
+    if (error) return showAlert('Update Failed: ' + error.message);
+    setFuelPurchases(fuelPurchases.map(f => f.id === id ? { ...f, ...updates } : f));
+    showAlert('Fuel receipt updated.');
+  };
   const deleteFuelPurchase = async (id: string) => { const { error } = await supabase.from('fuel_purchases').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setFuelPurchases(fuelPurchases.filter(f => f.id !== id)); showAlert("Fuel record deleted."); };
 
   const addUser = async (u: any) => {
@@ -1547,7 +1576,8 @@ const MorningEntryForm = () => {
   const trueNetProfit = calculatedNetValue - previousNetValue;
 
   const handleSubmit = async () => {
-    if (!validateInputs([Number(form.openingBalance), Number(form.cashRaw), Number(form.bankRaw), Number(form.digitalRaw), Number(form.dtpRaw), Number(form.cardRaw), Number(form.bankBal), Number(form.odBal)], [pDip, dDip])) return;
+    // Allow negative vault cash (returns) — only validate litres
+    if (!validateInputs([], [pDip, dDip])) return;
 
     setIsSubmitting(true);
     const payload = { date: targetDate, petrolDip: pDip, dieselDip: dDip, petrolSold, dieselSold, netProfit: trueNetProfit, variance, submitted: true, collectionsCash: openingBal, balanceCash: Number(form.cashRaw)||0, collectionsBank: Number(form.bankRaw)||0, collectionsDigital: Number(form.digitalRaw)||0, collectionDtp: Number(form.dtpRaw)||0, collectionsCard: Number(form.cardRaw)||0, collectionsCredit: (periodCreditSales + periodAdvances), periodExpenses: currentPeriodExpenses, balanceBank: Number(form.bankBal)||0, balanceDigital: Number(form.digitalBal)||0, balnceOd: newOdDebt, openingBalance: openingBal, netValue: calculatedNetValue };
@@ -1636,7 +1666,7 @@ const MorningEntryForm = () => {
                   <label className="block text-sm font-bold text-orange-700 mb-1">Opening Cash (Float) *</label>
                   <input type="number" value={form.openingBalance} onChange={e=>setForm({...form, openingBalance: e.target.value})} className="w-full p-3 border-2 border-orange-300 bg-orange-50 rounded-lg outline-none text-base font-bold text-orange-900" placeholder="0" />
                 </div>
-                <div><label className="block text-sm font-medium mb-1">End of Day Vault Cash *</label><input type="number" value={form.cashRaw} onChange={e=>setForm({...form, cashRaw: e.target.value})} className="w-full p-3 border rounded-lg outline-none text-base" placeholder="0" /></div>
+                <div><label className="block text-sm font-medium mb-1">End of Day Vault Cash (can be negative if returned) *</label><input type="number" value={form.cashRaw} onChange={e=>setForm({...form, cashRaw: e.target.value})} className="w-full p-3 border rounded-lg outline-none text-base" placeholder="0" /></div>
                 <div><label className="block text-sm font-medium mb-1">Bank Transfer (Rs)</label><input type="number" value={form.bankRaw} onChange={e=>setForm({...form, bankRaw: e.target.value})} className="w-full p-3 border rounded-lg outline-none text-base" placeholder="0" /></div>
                 <div><label className="block text-sm font-medium mb-1">Digital App (Rs)</label><input type="number" value={form.digitalRaw} onChange={e=>setForm({...form, digitalRaw: e.target.value})} className="w-full p-3 border rounded-lg outline-none text-base" placeholder="0" /></div>
                 <div><label className="block text-sm font-medium mb-1">DTP Pay (Rs)</label><input type="number" value={form.dtpRaw} onChange={e=>setForm({...form, dtpRaw: e.target.value})} className="w-full p-3 border rounded-lg outline-none text-base bg-blue-50 border-blue-200" placeholder="0" /></div>
@@ -1838,8 +1868,15 @@ const FuelStockModule = () => {
 
   const resetForm = () => { setEditId(null); setForm({ date: getTodayIST(), petrolLitres: '', petrolRate: '', dieselLitres: '', dieselRate: '', supplier: '', invoice: '', mode: 'Bank Transfer' }); };
   const openEdit = (f: FuelPurchase) => {
-    setEditId(f.id); const isPetrol = f.product === 'Petrol';
-    setForm({ date: f.date, supplier: f.supplier, invoice: f.invoice, mode: f.mode || 'Bank Transfer', petrolLitres: isPetrol ? f.litres.toString() : '', petrolRate: isPetrol ? f.rate.toString() : '', dieselLitres: !isPetrol ? f.litres.toString() : '', dieselRate: !isPetrol ? f.rate.toString() : '' });
+    setEditId(f.id);
+    const isPetrol = f.product === 'Petrol';
+    setForm({
+      date: f.date, supplier: f.supplier || '', invoice: f.invoice || '', mode: f.mode || 'Bank Transfer',
+      petrolLitres: isPetrol ? f.litres.toString() : '',
+      petrolRate: isPetrol ? f.rate.toString() : '',
+      dieselLitres: !isPetrol ? f.litres.toString() : '',
+      dieselRate: !isPetrol ? f.rate.toString() : ''
+    });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -1854,14 +1891,15 @@ const FuelStockModule = () => {
     if (!form.invoice) return showAlert("Invoice number is required.");
     
     setIsSubmitting(true);
-
     if (editId) {
-       const product = pL > 0 ? 'Petrol' : 'Diesel'; const l = pL > 0 ? pL : dL; const r = pL > 0 ? pR : dR;
-       await updateFuelPurchase(editId, { date: form.date, product, litres: l, rate: r, amount: l * r, supplier: form.supplier, invoice: form.invoice, mode: form.mode });
+      const product = pL > 0 ? 'Petrol' : 'Diesel';
+      const l = pL > 0 ? pL : dL;
+      const r = pL > 0 ? pR : dR;
+      await updateFuelPurchase(editId, { date: form.date, product, litres: l, rate: r, amount: Math.round(l * r), supplier: form.supplier, invoice: form.invoice, mode: form.mode });
     } else {
-      const purchases = [];
-      if (pL > 0) purchases.push({ date: form.date, product: 'Petrol', litres: pL, rate: pR, amount: pL * pR, supplier: form.supplier || 'Vendor', invoice: form.invoice, mode: form.mode });
-      if (dL > 0) purchases.push({ date: form.date, product: 'Diesel', litres: dL, rate: dR, amount: dL * dR, supplier: form.supplier || 'Vendor', invoice: form.invoice, mode: form.mode });
+      const purchases: any[] = [];
+      if (pL > 0) purchases.push({ date: form.date, product: 'Petrol', litres: pL, rate: pR, amount: Math.round(pL * pR), supplier: form.supplier || 'Vendor', invoice: form.invoice, mode: form.mode });
+      if (dL > 0) purchases.push({ date: form.date, product: 'Diesel', litres: dL, rate: dR, amount: Math.round(dL * dR), supplier: form.supplier || 'Vendor', invoice: form.invoice, mode: form.mode });
       await addFuelPurchase(purchases);
     }
     setIsSubmitting(false);
@@ -1874,7 +1912,7 @@ const FuelStockModule = () => {
      return str.includes(searchTerm.toLowerCase());
   });
 
-  // Group purchases by Invoice visually in the table
+  // Group purchases by Invoice+Date visually in the table
   const groupedInvoices = filteredPurchases.reduce((acc, f) => {
     const key = `${f.invoice || 'No Invoice'}-${f.date || 'Unknown'}`;
     if (!acc[key]) acc[key] = { id: f.id, date: f.date, invoice: f.invoice, supplier: f.supplier, totalLitres: 0, totalAmount: 0, items: [] };
