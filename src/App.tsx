@@ -235,7 +235,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         if (profData) setUsers(profData.map((d: any) => ({ id: String(d.id), name: d.name || 'Staff', email: d.email || '', role: String(d.role || 'supervisor').toLowerCase(), bunkId: String(d.bunk_id) } as any)));
         if (morningData) setMorningEntries(morningData.map((d: any) => ({
           id: String(d.id), date: String(d.entry_date || getTodayIST()), petrolDip: Number(d.petrol_dip_today) || 0, dieselDip: Number(d.diesel_dip_today) || 0, petrolSold: Number(d.petrol_sold_litres) || 0, dieselSold: Number(d.diesel_sold_litres) || 0, netProfit: Number(d.net_profit) || 0, variance: Number(d.collection_variance) || 0, submitted: true, netValue: Number(d.bunk_net_value) || 0,
-          collectionsCash: Number(d.collections_cash) || 0, balanceCash: Number(d.balance_cash) || 0, collectionsBank: Number(d.collections_sbi) || 0, collectionsDigital: Number(d.collections_hppay) || 0, collectionDtp: Number(d.collection_dtp) || 0, collectionsCard: Number(d.collections_paytm) || 0, collectionsCredit: Number(d.collections_credit) || 0, periodExpenses: Number(d.period_expenses) || 0, balanceBank: Number(d.balance_sbi) || 0, balanceDigital: Number(d.balance_hp) || 0, balanceOd: Number(d.balance_od) || 0
+          collectionsCash: Number(d.collections_cash) || 0, balanceCash: Number(d.balance_cash) || 0, collectionsBank: Number(d.collections_sbi) || 0, collectionsDigital: Number(d.collections_hppay) || 0, collectionDtp: Number(d.collections_dtp) || 0, collectionsCard: Number(d.collections_paytm) || 0, collectionsCredit: Number(d.collections_credit) || 0, periodExpenses: Number(d.period_expenses) || 0, balanceBank: Number(d.balance_sbi) || 0, balanceDigital: Number(d.balance_hp) || 0, balanceOd: Number(d.balance_od) || 0
         })));
       } catch (e) { console.error("Fetch error:", e); showAlert('Failed to sync. Please check your internet connection.'); } finally { setDataLoading(false); }
     };
@@ -360,7 +360,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       collections_cash: e.collectionsCash,
       collections_sbi: e.collectionsBank,
       collections_hppay: e.collectionsDigital,
-      collection_dtp: e.collectionDtp,
+      collections_dtp: e.collectionDtp,
       collections_paytm: e.collectionsCard,
       collections_credit: e.collectionsCredit,
       period_expenses: e.periodExpenses,
@@ -412,7 +412,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       collections_cash: updates.collectionsCash,
       collections_sbi: updates.collectionsBank,
       collections_hppay: updates.collectionsDigital,
-      collection_dtp: updates.collectionDtp,
+      collections_dtp: updates.collectionDtp,
       collections_paytm: updates.collectionsCard,
       collections_credit: updates.collectionsCredit,
       period_expenses: updates.periodExpenses,
