@@ -7,7 +7,7 @@
   3. Fuel Receipts Unification: The fuel purchases module now records exactly one row per invoice containing both petrol and diesel data.
   4. 5-Step Morning Wizard: Added 'Step 0: Nozzle Meter Readings' with live bot-sync status from the DB.
   5. Dashboard Status Card: Added a daily 'Morning Entry Status' widget.
-  6. Exact Column Mapping: Strictly enforced database typos (`balnce_od`, `collection_dtp`) and mapped float/cash columns per spec.
+  6. Exact Column Mapping: Strictly enforced database typos (`balance_od`, `collection_dtp`) and mapped float/cash columns per spec.
 =============================================================================
 */
 
@@ -60,7 +60,7 @@ type Role = 'owner' | 'supervisor' | 'customer';
 interface User { id: string; name: string; email: string; role: Role; phone?: string; bunkId?: string; }
 interface Customer { id: string; category: string; companyName: string; ownerName?: string; phone: string; address?: string; paymentTerms?: string; driverName?: string; driverPhone?: string; vehicleNumbers?: string; creditLimit: number; status: 'Active' | 'Suspended' | 'Blocked'; pin: string; portalAccess: boolean; notifyOnCredit: boolean | null; }
 interface Transaction { id: string; customerId: string; type: 'credit_sale' | 'payment' | 'opening_balance' | 'advance'; date: string; product?: string; quantity?: number; rate?: number; amount: number; mode?: string; vehicleNumber?: string; remarks?: string; }
-interface MorningEntry { id: string; date: string; petrolDip: number; dieselDip: number; petrolSold: number; dieselSold: number; netProfit: number; variance: number; submitted: boolean; netValue: number; collectionsCash: number; balanceCash: number; collectionsBank: number; collectionsDigital: number; collectionDtp: number; collectionsCard: number; collectionsCredit: number; periodExpenses: number; balanceBank: number; balanceDigital: number; balnceOd: number; }
+interface MorningEntry { id: string; date: string; petrolDip: number; dieselDip: number; petrolSold: number; dieselSold: number; netProfit: number; variance: number; submitted: boolean; netValue: number; collectionsCash: number; balanceCash: number; collectionsBank: number; collectionsDigital: number; collectionDtp: number; collectionsCard: number; collectionsCredit: number; periodExpenses: number; balanceBank: number; balanceDigital: number; balanceOd: number; }
 interface Expense { id: string; date: string; category: string; amount: number; description: string; vendor: string; mode: string; }
 interface FuelPurchase { id: string; date: string; product: string; litres: number; rate: number; amount: number; supplier: string; invoice: string; mode: string; }
 
@@ -235,7 +235,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         if (profData) setUsers(profData.map((d: any) => ({ id: String(d.id), name: d.name || 'Staff', email: d.email || '', role: String(d.role || 'supervisor').toLowerCase(), bunkId: String(d.bunk_id) } as any)));
         if (morningData) setMorningEntries(morningData.map((d: any) => ({
           id: String(d.id), date: String(d.entry_date || getTodayIST()), petrolDip: Number(d.petrol_dip_today) || 0, dieselDip: Number(d.diesel_dip_today) || 0, petrolSold: Number(d.petrol_sold_litres) || 0, dieselSold: Number(d.diesel_sold_litres) || 0, netProfit: Number(d.net_profit) || 0, variance: Number(d.collection_variance) || 0, submitted: true, netValue: Number(d.bunk_net_value) || 0,
-          collectionsCash: Number(d.collections_cash) || 0, balanceCash: Number(d.balance_cash) || 0, collectionsBank: Number(d.collections_sbi) || 0, collectionsDigital: Number(d.collections_hppay) || 0, collectionDtp: Number(d.collection_dtp) || 0, collectionsCard: Number(d.collections_paytm) || 0, collectionsCredit: Number(d.collections_credit) || 0, periodExpenses: Number(d.period_expenses) || 0, balanceBank: Number(d.balance_sbi) || 0, balanceDigital: Number(d.balance_hp) || 0, balnceOd: Number(d.balnce_od) || 0
+          collectionsCash: Number(d.collections_cash) || 0, balanceCash: Number(d.balance_cash) || 0, collectionsBank: Number(d.collections_sbi) || 0, collectionsDigital: Number(d.collections_hppay) || 0, collectionDtp: Number(d.collection_dtp) || 0, collectionsCard: Number(d.collections_paytm) || 0, collectionsCredit: Number(d.collections_credit) || 0, periodExpenses: Number(d.period_expenses) || 0, balanceBank: Number(d.balance_sbi) || 0, balanceDigital: Number(d.balance_hp) || 0, balanceOd: Number(d.balance_od) || 0
         })));
       } catch (e) { console.error("Fetch error:", e); showAlert('Failed to sync. Please check your internet connection.'); } finally { setDataLoading(false); }
     };
@@ -251,7 +251,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       collectionsBank: Number(d.collections_sbi) || 0, collectionsDigital: Number(d.collections_hppay) || 0,
       collectionDtp: Number(d.collection_dtp) || 0, collectionsCard: Number(d.collections_paytm) || 0,
       collectionsCredit: Number(d.collections_credit) || 0, periodExpenses: Number(d.period_expenses) || 0,
-      balanceBank: Number(d.balance_sbi) || 0, balanceDigital: Number(d.balance_hp) || 0, balnceOd: Number(d.balnce_od) || 0
+      balanceBank: Number(d.balance_sbi) || 0, balanceDigital: Number(d.balance_hp) || 0, balanceOd: Number(d.balance_od) || 0
     });
     const channel = supabase
       .channel(`bunk-realtime-${targetBunk}`)
@@ -344,7 +344,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const deleteTransaction = async (id: string) => { const { error } = await supabase.from('transactions').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setTransactions(transactions.filter(t => t.id !== id)); showAlert("Record deleted."); };
 
   const addMorningEntry = async (e: any) => {
-    // Use direct REST API fetch to bypass PostgREST schema cache issues with balnce_od column
+    // Use direct REST API fetch to bypass PostgREST schema cache issues with balance_od column
     // UPSERT on (bunk_id, entry_date) to prevent duplicate entry errors
     const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
     const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
@@ -366,7 +366,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       period_expenses: e.periodExpenses,
       balance_sbi: e.balanceBank,
       balance_hp: e.balanceDigital,
-      balnce_od: e.balnceOd,
+      balance_od: e.balanceOd,
       balance_cash: e.balanceCash,
       bunk_net_value: e.netValue,
     };
@@ -395,7 +395,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   };
   const updateMorningEntry = async (id: string, updates: any) => {
     // KEY FIX: Use POST+UPSERT instead of PATCH — PATCH still hits PostgREST schema
-    // cache validation and fails with 'balnce_od not found'. POST with
+    // cache validation and fails with 'balance_od not found'. POST with
     // 'resolution=merge-duplicates' uses the INSERT path which bypasses the stale cache.
     // The UNIQUE constraint on (bunk_id, entry_date) ensures it updates the correct row.
     const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
@@ -418,7 +418,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       period_expenses: updates.periodExpenses,
       balance_sbi: updates.balanceBank,
       balance_hp: updates.balanceDigital,
-      balnce_od: updates.balnceOd,           // deliberate typo — DO NOT change
+      balance_od: updates.balanceOd,
       balance_cash: updates.balanceCash,
       bunk_net_value: updates.netValue,
     };
@@ -443,10 +443,10 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       // Update local state with the actual saved row data
       setMorningEntries(prev => prev.map(m => m.id === id ? { ...m, ...updates, id: savedRow?.id || id } : m));
       // CRITICAL: sync settings so dashboard OD reflects the new value immediately
-      if (updates.balnceOd !== undefined) {
-        setSettings((prev: any) => ({ ...prev, currentOdBalance: updates.balnceOd, currentHpBalance: updates.balanceDigital ?? prev.currentHpBalance }));
+      if (updates.balanceOd !== undefined) {
+        setSettings((prev: any) => ({ ...prev, currentOdBalance: updates.balanceOd, currentHpBalance: updates.balanceDigital ?? prev.currentHpBalance }));
         if (bId) {
-          supabase.from('bunks').update({ current_od_balance: updates.balnceOd, current_hp_balance: updates.balanceDigital ?? 0 }).eq('id', bId);
+          supabase.from('bunks').update({ current_od_balance: updates.balanceOd, current_hp_balance: updates.balanceDigital ?? 0 }).eq('id', bId);
         }
       }
       showAlert('✅ Entry updated successfully!');
@@ -777,12 +777,12 @@ const Dashboard = () => {
   const strictlyLiquidAssets = latestEntry ? ((Number(latestEntry.balanceCash) || 0) + (Number(latestEntry.balanceBank) || 0) + (Number(latestEntry.balanceDigital) || 0)) : 0;
   const fuelStockValue = (latestEntry ? latestEntry.petrolDip : (settings?.initialPetrolDip || 0)) * (settings?.petrolRate || 0) + (latestEntry ? latestEntry.dieselDip : (settings?.initialDieselDip || 0)) * (settings?.dieselRate || 0);
   const odLimitDash = Number(settings?.odLimit) || 3000000;
-  // balnce_od stores NEGATIVE debt (e.g., user has ₹5L available → stored as -25L debt = 5L - 30L).
-  // available = balnce_od + limit   |   used/drawn = limit - available
+  // balance_od stores NEGATIVE debt (e.g., user has ₹5L available → stored as -25L debt = 5L - 30L).
+  // available = balance_od + limit   |   used/drawn = limit - available
   const latestOdEntry = sortedEntries.length > 0 ? sortedEntries[0] : null;
   const odEntryIsToday = latestOdEntry?.date === getTodayIST();
-  // balnce_od in DB is negative debt; fall back to settings if no entry yet
-  const rawOdDebt = latestOdEntry ? Number(latestOdEntry.balnceOd || 0) : Number(settings?.currentOdBalance || 0);
+  // balance_od in DB is negative debt; fall back to settings if no entry yet
+  const rawOdDebt = latestOdEntry ? Number(latestOdEntry.balanceOd || 0) : Number(settings?.currentOdBalance || 0);
   const currentOdBalance = rawOdDebt;                              // negative number = debt
   const odAvailableDisplay = rawOdDebt + odLimitDash;             // e.g. -25L + 30L = 5L available
   const odDrawnAmount = Math.max(0, odLimitDash - odAvailableDisplay); // 30L - 5L = 25L drawn
@@ -1643,7 +1643,7 @@ const MorningEntryForm = () => {
   
   const openEdit = (m: MorningEntry) => { 
     const odLim = Number(settings.odLimit) || 3000000;
-    const availableOd = (m.balnceOd || 0) + odLim;
+    const availableOd = (m.balanceOd || 0) + odLim;
     setEditId(m.id); setEntryDate(m.date);
     setForm({ petrolDip: m.petrolDip.toString(), dieselDip: m.dieselDip.toString(), openingBalance: m.collectionsCash?.toString() || '', cashRaw: m.balanceCash?.toString() || '', bankRaw: m.collectionsBank?.toString() || '', digitalRaw: m.collectionsDigital?.toString() || '', dtpRaw: m.collectionDtp?.toString() || '', cardRaw: m.collectionsCard?.toString() || '', bankBal: m.balanceBank?.toString() || '', odBal: availableOd.toString(), digitalBal: m.balanceDigital?.toString() || '' }); 
     setStep(1); window.scrollTo({ top: 0, behavior: 'smooth' }); 
@@ -1703,7 +1703,7 @@ const MorningEntryForm = () => {
     if (!validateInputs([], [pDip, dDip])) return;
 
     setIsSubmitting(true);
-    const payload = { date: targetDate, petrolDip: pDip, dieselDip: dDip, petrolSold, dieselSold, netProfit: trueNetProfit, variance, submitted: true, collectionsCash: openingBal, balanceCash: Number(form.cashRaw)||0, collectionsBank: Number(form.bankRaw)||0, collectionsDigital: Number(form.digitalRaw)||0, collectionDtp: Number(form.dtpRaw)||0, collectionsCard: Number(form.cardRaw)||0, collectionsCredit: (periodCreditSales + periodAdvances), periodExpenses: currentPeriodExpenses, balanceBank: Number(form.bankBal)||0, balanceDigital: Number(form.digitalBal)||0, balnceOd: newOdDebt, openingBalance: openingBal, netValue: calculatedNetValue };
+    const payload = { date: targetDate, petrolDip: pDip, dieselDip: dDip, petrolSold, dieselSold, netProfit: trueNetProfit, variance, submitted: true, collectionsCash: openingBal, balanceCash: Number(form.cashRaw)||0, collectionsBank: Number(form.bankRaw)||0, collectionsDigital: Number(form.digitalRaw)||0, collectionDtp: Number(form.dtpRaw)||0, collectionsCard: Number(form.cardRaw)||0, collectionsCredit: (periodCreditSales + periodAdvances), periodExpenses: currentPeriodExpenses, balanceBank: Number(form.bankBal)||0, balanceDigital: Number(form.digitalBal)||0, balanceOd: newOdDebt, openingBalance: openingBal, netValue: calculatedNetValue };
 
     const isLatestEntry = sortedEntries.length === 0 || targetDate >= (sortedEntries[0].date || '');
 
@@ -2364,7 +2364,7 @@ const SettingsModule = () => {
             </div>
             <div className="p-3 bg-yellow-50 border border-yellow-100 rounded-lg">
               <p className="text-xs font-bold text-yellow-800 mb-1">⚠️ Schema Cache Issues?</p>
-              <p className="text-xs text-yellow-700">If you see "balnce_od schema cache" errors, go to <strong>Supabase → API → Schema Cache → Reload</strong>, then hard-refresh this page (Ctrl+Shift+R).</p>
+              <p className="text-xs text-yellow-700">If you see "balance_od schema cache" errors, go to <strong>Supabase → API → Schema Cache → Reload</strong>, then hard-refresh this page (Ctrl+Shift+R).</p>
             </div>
           </div>
         </div>
