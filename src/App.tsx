@@ -343,8 +343,116 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const updateTransaction = async (id: string, updates: any) => { const { error } = await supabase.from('transactions').update({ customer_id: updates.customerId, type: updates.type, date: updates.date, product: updates.product, quantity: updates.quantity, amount: updates.amount, payment_mode: updates.mode, vehicle_number: updates.vehicleNumber, remarks: updates.remarks }).eq('id', id); if (error) return showAlert("Update Failed: " + error.message); setTransactions(transactions.map(t => t.id === id ? { ...t, ...updates } : t)); showAlert("Transaction updated."); };
   const deleteTransaction = async (id: string) => { const { error } = await supabase.from('transactions').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setTransactions(transactions.filter(t => t.id !== id)); showAlert("Record deleted."); };
 
-  const addMorningEntry = async (e: any) => { const { data, error } = await supabase.from('morning_entries').insert([{ bunk_id: bId, entry_date: e.date, petrol_dip_today: e.petrolDip, diesel_dip_today: e.dieselDip, petrol_sold_litres: e.petrolSold, diesel_sold_litres: e.dieselSold, net_profit: e.netProfit, collection_variance: e.variance, collections_cash: e.collectionsCash, collections_sbi: e.collectionsBank, collections_hppay: e.collectionsDigital, collection_dtp: e.collectionDtp, collections_paytm: e.collectionsCard, collections_credit: e.collectionsCredit, period_expenses: e.periodExpenses, balance_sbi: e.balanceBank, balance_hp: e.balanceDigital, balnce_od: e.balnceOd, balance_cash: e.balanceCash, bunk_net_value: e.netValue }]).select(); if (error) return showAlert("Failed to save ledger: " + error.message); if (data && data.length > 0) setMorningEntries([{ ...e, id: data[0].id }, ...morningEntries]); };
-  const updateMorningEntry = async (id: string, updates: any) => { const { error } = await supabase.from('morning_entries').upsert({ id, bunk_id: bId, entry_date: updates.date, petrol_dip_today: updates.petrolDip, diesel_dip_today: updates.dieselDip, petrol_sold_litres: updates.petrolSold, diesel_sold_litres: updates.dieselSold, net_profit: updates.netProfit, collection_variance: updates.variance, collections_cash: updates.collectionsCash, collections_sbi: updates.collectionsBank, collections_hppay: updates.collectionsDigital, collection_dtp: updates.collectionDtp, collections_paytm: updates.collectionsCard, collections_credit: updates.collectionsCredit, period_expenses: updates.periodExpenses, balance_sbi: updates.balanceBank, balance_hp: updates.balanceDigital, balnce_od: updates.balnceOd, balance_cash: updates.balanceCash, bunk_net_value: updates.netValue }, { onConflict: 'id' }); if (error) return showAlert("Update Failed: " + error.message); setMorningEntries(morningEntries.map(m => m.id === id ? { ...m, ...updates } : m)); showAlert("Entry updated successfully."); };
+  const addMorningEntry = async (e: any) => {
+    // Use direct REST API fetch to bypass PostgREST schema cache issues with balnce_od column
+    // UPSERT on (bunk_id, entry_date) to prevent duplicate entry errors
+    const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
+    const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
+    const body = {
+      bunk_id: bId,
+      entry_date: e.date,
+      petrol_dip_today: e.petrolDip,
+      diesel_dip_today: e.dieselDip,
+      petrol_sold_litres: e.petrolSold,
+      diesel_sold_litres: e.dieselSold,
+      net_profit: e.netProfit,
+      collection_variance: e.variance,
+      collections_cash: e.collectionsCash,
+      collections_sbi: e.collectionsBank,
+      collections_hppay: e.collectionsDigital,
+      collection_dtp: e.collectionDtp,
+      collections_paytm: e.collectionsCard,
+      collections_credit: e.collectionsCredit,
+      period_expenses: e.periodExpenses,
+      balance_sbi: e.balanceBank,
+      balance_hp: e.balanceDigital,
+      balnce_od: e.balnceOd,
+      balance_cash: e.balanceCash,
+      bunk_net_value: e.netValue,
+    };
+    try {
+      const resp = await fetch(`${supabaseUrl}/rest/v1/morning_entries`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Prefer': 'return=representation,resolution=merge-duplicates',
+        },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const errText = await resp.text();
+        showAlert('Failed to save entry: ' + errText);
+        return;
+      }
+      const data = await resp.json();
+      const savedId = Array.isArray(data) && data.length > 0 ? data[0].id : null;
+      setMorningEntries([{ ...e, id: savedId || ('tmp-' + Date.now()) }, ...morningEntries]);
+    } catch (err: any) {
+      showAlert('Save Failed (network): ' + err.message);
+    }
+  };
+  const updateMorningEntry = async (id: string, updates: any) => {
+    // Use direct REST API fetch to bypass PostgREST schema cache issues with balnce_od column
+    const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
+    const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
+    const body = {
+      entry_date: updates.date,
+      petrol_dip_today: updates.petrolDip,
+      diesel_dip_today: updates.dieselDip,
+      petrol_sold_litres: updates.petrolSold,
+      diesel_sold_litres: updates.dieselSold,
+      net_profit: updates.netProfit,
+      collection_variance: updates.variance,
+      collections_cash: updates.collectionsCash,
+      collections_sbi: updates.collectionsBank,
+      collections_hppay: updates.collectionsDigital,
+      collection_dtp: updates.collectionDtp,
+      collections_paytm: updates.collectionsCard,
+      collections_credit: updates.collectionsCredit,
+      period_expenses: updates.periodExpenses,
+      balance_sbi: updates.balanceBank,
+      balance_hp: updates.balanceDigital,
+      balnce_od: updates.balnceOd,   // deliberate typo — DO NOT change
+      balance_cash: updates.balanceCash,
+      bunk_net_value: updates.netValue,
+    };
+    try {
+      const resp = await fetch(`${supabaseUrl}/rest/v1/morning_entries?id=eq.${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const errText = await resp.text();
+        if (errText.toLowerCase().includes('schema cache') || errText.toLowerCase().includes('balnce_od')) {
+          showAlert('Schema cache error — please hard-refresh the page (Ctrl+Shift+R / Cmd+Shift+R) and try again. If the issue persists, go to Supabase → API → Schema Cache → Reload.');
+        } else {
+          showAlert('Update Failed: ' + errText);
+        }
+        return;
+      }
+      // Update local state
+      setMorningEntries(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
+      // CRITICAL: Also update settings so dashboard OD reflects the new value
+      if (updates.balnceOd !== undefined) {
+        setSettings((prev: any) => ({ ...prev, currentOdBalance: updates.balnceOd, currentHpBalance: updates.balanceDigital ?? prev.currentHpBalance }));
+        // Persist to Supabase bunks table
+        if (bId) {
+          supabase.from('bunks').update({ current_od_balance: updates.balnceOd, current_hp_balance: updates.balanceDigital ?? 0 }).eq('id', bId);
+        }
+      }
+      showAlert('✅ Entry updated successfully!');
+    } catch (err: any) {
+      showAlert('Update Failed (network): ' + err.message);
+    }
+  };
   const deleteMorningEntry = async (id: string) => { const { error } = await supabase.from('morning_entries').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setMorningEntries(morningEntries.filter(m => m.id !== id)); showAlert("Morning entry deleted."); };
 
   const addExpense = async (e: any) => { const { data, error } = await supabase.from('expenses').insert([{ bunk_id: bId, date: e.date, category: e.category, amount: e.amount, description: e.description, vendor: e.vendor, payment_mode: e.mode }]).select(); if (error) return showAlert("Failed to record expense: " + error.message); if (data && data.length > 0) setExpenses([{ ...e, id: data[0].id }, ...expenses]); showAlert("Expense recorded."); };
@@ -665,12 +773,19 @@ const Dashboard = () => {
   const sortedEntries = [...morningEntries].sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
   const latestEntry = sortedEntries.length > 0 ? sortedEntries[0] : null;
   
-  const strictlyLiquidAssets = latestEntry ? ((Number(latestEntry.collectionsCash) || 0) + (Number(latestEntry.balanceBank) || 0) + (Number(latestEntry.balanceDigital) || 0)) : 0;
+  const strictlyLiquidAssets = latestEntry ? ((Number(latestEntry.balanceCash) || 0) + (Number(latestEntry.balanceBank) || 0) + (Number(latestEntry.balanceDigital) || 0)) : 0;
   const fuelStockValue = (latestEntry ? latestEntry.petrolDip : (settings?.initialPetrolDip || 0)) * (settings?.petrolRate || 0) + (latestEntry ? latestEntry.dieselDip : (settings?.initialDieselDip || 0)) * (settings?.dieselRate || 0);
   const odLimitDash = Number(settings?.odLimit) || 3000000;
-  const rawOdDebt = latestEntry ? Number(latestEntry.balnceOd || 0) : Number(settings?.currentOdBalance || 0);
-  const currentOdBalance = rawOdDebt; // stored as debt (negative = drawn)
-  const odAvailableDisplay = rawOdDebt + odLimitDash; // actual available = limit - abs(debt) = debt + limit
+  // balnce_od is stored as negative debt value; available = limit + debt
+  const latestOdEntry = sortedEntries.length > 0 ? sortedEntries[0] : null;
+  const odEntryIsToday = latestOdEntry?.date === getTodayIST();
+  const rawOdDebt = latestOdEntry ? Number(latestOdEntry.balnceOd || 0) : Number(settings?.currentOdBalance || 0);
+  const currentOdBalance = rawOdDebt;
+  const odAvailableDisplay = rawOdDebt + odLimitDash;
+  const odUsedAmount = Math.max(0, odLimitDash - odAvailableDisplay);
+  const odUsedPct = odLimitDash > 0 ? (odUsedAmount / odLimitDash) * 100 : 0;
+  const odColor = odUsedPct > 80 ? 'text-red-300' : odUsedPct > 50 ? 'text-orange-300' : 'text-green-300';
+  const odBgColor = odUsedPct > 80 ? 'bg-red-900/40 border-red-500/30' : odUsedPct > 50 ? 'bg-orange-900/30 border-orange-500/20' : 'bg-green-900/20 border-green-500/20';
   const bunkNetValue = totalReceivables + strictlyLiquidAssets + fuelStockValue + currentOdBalance;
 
   // --- 2. PERIOD ANALYTICS (Dynamic Math) ---
@@ -791,11 +906,11 @@ const Dashboard = () => {
                  <p className="text-[10px] md:text-xs text-blue-300 uppercase tracking-wider font-bold mb-1">Fuel Stock Value</p>
                  <p className="text-base md:text-lg font-bold">{formatLakhs(fuelStockValue)}</p>
               </div>
-              <div className="bg-red-900/30 p-3 rounded-xl border border-red-500/20">
-                 <p className="text-[10px] md:text-xs text-red-300 uppercase tracking-wider font-bold mb-1">OD Available</p>
-                 <p className="text-base md:text-lg font-bold text-red-200">{formatRs(Math.max(0, odAvailableDisplay))}</p>
-                 <p className="text-[10px] text-red-400 mt-0.5">Used: {formatRs(Math.max(0, odLimitDash - odAvailableDisplay))}</p>
-              </div>
+               <div className={`p-3 rounded-xl border ${odBgColor}`}>
+                  <p className="text-[10px] md:text-xs text-blue-300 uppercase tracking-wider font-bold mb-1">OD Available {!odEntryIsToday && latestOdEntry ? <span className="normal-case font-normal opacity-70">(as of {latestOdEntry.date})</span> : null}</p>
+                  <p className={`text-base md:text-lg font-bold ${odColor}`}>{formatRs(Math.max(0, odAvailableDisplay))}</p>
+                  <p className={`text-[10px] mt-0.5 ${odUsedPct > 80 ? 'text-red-400' : odUsedPct > 50 ? 'text-orange-400' : 'text-green-400'}`}>Used: {formatRs(odUsedAmount)} ({odUsedPct.toFixed(0)}%)</p>
+               </div>
            </div>
         </div>
       )}
@@ -1011,8 +1126,10 @@ const CustomerList = () => {
     showConfirm(`Delete ${c.companyName} completely?`, () => deleteCustomer(c.id));
   };
 
-  const displayedCustomers = customers.filter(c => { 
-     const matchesSearch = c.companyName.toLowerCase().includes(searchTerm.toLowerCase()) || c.phone.includes(searchTerm);
+  const displayedCustomers = customers.filter(c => {
+     const lowerSearch = searchTerm.toLowerCase();
+     const vehicleStr = c.vehicleNumbers ? (() => { try { const v = JSON.parse(c.vehicleNumbers); if (Array.isArray(v)) return v.map((vv:any) => `${vv.fullNumber||''} ${vv.shortCode||''}`).join(' ').toLowerCase(); } catch {} return c.vehicleNumbers.toLowerCase(); })() : '';
+     const matchesSearch = !searchTerm || c.companyName.toLowerCase().includes(lowerSearch) || c.phone.includes(searchTerm) || vehicleStr.includes(lowerSearch);
      if (!matchesSearch) return false;
      if (customerFilter === 'All') return true; 
      if (customerFilter === 'overdue') return getCustomerBalance(c.id) > c.creditLimit; 
@@ -1668,7 +1785,7 @@ const MorningEntryForm = () => {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                 <div>
                   <label className="block text-sm font-bold text-orange-700 mb-1">Opening Cash (Float) *</label>
-                  <input type="number" value={form.openingBalance} onChange={e=>setForm({...form, openingBalance: e.target.value})} className="w-full p-3 border-2 border-orange-300 bg-orange-50 rounded-lg outline-none text-base font-bold text-orange-900" placeholder="0" />
+                  <input type="number" min="0" value={form.openingBalance} onChange={e=>setForm({...form, openingBalance: e.target.value})} className="w-full p-3 border-2 border-orange-300 bg-orange-50 rounded-lg outline-none text-base font-bold text-orange-900" placeholder="0" />
                 </div>
                 <div><label className="block text-sm font-medium mb-1">End of Day Vault Cash *</label><input type="number" value={form.cashRaw} onChange={e=>setForm({...form, cashRaw: e.target.value})} className="w-full p-3 border rounded-lg outline-none text-base" placeholder="0" /></div>
                 <div><label className="block text-sm font-medium mb-1">Bank Transfer (Rs)</label><input type="number" value={form.bankRaw} onChange={e=>setForm({...form, bankRaw: e.target.value})} className="w-full p-3 border rounded-lg outline-none text-base" placeholder="0" /></div>
@@ -2022,6 +2139,108 @@ const FuelStockModule = () => {
   );
 };
 
+// Monthly Reports Module (FIX 6)
+const MonthlyReports = () => {
+  const { morningEntries, transactions, expenses, fuelPurchases, customers, settings, dataLoading } = useAppContext();
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthStr);
+
+  const monthEntries = morningEntries.filter(e => e.date?.startsWith(selectedMonth));
+  const monthTx = transactions.filter(t => t.date?.startsWith(selectedMonth));
+  const monthExp = expenses.filter(e => e.date?.startsWith(selectedMonth));
+  const monthFuel = fuelPurchases.filter(f => f.date?.startsWith(selectedMonth));
+
+  const grossSalesRs = monthEntries.reduce((s, e) => s + (e.petrolSold||0)*(settings?.petrolRate||0) + (e.dieselSold||0)*(settings?.dieselRate||0), 0);
+  const creditSales = monthTx.filter(t => t.type === 'credit_sale').reduce((s, t) => s + (t.amount||0), 0);
+  const paymentsRec = monthTx.filter(t => t.type === 'payment').reduce((s, t) => s + (t.amount||0), 0);
+  const totalExpenses = monthExp.reduce((s, e) => s + (e.amount||0), 0);
+  const fuelCost = monthFuel.reduce((s, f) => s + (f.amount||0), 0);
+  const netProfit = grossSalesRs - fuelCost - totalExpenses;
+
+  const topCustomers = customers.map(c => ({
+    name: c.companyName,
+    credit: monthTx.filter(t => t.customerId === c.id && t.type === 'credit_sale').reduce((s, t) => s + (t.amount||0), 0)
+  })).filter(x => x.credit > 0).sort((a, b) => b.credit - a.credit).slice(0, 5);
+
+  const handleExportCSV = () => {
+    let csv = `Monthly Report — ${selectedMonth}\n\nMetric,Amount (Rs)\n`;
+    csv += `Gross Sales,${grossSalesRs}\nCredit Sales,${creditSales}\nPayments Received,${paymentsRec}\nTotal Expenses,${totalExpenses}\nFuel Cost,${fuelCost}\nNet Profit,${netProfit}\n\nTop Customers by Credit\nCustomer,Amount\n`;
+    topCustomers.forEach(c => { csv += `"${c.name}",${c.credit}\n`; });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `FuelDesk_Report_${selectedMonth}.csv`;
+    link.click();
+  };
+
+  if (dataLoading) return <div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">Monthly Reports</h2>
+          <p className="text-gray-500 text-sm">Financial summary for the selected month.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-blue-900 bg-white shadow-sm" />
+          <button onClick={handleExportCSV} className="flex items-center gap-2 px-4 py-2 bg-blue-800 text-white rounded-lg font-bold hover:bg-blue-900 transition shadow-sm"><Download size={16}/> Export CSV</button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {[
+          { label: 'Gross Sales', value: grossSalesRs, color: 'text-blue-700', bg: 'bg-blue-50 border-blue-100' },
+          { label: 'Credit Sales', value: creditSales, color: 'text-orange-700', bg: 'bg-orange-50 border-orange-100' },
+          { label: 'Payments Received', value: paymentsRec, color: 'text-green-700', bg: 'bg-green-50 border-green-100' },
+          { label: 'Fuel Cost', value: fuelCost, color: 'text-red-700', bg: 'bg-red-50 border-red-100' },
+          { label: 'Total Expenses', value: totalExpenses, color: 'text-purple-700', bg: 'bg-purple-50 border-purple-100' },
+          { label: 'Net Profit', value: netProfit, color: netProfit >= 0 ? 'text-green-700' : 'text-red-700', bg: netProfit >= 0 ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100' },
+        ].map(card => (
+          <div key={card.label} className={`rounded-xl border p-5 ${card.bg}`}>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">{card.label}</p>
+            <p className={`text-2xl font-black ${card.color}`}>{formatRs(card.value)}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+        <h3 className="font-bold text-gray-800 mb-4 flex items-center"><TrendingUp size={18} className="mr-2 text-blue-500"/> Top 5 Customers by Credit</h3>
+        {topCustomers.length === 0 ? <p className="text-gray-400 text-sm italic">No credit transactions this month.</p> : (
+          <div className="space-y-2">
+            {topCustomers.map((c, i) => (
+              <div key={i} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                <span className="font-medium text-gray-800">#{i+1} {c.name}</span>
+                <span className="font-bold text-orange-600">{formatRs(c.credit)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="p-4 border-b bg-gray-50"><h3 className="font-bold text-gray-800">Daily Entry Summary</h3></div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-white border-b"><tr><th className="p-3 text-gray-500">Date</th><th className="p-3 text-gray-500 text-right">Petrol (L)</th><th className="p-3 text-gray-500 text-right">Diesel (L)</th><th className="p-3 text-gray-500 text-right">Gross Sales</th><th className="p-3 text-gray-500 text-right">Variance</th></tr></thead>
+            <tbody className="divide-y divide-gray-100">
+              {monthEntries.sort((a,b)=>new Date(b.date).getTime()-new Date(a.date).getTime()).map((e, idx) => (
+                <tr key={e.id||idx} className="hover:bg-gray-50">
+                  <td className="p-3 font-medium">{formatISTDate(e.date)}</td>
+                  <td className="p-3 text-right">{(e.petrolSold||0).toFixed(0)}</td>
+                  <td className="p-3 text-right">{(e.dieselSold||0).toFixed(0)}</td>
+                  <td className="p-3 text-right font-bold">{formatRs((e.petrolSold||0)*(settings?.petrolRate||0)+(e.dieselSold||0)*(settings?.dieselRate||0))}</td>
+                  <td className={`p-3 text-right font-bold ${(e.variance||0)<0?'text-red-600':'text-green-600'}`}>{(e.variance||0)<0?'-':'+'}{formatRs(Math.abs(e.variance||0))}</td>
+                </tr>
+              ))}
+              {monthEntries.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-gray-400">No entries for this month.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Settings Module
 const SettingsModule = () => {
   const { settings, updateSettings, users, addUser, deleteUser, user, customers, transactions, showAlert, showConfirm, dataLoading } = useAppContext();
@@ -2127,6 +2346,25 @@ const SettingsModule = () => {
             </div>
             <button type="submit" disabled={isSubmitting} className="w-full bg-blue-800 text-white py-3 rounded-xl font-bold shadow hover:bg-blue-900 transition disabled:opacity-50">{isSubmitting ? 'Saving...' : 'Update Settings'}</button>
           </form>
+        </div>
+
+        {/* WhatsApp Bot Info Card (FIX 10) */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
+          <div className="flex items-center mb-4 border-b pb-2"><MessageCircle className="text-green-500 mr-2" /><h3 className="text-lg font-bold">WhatsApp Bot Status</h3></div>
+          <div className="space-y-3">
+            <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg border border-green-100">
+              <span className="text-sm font-medium text-gray-700">Bot Number</span>
+              <span className="font-bold text-green-800">+91 90636 78438</span>
+            </div>
+            <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg border">
+              <span className="text-sm font-medium text-gray-700">Bot Status</span>
+              <span className="flex items-center gap-1.5 font-bold text-green-700"><span className="w-2 h-2 bg-green-500 rounded-full inline-block animate-pulse"></span>Active</span>
+            </div>
+            <div className="p-3 bg-yellow-50 border border-yellow-100 rounded-lg">
+              <p className="text-xs font-bold text-yellow-800 mb-1">⚠️ Schema Cache Issues?</p>
+              <p className="text-xs text-yellow-700">If you see "balnce_od schema cache" errors, go to <strong>Supabase → API → Schema Cache → Reload</strong>, then hard-refresh this page (Ctrl+Shift+R).</p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2255,6 +2493,7 @@ const AppContent = () => {
     { id: 'fuel', label: 'Fuel Receipts', icon: Truck, roles: ['owner', 'supervisor'] },
     { id: 'morning', label: 'Morning Entry', icon: Sun, roles: ['owner', 'supervisor'] },
     { id: 'expenses', label: 'Expenses', icon: Receipt, roles: ['owner', 'supervisor'] },
+    { id: 'reports', label: 'Reports', icon: TrendingUp, roles: ['owner'] },
     { id: 'settings', label: 'Settings', icon: Settings, roles: ['owner'] },
   ];
 
@@ -2290,6 +2529,7 @@ const AppContent = () => {
             {currentRoute === 'fuel' && <FuelStockModule />}
             {currentRoute === 'morning' && <MorningEntryForm />}
             {currentRoute === 'expenses' && <ExpenseModule />}
+            {currentRoute === 'reports' && <MonthlyReports />}
             {currentRoute === 'settings' && <SettingsModule />}
           </div>
         </div>
