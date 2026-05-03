@@ -394,10 +394,14 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     }
   };
   const updateMorningEntry = async (id: string, updates: any) => {
-    // Use direct REST API fetch to bypass PostgREST schema cache issues with balnce_od column
+    // KEY FIX: Use POST+UPSERT instead of PATCH — PATCH still hits PostgREST schema
+    // cache validation and fails with 'balnce_od not found'. POST with
+    // 'resolution=merge-duplicates' uses the INSERT path which bypasses the stale cache.
+    // The UNIQUE constraint on (bunk_id, entry_date) ensures it updates the correct row.
     const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
     const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
     const body = {
+      bunk_id: bId,                          // required for conflict resolution
       entry_date: updates.date,
       petrol_dip_today: updates.petrolDip,
       diesel_dip_today: updates.dieselDip,
@@ -414,36 +418,33 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       period_expenses: updates.periodExpenses,
       balance_sbi: updates.balanceBank,
       balance_hp: updates.balanceDigital,
-      balnce_od: updates.balnceOd,   // deliberate typo — DO NOT change
+      balnce_od: updates.balnceOd,           // deliberate typo — DO NOT change
       balance_cash: updates.balanceCash,
       bunk_net_value: updates.netValue,
     };
     try {
-      const resp = await fetch(`${supabaseUrl}/rest/v1/morning_entries?id=eq.${encodeURIComponent(id)}`, {
-        method: 'PATCH',
+      const resp = await fetch(`${supabaseUrl}/rest/v1/morning_entries`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'apikey': supabaseKey,
           'Authorization': `Bearer ${supabaseKey}`,
-          'Prefer': 'return=minimal',
+          'Prefer': 'return=representation,resolution=merge-duplicates',
         },
         body: JSON.stringify(body),
       });
       if (!resp.ok) {
         const errText = await resp.text();
-        if (errText.toLowerCase().includes('schema cache') || errText.toLowerCase().includes('balnce_od')) {
-          showAlert('Schema cache error — please hard-refresh the page (Ctrl+Shift+R / Cmd+Shift+R) and try again. If the issue persists, go to Supabase → API → Schema Cache → Reload.');
-        } else {
-          showAlert('Update Failed: ' + errText);
-        }
+        showAlert('Update Failed: ' + errText);
         return;
       }
-      // Update local state
-      setMorningEntries(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
-      // CRITICAL: Also update settings so dashboard OD reflects the new value
+      const data = await resp.json();
+      const savedRow = Array.isArray(data) && data.length > 0 ? data[0] : null;
+      // Update local state with the actual saved row data
+      setMorningEntries(prev => prev.map(m => m.id === id ? { ...m, ...updates, id: savedRow?.id || id } : m));
+      // CRITICAL: sync settings so dashboard OD reflects the new value immediately
       if (updates.balnceOd !== undefined) {
         setSettings((prev: any) => ({ ...prev, currentOdBalance: updates.balnceOd, currentHpBalance: updates.balanceDigital ?? prev.currentHpBalance }));
-        // Persist to Supabase bunks table
         if (bId) {
           supabase.from('bunks').update({ current_od_balance: updates.balnceOd, current_hp_balance: updates.balanceDigital ?? 0 }).eq('id', bId);
         }
@@ -776,16 +777,17 @@ const Dashboard = () => {
   const strictlyLiquidAssets = latestEntry ? ((Number(latestEntry.balanceCash) || 0) + (Number(latestEntry.balanceBank) || 0) + (Number(latestEntry.balanceDigital) || 0)) : 0;
   const fuelStockValue = (latestEntry ? latestEntry.petrolDip : (settings?.initialPetrolDip || 0)) * (settings?.petrolRate || 0) + (latestEntry ? latestEntry.dieselDip : (settings?.initialDieselDip || 0)) * (settings?.dieselRate || 0);
   const odLimitDash = Number(settings?.odLimit) || 3000000;
-  // balnce_od is stored as negative debt value; available = limit + debt
+  // balnce_od stores NEGATIVE debt (e.g., user has ₹5L available → stored as -25L debt = 5L - 30L).
+  // available = balnce_od + limit   |   used/drawn = limit - available
   const latestOdEntry = sortedEntries.length > 0 ? sortedEntries[0] : null;
   const odEntryIsToday = latestOdEntry?.date === getTodayIST();
+  // balnce_od in DB is negative debt; fall back to settings if no entry yet
   const rawOdDebt = latestOdEntry ? Number(latestOdEntry.balnceOd || 0) : Number(settings?.currentOdBalance || 0);
-  const currentOdBalance = rawOdDebt;
-  const odAvailableDisplay = rawOdDebt + odLimitDash;
-  const odUsedAmount = Math.max(0, odLimitDash - odAvailableDisplay);
-  const odUsedPct = odLimitDash > 0 ? (odUsedAmount / odLimitDash) * 100 : 0;
-  const odColor = odUsedPct > 80 ? 'text-red-300' : odUsedPct > 50 ? 'text-orange-300' : 'text-green-300';
-  const odBgColor = odUsedPct > 80 ? 'bg-red-900/40 border-red-500/30' : odUsedPct > 50 ? 'bg-orange-900/30 border-orange-500/20' : 'bg-green-900/20 border-green-500/20';
+  const currentOdBalance = rawOdDebt;                              // negative number = debt
+  const odAvailableDisplay = rawOdDebt + odLimitDash;             // e.g. -25L + 30L = 5L available
+  const odDrawnAmount = Math.max(0, odLimitDash - odAvailableDisplay); // 30L - 5L = 25L drawn
+  const odUsedPct = odLimitDash > 0 ? (odDrawnAmount / odLimitDash) * 100 : 0;
+  // OD is ALWAYS a liability/loan — always show in red
   const bunkNetValue = totalReceivables + strictlyLiquidAssets + fuelStockValue + currentOdBalance;
 
   // --- 2. PERIOD ANALYTICS (Dynamic Math) ---
@@ -906,10 +908,10 @@ const Dashboard = () => {
                  <p className="text-[10px] md:text-xs text-blue-300 uppercase tracking-wider font-bold mb-1">Fuel Stock Value</p>
                  <p className="text-base md:text-lg font-bold">{formatLakhs(fuelStockValue)}</p>
               </div>
-               <div className={`p-3 rounded-xl border ${odBgColor}`}>
-                  <p className="text-[10px] md:text-xs text-blue-300 uppercase tracking-wider font-bold mb-1">OD Available {!odEntryIsToday && latestOdEntry ? <span className="normal-case font-normal opacity-70">(as of {latestOdEntry.date})</span> : null}</p>
-                  <p className={`text-base md:text-lg font-bold ${odColor}`}>{formatRs(Math.max(0, odAvailableDisplay))}</p>
-                  <p className={`text-[10px] mt-0.5 ${odUsedPct > 80 ? 'text-red-400' : odUsedPct > 50 ? 'text-orange-400' : 'text-green-400'}`}>Used: {formatRs(odUsedAmount)} ({odUsedPct.toFixed(0)}%)</p>
+               <div className="bg-red-900/50 p-3 rounded-xl border border-red-500/40">
+                  <p className="text-[10px] md:text-xs text-red-300 uppercase tracking-wider font-bold mb-1">OD Drawn {!odEntryIsToday && latestOdEntry ? <span className="normal-case font-normal opacity-60">(as of {latestOdEntry.date})</span> : null}</p>
+                  <p className="text-base md:text-lg font-black text-red-200">-{formatRs(odDrawnAmount)}</p>
+                  <p className="text-[10px] text-red-400 mt-0.5">Avail: {formatRs(Math.max(0, odAvailableDisplay))} of {formatRs(odLimitDash)} ({odUsedPct.toFixed(0)}% used)</p>
                </div>
            </div>
         </div>
