@@ -788,15 +788,13 @@ const Dashboard = () => {
   const strictlyLiquidAssets = latestEntry ? ((Number(latestEntry.balanceCash) || 0) + (Number(latestEntry.balanceBank) || 0) + (Number(latestEntry.balanceDigital) || 0)) : 0;
   const fuelStockValue = (latestEntry ? latestEntry.petrolDip : (settings?.initialPetrolDip || 0)) * (settings?.petrolRate || 0) + (latestEntry ? latestEntry.dieselDip : (settings?.initialDieselDip || 0)) * (settings?.dieselRate || 0);
   const odLimitDash = Number(settings?.odLimit) || 3000000;
-  // balance_od stores NEGATIVE debt (e.g., user has ₹5L available → stored as -25L debt = 5L - 30L).
-  // available = balance_od + limit   |   used/drawn = limit - available
+  // balance_od stores the RAW AVAILABLE amount entered by user (e.g. 560000 = ₹5.6L available)
+  // OD drawn = limit - available   |   for net worth: liability = available - limit (negative)
   const latestOdEntry = sortedEntries.length > 0 ? sortedEntries[0] : null;
   const odEntryIsToday = latestOdEntry?.date === getTodayIST();
-  // balance_od in DB is negative debt; fall back to settings if no entry yet
-  const rawOdDebt = latestOdEntry ? Number(latestOdEntry.balanceOd || 0) : Number(settings?.currentOdBalance || 0);
-  const currentOdBalance = rawOdDebt;                              // negative number = debt
-  const odAvailableDisplay = rawOdDebt + odLimitDash;             // e.g. -25L + 30L = 5L available
-  const odDrawnAmount = Math.max(0, odLimitDash - odAvailableDisplay); // 30L - 5L = 25L drawn
+  const odAvailableDisplay = latestOdEntry ? Number(latestOdEntry.balanceOd || 0) : Number(settings?.currentOdBalance || 0);
+  const currentOdBalance = odAvailableDisplay - odLimitDash;   // negative = debt, for net worth
+  const odDrawnAmount = Math.max(0, odLimitDash - odAvailableDisplay);
   const odUsedPct = odLimitDash > 0 ? (odDrawnAmount / odLimitDash) * 100 : 0;
   // OD is ALWAYS a liability/loan — always show in red
   const bunkNetValue = totalReceivables + strictlyLiquidAssets + fuelStockValue + currentOdBalance;
@@ -1654,8 +1652,7 @@ const MorningEntryForm = () => {
   };
 
   const openEdit = (m: MorningEntry) => {
-    const odLim = Number(settings.odLimit) || 3000000;
-    const availableOd = (m.balanceOd || 0) + odLim;
+    const availableOd = m.balanceOd || 0;   // balance_od stores raw available amount directly
     setEditId(m.id); setEntryDate(m.date);
     setForm({ petrolDip: m.petrolDip.toString(), dieselDip: m.dieselDip.toString(), openingBalance: m.collectionsCash?.toString() || '', cashRaw: m.balanceCash?.toString() || '', bankRaw: m.collectionsBank?.toString() || '', digitalRaw: m.collectionsDigital?.toString() || '', dtpRaw: m.collectionDtp?.toString() || '', cardRaw: m.collectionsCard?.toString() || '', bankBal: m.balanceBank?.toString() || '', odBal: availableOd.toString(), digitalBal: m.balanceDigital?.toString() || '' });
     setStep(1); window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1703,7 +1700,8 @@ const MorningEntryForm = () => {
   const currentFuelStockValue = (pDip * (settings?.petrolRate || 0)) + (dDip * (settings?.dieselRate || 0));
 
   const odLimSubmit = Number(settings.odLimit) || 3000000;
-  const newOdDebt = (Number(form.odBal) || 0) - odLimSubmit;
+  const odAvailableSave = Number(form.odBal) || 0;     // what user entered = available amount
+  const newOdDebt = odAvailableSave - odLimSubmit;      // negative liability for net worth calc
 
   const calculatedNetValue = strictlyLiquidAssets + newOdDebt + currentTotalReceivablesAsOfTargetDate + currentFuelStockValue;
 
@@ -1715,16 +1713,16 @@ const MorningEntryForm = () => {
     if (!validateInputs([], [pDip, dDip])) return;
 
     setIsSubmitting(true);
-    const payload = { date: targetDate, petrolDip: pDip, dieselDip: dDip, petrolSold, dieselSold, netProfit: trueNetProfit, variance, submitted: true, collectionsCash: openingBal, balanceCash: Number(form.cashRaw) || 0, collectionsBank: Number(form.bankRaw) || 0, collectionsDigital: Number(form.digitalRaw) || 0, collectionDtp: Number(form.dtpRaw) || 0, collectionsCard: Number(form.cardRaw) || 0, collectionsCredit: (periodCreditSales + periodAdvances), periodExpenses: currentPeriodExpenses, balanceBank: Number(form.bankBal) || 0, balanceDigital: Number(form.digitalBal) || 0, balanceOd: newOdDebt, openingBalance: openingBal, netValue: calculatedNetValue };
+    const payload = { date: entryDate, petrolDip: pDip, dieselDip: dDip, petrolSold, dieselSold, netProfit: trueNetProfit, variance, submitted: true, collectionsCash: openingBal, balanceCash: Number(form.cashRaw) || 0, collectionsBank: Number(form.bankRaw) || 0, collectionsDigital: Number(form.digitalRaw) || 0, collectionDtp: Number(form.dtpRaw) || 0, collectionsCard: Number(form.cardRaw) || 0, collectionsCredit: (periodCreditSales + periodAdvances), periodExpenses: currentPeriodExpenses, balanceBank: Number(form.bankBal) || 0, balanceDigital: Number(form.digitalBal) || 0, balanceOd: odAvailableSave, openingBalance: openingBal, netValue: calculatedNetValue };
 
     const isLatestEntry = sortedEntries.length === 0 || targetDate >= (sortedEntries[0].date || '');
 
     if (editId) {
       await updateMorningEntry(editId, payload);
-      if (isLatestEntry) await updateSettings({ ...settings, currentOdBalance: newOdDebt, currentHpBalance: Number(form.digitalBal) || 0 });
+      if (isLatestEntry) await updateSettings({ ...settings, currentOdBalance: odAvailableSave, currentHpBalance: Number(form.digitalBal) || 0 });
     } else {
       await addMorningEntry(payload);
-      if (isLatestEntry) await updateSettings({ ...settings, currentOdBalance: newOdDebt, currentHpBalance: Number(form.digitalBal) || 0 });
+      if (isLatestEntry) await updateSettings({ ...settings, currentOdBalance: odAvailableSave, currentHpBalance: Number(form.digitalBal) || 0 });
     }
     setIsSubmitting(false);
     setSubmitted(true);
@@ -1753,7 +1751,7 @@ const MorningEntryForm = () => {
             {editId && <button onClick={resetForm} className="bg-red-500 hover:bg-red-600 px-3 py-1 rounded text-sm font-bold shadow transition-colors">Cancel Edit</button>}
             <div className="bg-blue-800 rounded flex items-center p-1 border border-blue-700">
               <span className="text-xs font-bold px-2 uppercase tracking-widest text-blue-300">Date</span>
-              <input disabled={!!editId} type="date" value={entryDate} onChange={e => { setEntryDate(e.target.value); setStep(0); }} className="bg-transparent border-none text-sm font-bold outline-none text-white disabled:opacity-80" />
+              <input type="date" value={entryDate} onChange={e => { setEntryDate(e.target.value); if (!editId) setStep(0); }} className="bg-transparent border-none text-sm font-bold outline-none text-white" />
             </div>
           </div>
         </div>
