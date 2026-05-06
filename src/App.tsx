@@ -262,8 +262,17 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       // Expenses
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'expenses', filter: `bunk_id=eq.${targetBunk}` }, (payload) => { const d = payload.new as any; const newExp = { id: String(d.id), date: String(d.date || getTodayIST()), category: d.category || 'Other', amount: Number(d.amount) || 0, description: d.description || '', vendor: d.vendor || '', mode: d.payment_mode || '' }; setExpenses(prev => { if (prev.some(e => e.id === newExp.id)) return prev; return [newExp, ...prev]; }); })
       // Morning Entries — bot saves dip/sold/collections via WhatsApp
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'morning_entries', filter: `bunk_id=eq.${targetBunk}` }, (payload) => { const nm = mapMorningEntry(payload.new); setMorningEntries(prev => { if (prev.some(m => m.id === nm.id)) return prev; return [nm, ...prev]; }); })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'morning_entries', filter: `bunk_id=eq.${targetBunk}` }, (payload) => {
+        const nm = mapMorningEntry(payload.new);
+        setMorningEntries(prev => {
+          // Deduplicate by both id AND date — prevents double-add when optimistic state
+          // was already set by addMorningEntry before this realtime event arrived.
+          if (prev.some(m => m.id === nm.id || m.date === nm.date)) return prev.map(m => m.date === nm.date ? nm : m);
+          return [nm, ...prev];
+        });
+      })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'morning_entries', filter: `bunk_id=eq.${targetBunk}` }, (payload) => { const um = mapMorningEntry(payload.new); setMorningEntries(prev => prev.map(m => m.id === um.id ? um : m)); })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'morning_entries' }, (payload) => { setMorningEntries(prev => prev.filter(m => m.id !== String((payload.old as any).id))); })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [user?.id, user?.bunkId]);
@@ -345,7 +354,6 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   const addMorningEntry = async (e: any) => {
     // Use direct REST API fetch to bypass PostgREST schema cache issues with balance_od column
-    // UPSERT on (bunk_id, entry_date) to prevent duplicate entry errors
     const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
     const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
     const body = {
@@ -377,7 +385,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           'Content-Type': 'application/json',
           'apikey': supabaseKey,
           'Authorization': `Bearer ${supabaseKey}`,
-          'Prefer': 'return=representation,resolution=merge-duplicates',
+          // return=representation so we get the saved row id back
+          'Prefer': 'return=representation',
         },
         body: JSON.stringify(body),
       });
@@ -387,21 +396,24 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         return;
       }
       const data = await resp.json();
-      const savedId = Array.isArray(data) && data.length > 0 ? data[0].id : null;
-      setMorningEntries([{ ...e, id: savedId || ('tmp-' + Date.now()) }, ...morningEntries]);
+      const savedId = Array.isArray(data) && data.length > 0 ? String(data[0].id) : ('tmp-' + Date.now());
+      // Optimistically update local state — deduplicate by both id AND date to prevent
+      // double-render when the realtime INSERT event also fires for the same row.
+      setMorningEntries(prev => {
+        const withoutSameDate = prev.filter(m => m.date !== e.date && m.id !== savedId);
+        return [{ ...e, id: savedId }, ...withoutSameDate];
+      });
     } catch (err: any) {
       showAlert('Save Failed (network): ' + err.message);
     }
   };
   const updateMorningEntry = async (id: string, updates: any) => {
-    // KEY FIX: Use POST+UPSERT instead of PATCH — PATCH still hits PostgREST schema
-    // cache validation and fails with 'balance_od not found'. POST with
-    // 'resolution=merge-duplicates' uses the INSERT path which bypasses the stale cache.
-    // The UNIQUE constraint on (bunk_id, entry_date) ensures it updates the correct row.
+    // PATCH by the specific row id — this updates in-place without risk of creating duplicates.
+    // We use the raw fetch API (not supabase client) to include balance_od which may be missing
+    // from the PostgREST schema cache on older deployments.
     const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
     const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
     const body = {
-      bunk_id: bId,                          // required for conflict resolution
       entry_date: updates.date,
       petrol_dip_today: updates.petrolDip,
       diesel_dip_today: updates.dieselDip,
@@ -423,13 +435,14 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       bunk_net_value: updates.netValue,
     };
     try {
-      const resp = await fetch(`${supabaseUrl}/rest/v1/morning_entries`, {
-        method: 'POST',
+      // PATCH to /morning_entries?id=eq.<id> — updates exactly that one row, never inserts.
+      const resp = await fetch(`${supabaseUrl}/rest/v1/morning_entries?id=eq.${id}`, {
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           'apikey': supabaseKey,
           'Authorization': `Bearer ${supabaseKey}`,
-          'Prefer': 'return=representation,resolution=merge-duplicates',
+          'Prefer': 'return=representation',
         },
         body: JSON.stringify(body),
       });
@@ -438,10 +451,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         showAlert('Update Failed: ' + errText);
         return;
       }
-      const data = await resp.json();
-      const savedRow = Array.isArray(data) && data.length > 0 ? data[0] : null;
-      // Update local state with the actual saved row data
-      setMorningEntries(prev => prev.map(m => m.id === id ? { ...m, ...updates, id: savedRow?.id || id } : m));
+      // Update local state — keep same id, merge updated fields
+      setMorningEntries(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
       // CRITICAL: sync settings so dashboard OD reflects the new value immediately
       if (updates.balanceOd !== undefined) {
         setSettings((prev: any) => ({ ...prev, currentOdBalance: updates.balanceOd, currentHpBalance: updates.balanceDigital ?? prev.currentHpBalance }));
@@ -1325,7 +1336,7 @@ const CustomerList = () => {
 
 // Credit Ledger Module (Independent Scrolling & Advance Logic)
 const CreditLedger = () => {
-  const { user, customers, transactions, addTransaction, updateTransaction, deleteTransaction, settings, showAlert, validateInputs, dataLoading, sendWhatsAppAlert } = useAppContext();
+  const { user, customers, transactions, addTransaction, updateTransaction, deleteTransaction, settings, showAlert, showConfirm, validateInputs, dataLoading, sendWhatsAppAlert } = useAppContext();
   const [tab, setTab] = useState<'sale' | 'payment'>('sale');
   const [editId, setEditId] = useState<string | null>(null);
   const [txDate, setTxDate] = useState(getTodayIST());
