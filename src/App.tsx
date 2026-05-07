@@ -942,24 +942,55 @@ const Dashboard = () => {
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Calendar className="text-blue-500" size={24} />
-          <div>
-            <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">{formatISTDate(getTodayIST())}</p>
-            {todayEntry ? (
-              <p className="font-bold text-green-600 flex items-center gap-1 text-sm"><CheckCircle2 size={16} /> Morning Entry Submitted</p>
-            ) : (
-              <p className="font-bold text-orange-600 flex items-center gap-1 text-sm"><AlertCircle size={16} /> Morning Entry Pending</p>
-            )}
+      {/* MORNING ENTRY STATUS CARD — shows step-by-step completion */}
+      {(() => {
+        const hasDip = todayEntry && (Number(todayEntry.petrolDip) > 0 || Number(todayEntry.dieselDip) > 0);
+        const hasColls = todayEntry && (Number(todayEntry.collectionsCash) > 0 || Number(todayEntry.balanceCash) > 0 || Number(todayEntry.collectionsDigital) > 0);
+        const hasBank = todayEntry && (Number(todayEntry.balanceBank) > 0 || Number(todayEntry.balanceOd) >= 0 && todayEntry.balanceOd !== undefined && todayEntry.balanceOd !== null);
+        const allDone = hasDip && hasColls && hasBank;
+
+        const step = (done: boolean, label: string, detail?: string) => (
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium ${
+            done ? 'bg-green-50 border-green-200 text-green-700' : 'bg-amber-50 border-amber-200 text-amber-700'
+          }`}>
+            {done
+              ? <CheckCircle2 size={14} className="shrink-0 text-green-500" />
+              : <AlertCircle size={14} className="shrink-0 text-amber-500" />}
+            <span>{label}</span>
+            {detail && <span className="ml-auto opacity-60">{detail}</span>}
           </div>
-        </div>
-        {!todayEntry && (
-          <button onClick={() => setCurrentRoute('morning')} className="text-sm font-bold text-blue-600 hover:underline">
-            → Start Entry
-          </button>
-        )}
-      </div>
+        );
+
+        return (
+          <div className={`rounded-xl border p-4 ${
+            allDone ? 'bg-green-50 border-green-200' : todayEntry ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'
+          }`}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Sun size={18} className={allDone ? 'text-green-600' : 'text-amber-600'} />
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-gray-600">{formatISTDate(getTodayIST())}</p>
+                  <p className={`font-bold text-sm ${ allDone ? 'text-green-700' : todayEntry ? 'text-amber-700' : 'text-red-700' }`}>
+                    {allDone ? '✅ All Steps Complete' : todayEntry ? '⏳ Entry In Progress' : '❗ Entry Not Started'}
+                  </p>
+                </div>
+              </div>
+              {!allDone && (
+                <button onClick={() => setCurrentRoute('morning')}
+                  className="text-xs font-bold px-3 py-1.5 bg-blue-700 text-white rounded-lg hover:bg-blue-800 transition shadow-sm">
+                  {todayEntry ? 'Continue →' : 'Start Entry →'}
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {step(!!todayEntry, 'Morning Started')}
+              {step(hasDip ?? false, 'Dip Readings', todayEntry ? `P:${(todayEntry.petrolDip||0).toFixed(0)}L D:${(todayEntry.dieselDip||0).toFixed(0)}L` : undefined)}
+              {step(hasColls ?? false, 'Collections', hasColls && todayEntry ? formatRs((todayEntry.collectionsCash||0)+(todayEntry.balanceCash||0)+(todayEntry.collectionsDigital||0)) : undefined)}
+              {step(hasBank ?? false, 'Bank Balances', hasBank && todayEntry ? `OD: ${formatRs(todayEntry.balanceOd||0)}` : undefined)}
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         <div onClick={() => { setCustomerFilter('All'); setCurrentRoute('customers'); }} className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 flex items-center cursor-pointer hover:bg-gray-50 transition"><div className="w-10 h-10 rounded-full flex items-center justify-center mr-3 shrink-0 bg-indigo-50 text-indigo-600"><Users size={18} /></div><div><p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Total Customers</p><p className="text-base font-bold text-gray-900">{totalCustomers}</p></div></div>
@@ -1461,7 +1492,8 @@ const CreditLedger = () => {
 
   return (
     <div className="flex flex-col lg:flex-row gap-6">
-      <div className="lg:w-1/3 lg:overflow-y-auto pr-2 pb-10 space-y-4 relative">
+      {/* LEFT PANEL — Transaction Form (sticky on desktop) */}
+      <div className="lg:w-1/3 lg:sticky lg:top-0 lg:self-start lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto pr-2 pb-10 space-y-4">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
           <div className="flex border-b mb-6 text-sm"><button disabled={!!editId && tab !== 'sale'} className={`flex-1 pb-2 font-bold transition-colors ${tab === 'sale' ? 'text-blue-800 border-b-2 border-blue-800' : 'text-gray-400 hover:text-gray-600 disabled:opacity-50'}`} onClick={() => setTab('sale')}>+ Sale / Advance</button><button disabled={!!editId && tab !== 'payment'} className={`flex-1 pb-2 font-bold transition-colors ${tab === 'payment' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-400 hover:text-gray-600 disabled:opacity-50'}`} onClick={() => setTab('payment')}>+ Payment</button></div>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -1494,8 +1526,9 @@ const CreditLedger = () => {
         </div>
       </div>
 
-      <div className="lg:w-2/3 pl-2 pb-10 flex flex-col relative">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+      {/* RIGHT PANEL — Ledger History (independently scrollable on desktop) */}
+      <div className="lg:w-2/3 flex flex-col min-h-0">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col" style={{ maxHeight: 'calc(100vh - 8rem)' }}>
           <div className="p-4 border-b bg-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
             <h3 className="font-bold text-gray-800 text-xl">Daily Ledger History</h3>
             <div className="relative w-full sm:w-64">
@@ -1504,7 +1537,7 @@ const CreditLedger = () => {
             </div>
           </div>
 
-          <div className="space-y-4 mt-2 flex-1 p-4 pt-0">
+          <div className="space-y-4 mt-2 flex-1 p-4 pt-0 overflow-y-auto">
             {paginatedDates.length === 0 ? (
               <div className="bg-white p-10 flex flex-col items-center justify-center text-gray-400 rounded-xl border border-gray-100">
                 <SearchX size={48} className="mb-4 opacity-20" />
