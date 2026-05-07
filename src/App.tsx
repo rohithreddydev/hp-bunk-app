@@ -348,7 +348,23 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   const deleteCustomer = async (id: string) => { const { error } = await supabase.from('customers').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setCustomers(customers.filter(c => c.id !== id)); showAlert("Customer permanently removed."); };
 
-  const addTransaction = async (t: any) => { const { data, error } = await supabase.from('transactions').insert([{ bunk_id: bId, customer_id: t.customerId, type: t.type, date: t.date, product: t.product, quantity: t.quantity, amount: t.amount, payment_mode: t.mode, vehicle_number: t.vehicleNumber, remarks: t.remarks }]).select(); if (error) return showAlert("Transaction Failed: " + error.message); if (data && data.length > 0) setTransactions([{ ...t, id: data[0].id }, ...transactions]); };
+  const addTransaction = async (t: any) => {
+    const { data, error } = await supabase.from('transactions').insert([{
+      bunk_id: bId, customer_id: t.customerId, type: t.type, date: t.date,
+      product: t.product, quantity: t.quantity, amount: t.amount,
+      payment_mode: t.mode, vehicle_number: t.vehicleNumber, remarks: t.remarks
+    }]).select();
+    if (error) { console.error('addTransaction error:', error); return showAlert("Transaction Failed: " + error.message); }
+    if (data && data.length > 0) {
+      // Use functional form to avoid stale closure on transactions array
+      setTransactions(prev => {
+        const newTx: Transaction = { ...t, id: String(data[0].id) };
+        if (prev.some(x => x.id === newTx.id)) return prev;
+        return [newTx, ...prev];
+      });
+    }
+  };
+
   const updateTransaction = async (id: string, updates: any) => { const { error } = await supabase.from('transactions').update({ customer_id: updates.customerId, type: updates.type, date: updates.date, product: updates.product, quantity: updates.quantity, amount: updates.amount, payment_mode: updates.mode, vehicle_number: updates.vehicleNumber, remarks: updates.remarks }).eq('id', id); if (error) return showAlert("Update Failed: " + error.message); setTransactions(transactions.map(t => t.id === id ? { ...t, ...updates } : t)); showAlert("Transaction updated."); };
   const deleteTransaction = async (id: string) => { const { error } = await supabase.from('transactions').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setTransactions(transactions.filter(t => t.id !== id)); showAlert("Record deleted."); };
 
@@ -1923,7 +1939,29 @@ const MorningEntryForm = () => {
                   <td className="p-4 whitespace-nowrap font-medium">{formatISTDate(e.date)}</td>
                   <td className="p-4 whitespace-nowrap">{formatRs(e.petrolSold * (settings.petrolRate || 0) + e.dieselSold * (settings.dieselRate || 0))}</td>
                   <td className="p-4 whitespace-nowrap text-gray-600">{formatRs(((e.collectionsCash || 0) - (e.openingBalance || 0)) + (e.collectionsBank || 0) + (e.collectionsDigital || 0) + (e.collectionDtp || 0) + (e.collectionsCard || 0))}</td>
-                  <td className="p-4 whitespace-nowrap text-orange-600 font-medium">{formatRs(e.collectionsCredit || 0)}</td>
+                  <td className="p-4 whitespace-nowrap text-orange-600 font-medium">{(() => {
+                    // Compute credit extended for this entry's date range dynamically
+                    // so bot-submitted entries (which don't write collections_credit) show correctly.
+                    const prevEntry = sortedEntries.find(pe => (pe.date || '') < (e.date || ''));
+                    const prevDate = prevEntry ? prevEntry.date : '1970-01-01';
+                    const rangeTxns = transactions.filter(t =>
+                      (t.date || '') > prevDate && (t.date || '') <= (e.date || '')
+                    );
+                    const creditFromTxns = rangeTxns
+                      .filter(t => t.type === 'credit_sale' || t.type === 'opening_balance')
+                      .reduce((sum, t) => {
+                        let total = t.amount || 0;
+                        if (t.remarks?.startsWith('advance:')) {
+                          total += Number(t.remarks.split('|')[0].split(':')[1]) || 0;
+                        }
+                        return sum + total;
+                      }, 0)
+                      + rangeTxns.filter(t => t.type === 'advance').reduce((sum, t) => sum + (t.amount || 0), 0);
+                    // Fall back to DB value only if no transactions are loaded yet
+                    const displayCredit = rangeTxns.length > 0 ? creditFromTxns : (e.collectionsCredit || 0);
+                    return formatRs(displayCredit);
+                  })()}</td>
+
                   <td className={`p-4 whitespace-nowrap font-bold ${e.variance < 0 ? 'text-red-600' : 'text-green-600'}`}>{e.variance < 0 ? '-' : '+'}{formatRs(Math.abs(e.variance))}</td>
                   {userRole === 'owner' && (<td className="p-4 flex justify-center gap-2"><button onClick={() => openEdit(e)} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition"><Edit2 size={16} /></button><button onClick={() => showConfirm("Delete entry?", () => deleteMorningEntry(e.id))} className="text-red-500 p-2 hover:bg-red-100 rounded-lg transition"><Trash2 size={16} /></button></td>)}
                 </tr>
