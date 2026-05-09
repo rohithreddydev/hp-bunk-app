@@ -207,19 +207,19 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       setDataLoading(true);
       try {
         if (user.role === 'customer') {
-          const { data: txData } = await supabase.from('transactions').select('*').eq('customer_id', user.id).order('created_at', { ascending: false });
+          const { data: txData } = await supabase.from('transactions').select('*').eq('customer_id', user.id).order('created_at', { ascending: false }).range(0, 499);
           if (txData) setTransactions(txData.map(mapTx));
           setDataLoading(false); return;
         }
 
         const [{ data: bunkData }, { data: custData }, { data: txData }, { data: expData }, { data: fuelData }, { data: profData }, { data: morningData }] = await Promise.all([
           supabase.from('bunks').select('*').eq('id', targetBunk),
-          supabase.from('customers').select('*').eq('bunk_id', targetBunk),
-          supabase.from('transactions').select('*').eq('bunk_id', targetBunk).order('created_at', { ascending: false }),
-          supabase.from('expenses').select('*').eq('bunk_id', targetBunk).order('created_at', { ascending: false }),
-          supabase.from('fuel_purchases').select('*').eq('bunk_id', targetBunk).order('created_at', { ascending: false }),
-          supabase.from('profiles').select('*').eq('bunk_id', targetBunk),
-          supabase.from('morning_entries').select('*').eq('bunk_id', targetBunk).order('created_at', { ascending: false })
+          supabase.from('customers').select('*').eq('bunk_id', targetBunk).range(0, 499),
+          supabase.from('transactions').select('*').eq('bunk_id', targetBunk).order('created_at', { ascending: false }).range(0, 999),
+          supabase.from('expenses').select('*').eq('bunk_id', targetBunk).order('created_at', { ascending: false }).range(0, 499),
+          supabase.from('fuel_purchases').select('*').eq('bunk_id', targetBunk).order('created_at', { ascending: false }).range(0, 499),
+          supabase.from('profiles').select('*').eq('bunk_id', targetBunk).range(0, 99),
+          supabase.from('morning_entries').select('*').eq('bunk_id', targetBunk).order('created_at', { ascending: false }).range(0, 365)
         ]);
 
         if (bunkData && bunkData.length > 0) {
@@ -369,6 +369,11 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const deleteTransaction = async (id: string) => { const { error } = await supabase.from('transactions').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setTransactions(transactions.filter(t => t.id !== id)); showAlert("Record deleted."); };
 
   const addMorningEntry = async (e: any) => {
+    // Guard against double-submission for the same date
+    if (morningEntries.some(m => m.date === e.date)) {
+      showAlert(`An entry for ${e.date} already exists. Use edit to update it.`);
+      return;
+    }
     // Use direct REST API fetch to bypass PostgREST schema cache issues with balance_od column
     const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
     const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
@@ -530,7 +535,25 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     setUsers([...users, { id: authData.user.id, name: u.name, email: cleanEmail, role: String(u.role).toLowerCase() as Role, bunkId: bId }]);
     showAlert(`Staff account created. Ensure they verify their email to log in.`);
   };
-  const deleteUser = async (id: string) => { const { error } = await supabase.from('profiles').delete().eq('id', id); if (error) return showAlert("Failed to remove user: " + error.message); setUsers(users.filter(u => u.id !== id)); showAlert("User account removed."); };
+  const deleteUser = async (id: string) => {
+    const webhookUrl = (import.meta as any).env?.VITE_WEBHOOK_URL;
+    if (!webhookUrl) return showAlert('Webhook URL not configured (VITE_WEBHOOK_URL).');
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    if (!token) return showAlert('Not authenticated.');
+    try {
+      const res = await fetch(`${webhookUrl}/api/users/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const body = await res.json();
+      if (!res.ok) return showAlert(body.error || 'Failed to remove user.');
+      setUsers(users.filter(u => u.id !== id));
+      showAlert('Staff account fully removed.');
+    } catch {
+      showAlert('Network error — please try again.');
+    }
+  };
 
   const changePassword = async (newPass: string) => {
     const { error } = await supabase.auth.updateUser({ password: newPass });
