@@ -75,7 +75,7 @@ interface AppContextType {
   addMorningEntry: (e: any) => Promise<void>; updateMorningEntry: (id: string, updates: any) => Promise<void>; deleteMorningEntry: (id: string) => Promise<void>;
   addExpense: (e: any) => Promise<void>; updateExpense: (id: string, updates: any) => Promise<void>; deleteExpense: (id: string) => Promise<void>;
   addFuelPurchase: (purchases: any) => Promise<void>; updateFuelPurchase: (id: string, updates: any) => Promise<void>; deleteFuelPurchase: (id: string) => Promise<void>;
-  addUser: (u: any) => Promise<void>; deleteUser: (id: string) => Promise<void>; updateSettings: (s: any) => Promise<void>;
+  addUser: (u: any) => Promise<void>; deleteUser: (id: string) => Promise<void>; updateSettings: (s: any) => Promise<void>; changePassword: (newPass: string) => Promise<void>;
   getCustomerBalance: (id: string) => number; getCustomerBalanceAsOf: (id: string, date: string) => number;
   bulkImportCustomers: (csvData: string) => Promise<void>; showAlert: (msg: string) => void; showConfirm: (msg: string, onConfirm: () => void) => void; validateInputs: (amounts: number[], litres: number[]) => boolean;
   sendWhatsAppAlert: (t: Transaction, c: Customer) => void; sendWhatsAppReminder: (c: Customer) => void;
@@ -532,6 +532,12 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   };
   const deleteUser = async (id: string) => { const { error } = await supabase.from('profiles').delete().eq('id', id); if (error) return showAlert("Failed to remove user: " + error.message); setUsers(users.filter(u => u.id !== id)); showAlert("User account removed."); };
 
+  const changePassword = async (newPass: string) => {
+    const { error } = await supabase.auth.updateUser({ password: newPass });
+    if (error) showAlert('Password change failed: ' + error.message);
+    else showAlert('Password updated successfully! Please log in again with your new password.');
+  };
+
   // Shared balance reducer — handles BOTH old embedded-advance format (remarks) and new separate rows
   const balanceReducer = (acc: number, curr: Transaction) => {
     let txTotal = curr.amount || 0;
@@ -648,7 +654,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   };
 
   return (
-    <AppContext.Provider value={{ user, dataLoading, unsavedForm, setUnsavedForm, login, loginCustomer, signup, logout, currentRoute, setCurrentRoute, customerFilter, setCustomerFilter, customers, transactions, morningEntries, expenses, fuelPurchases, users, settings, addCustomer, updateCustomer, deleteCustomer, addTransaction, updateTransaction, deleteTransaction, addMorningEntry, updateMorningEntry, deleteMorningEntry, addExpense, updateExpense, deleteExpense, addFuelPurchase, updateFuelPurchase, deleteFuelPurchase, addUser, deleteUser, updateSettings, getCustomerBalance, getCustomerBalanceAsOf, bulkImportCustomers, showAlert, showConfirm, validateInputs, sendWhatsAppAlert, sendWhatsAppReminder }}>
+    <AppContext.Provider value={{ user, dataLoading, unsavedForm, setUnsavedForm, login, loginCustomer, signup, logout, currentRoute, setCurrentRoute, customerFilter, setCustomerFilter, customers, transactions, morningEntries, expenses, fuelPurchases, users, settings, addCustomer, updateCustomer, deleteCustomer, addTransaction, updateTransaction, deleteTransaction, addMorningEntry, updateMorningEntry, deleteMorningEntry, addExpense, updateExpense, deleteExpense, addFuelPurchase, updateFuelPurchase, deleteFuelPurchase, addUser, deleteUser, updateSettings, changePassword, getCustomerBalance, getCustomerBalanceAsOf, bulkImportCustomers, showAlert, showConfirm, validateInputs, sendWhatsAppAlert, sendWhatsAppReminder }}>
       {children}
       {alertMessage && (<div className="fixed top-4 left-4 right-4 sm:left-auto sm:right-5 sm:top-5 z-[9999] bg-gray-900 text-white px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4"><AlertCircle size={20} className="text-blue-400 shrink-0" /><p className="font-medium text-sm">{alertMessage}</p></div>)}
       {confirmDialog && (<div className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4"><div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95"><div className="flex items-center text-red-600 mb-4 gap-2"><AlertCircle size={24} /><h3 className="text-lg font-bold text-gray-900">Confirm Action</h3></div><p className="text-gray-600 mb-8 font-medium">{confirmDialog.message}</p><div className="flex gap-3 justify-end"><button onClick={() => setConfirmDialog(null)} className="px-5 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-xl transition">Cancel</button><button onClick={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }} className="px-5 py-2 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition shadow-md shadow-red-200">Confirm</button></div></div></div>)}
@@ -1665,8 +1671,18 @@ const MorningEntryForm = () => {
   const [form, setForm] = useState({ petrolDip: '', dieselDip: '', openingBalance: '', cashRaw: '', bankRaw: '', digitalRaw: '', dtpRaw: '', cardRaw: '', bankBal: '', odBal: '', digitalBal: '' });
   const [nozzleForm, setNozzleForm] = useState({ p1: '', p2: '', d1: '', d2: '' });
   const [nozzleSynced, setNozzleSynced] = useState(false);
+  const [prevNozzle, setPrevNozzle] = useState<any>(null);
 
   useEffect(() => { setUnsavedForm(step > 0 && !submitted); }, [step, submitted, setUnsavedForm]);
+
+  useEffect(() => {
+    if (!editId && user?.bunkId) {
+      // Fetch previous day nozzle readings for nozzle-based sold calculation
+      supabase.from('nozzle_readings').select('*').eq('bunk_id', user.bunkId).lt('date', targetDate).order('date', { ascending: false }).limit(1).maybeSingle().then(({ data }: any) => {
+        setPrevNozzle(data || null);
+      });
+    }
+  }, [targetDate, editId, user?.bunkId]);
 
   useEffect(() => {
     if (step === 0 && !editId) {
@@ -1720,7 +1736,22 @@ const MorningEntryForm = () => {
   const isStep1Valid = form.petrolDip !== '' && form.dieselDip !== ''; const isStep2Valid = true; const isStep3Valid = form.bankBal !== '' && form.digitalBal !== '' && form.odBal !== '';
   const canGoNext = (step === 1 && isStep1Valid) || (step === 2 && isStep2Valid) || (step === 3 && isStep3Valid);
 
-  const pDip = Number(form.petrolDip) || 0; const dDip = Number(form.dieselDip) || 0; const petrolSold = yesterdayPetrol - pDip; const dieselSold = yesterdayDiesel - dDip;
+  const pDip = Number(form.petrolDip) || 0; const dDip = Number(form.dieselDip) || 0;
+
+  // Nozzle-based gross sales (primary): use delta from previous nozzle readings
+  const nP1 = Number(nozzleForm.p1) || 0; const nP2 = Number(nozzleForm.p2) || 0;
+  const nD1 = Number(nozzleForm.d1) || 0; const nD2 = Number(nozzleForm.d2) || 0;
+  const hasNozzleToday = nP1 > 0 || nP2 > 0 || nD1 > 0 || nD2 > 0;
+  const hasPrevNozzle = prevNozzle && (Number(prevNozzle.p1_reading) > 0 || Number(prevNozzle.p2_reading) > 0 || Number(prevNozzle.d1_reading) > 0 || Number(prevNozzle.d2_reading) > 0);
+  const useNozzleBased = hasNozzleToday && hasPrevNozzle;
+
+  const petrolSold = useNozzleBased
+    ? Math.max(0, (nP1 - (Number(prevNozzle?.p1_reading) || 0)) + (nP2 - (Number(prevNozzle?.p2_reading) || 0)))
+    : Math.max(0, yesterdayPetrol - pDip);
+  const dieselSold = useNozzleBased
+    ? Math.max(0, (nD1 - (Number(prevNozzle?.d1_reading) || 0)) + (nD2 - (Number(prevNozzle?.d2_reading) || 0)))
+    : Math.max(0, yesterdayDiesel - dDip);
+
   const petrolSalesVal = petrolSold * (settings?.petrolRate || 0); const dieselSalesVal = dieselSold * (settings?.dieselRate || 0); const totalSalesVal = petrolSalesVal + dieselSalesVal;
 
   const openingBal = Number(form.openingBalance) || 0;
@@ -1837,7 +1868,11 @@ const MorningEntryForm = () => {
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4"><div><label className="block text-sm font-bold text-blue-900 mb-2">Current Petrol Closing *</label><input autoFocus type="number" value={form.petrolDip} onChange={e => setForm({ ...form, petrolDip: e.target.value })} className="w-full p-4 border-2 border-blue-200 rounded-xl focus:ring-blue-500 outline-none font-bold text-lg" placeholder="0" /></div><div><label className="block text-sm font-bold text-blue-900 mb-2">Current Diesel Closing *</label><input type="number" value={form.dieselDip} onChange={e => setForm({ ...form, dieselDip: e.target.value })} className="w-full p-4 border-2 border-blue-200 rounded-xl focus:ring-blue-500 outline-none font-bold text-lg" placeholder="0" /></div></div>
               </div>
-              {pDip > 0 && dDip > 0 && (<div className="bg-blue-50 p-6 rounded-xl border border-blue-100 grid grid-cols-1 sm:grid-cols-2 gap-6"><div><p className="text-sm text-blue-800 mb-1">Computed Gross Dispensed</p><p className="text-3xl font-bold text-blue-900">{petrolSold.toFixed(0)} L</p><p className="text-sm font-medium text-blue-600 mt-1">Value: {formatRs(petrolSalesVal)}</p></div><div><p className="text-sm text-blue-800 mb-1">Computed Gross Dispensed</p><p className="text-3xl font-bold text-blue-900">{dieselSold.toFixed(0)} L</p><p className="text-sm font-medium text-blue-600 mt-1">Value: {formatRs(dieselSalesVal)}</p></div></div>)}
+              {(pDip > 0 || dDip > 0 || useNozzleBased) && (<div className="bg-blue-50 p-6 rounded-xl border border-blue-100 grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div><p className="text-sm text-blue-800 mb-1">Petrol Dispensed {useNozzleBased ? '(Nozzle)' : '(Dip)'}</p><p className="text-3xl font-bold text-blue-900">{petrolSold.toFixed(0)} L</p><p className="text-sm font-medium text-blue-600 mt-1">Value: {formatRs(petrolSalesVal)}</p></div>
+                <div><p className="text-sm text-blue-800 mb-1">Diesel Dispensed {useNozzleBased ? '(Nozzle)' : '(Dip)'}</p><p className="text-3xl font-bold text-blue-900">{dieselSold.toFixed(0)} L</p><p className="text-sm font-medium text-blue-600 mt-1">Value: {formatRs(dieselSalesVal)}</p></div>
+                {useNozzleBased && <div className="col-span-2 text-xs text-green-700 font-bold bg-green-50 px-3 py-1.5 rounded-lg border border-green-200">✓ Using nozzle meter delta (more accurate)</div>}
+              </div>)}
             </div>
           )}
           {step === 2 && (
@@ -1877,7 +1912,7 @@ const MorningEntryForm = () => {
             <div className="space-y-6 animate-in fade-in">
               <h3 className="text-lg font-bold border-b pb-2">Step 4: Audit & Submission</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div className="bg-blue-50 p-5 rounded-xl border border-blue-100"><h4 className="font-bold text-blue-900 mb-4 border-b border-blue-200 pb-2">Theoretical Gross Sales</h4><div className="space-y-3 text-sm font-medium"><div className="flex justify-between"><span>Petrol Dispensed ({petrolSold}L)</span><span>{formatRs(petrolSalesVal)}</span></div><div className="flex justify-between"><span>Diesel Dispensed ({dieselSold}L)</span><span>{formatRs(dieselSalesVal)}</span></div><div className="flex justify-between pt-3 border-t border-blue-200 font-black text-lg"><span>Total Target</span><span>{formatRs(totalSalesVal)}</span></div></div></div>
+                <div className="bg-blue-50 p-5 rounded-xl border border-blue-100"><h4 className="font-bold text-blue-900 mb-4 border-b border-blue-200 pb-2">Gross Sales {useNozzleBased ? '(Nozzle-Based)' : '(Dip-Based)'}</h4><div className="space-y-3 text-sm font-medium"><div className="flex justify-between"><span>Petrol Dispensed ({petrolSold.toFixed(1)}L)</span><span>{formatRs(petrolSalesVal)}</span></div><div className="flex justify-between"><span>Diesel Dispensed ({dieselSold.toFixed(1)}L)</span><span>{formatRs(dieselSalesVal)}</span></div><div className="flex justify-between pt-3 border-t border-blue-200 font-black text-lg"><span>Total Target</span><span>{formatRs(totalSalesVal)}</span></div></div></div>
                 <div className="bg-green-50 p-5 rounded-xl border border-green-100">
                   <h4 className="font-bold text-green-900 mb-4 border-b border-green-200 pb-2">Total Reconciled Value</h4>
                   <div className="space-y-2 text-sm font-medium">
@@ -2326,7 +2361,7 @@ const MonthlyReports = () => {
 
 // Settings Module
 const SettingsModule = () => {
-  const { settings, updateSettings, users, addUser, deleteUser, user, customers, transactions, showAlert, showConfirm, dataLoading } = useAppContext();
+  const { settings, updateSettings, users, addUser, deleteUser, changePassword, user, customers, transactions, showAlert, showConfirm, dataLoading } = useAppContext();
 
   const [form, setForm] = useState(settings);
   useEffect(() => { setForm(settings); }, [settings]);
@@ -2350,6 +2385,20 @@ const SettingsModule = () => {
 
   const [staffForm, setStaffForm] = useState({ name: '', email: '', password: '', role: 'supervisor' });
   const [isSubmittingStaff, setIsSubmittingStaff] = useState(false);
+
+  const [newPass, setNewPass] = useState('');
+  const [confirmPass, setConfirmPass] = useState('');
+  const [isChangingPass, setIsChangingPass] = useState(false);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPass.length < 6) return showAlert('Password must be at least 6 characters.');
+    if (newPass !== confirmPass) return showAlert('Passwords do not match.');
+    setIsChangingPass(true);
+    await changePassword(newPass);
+    setNewPass(''); setConfirmPass('');
+    setIsChangingPass(false);
+  };
 
   const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2453,6 +2502,15 @@ const SettingsModule = () => {
 
       <div className="space-y-6">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
+          <div className="flex items-center mb-4 border-b pb-2"><Settings className="text-gray-400 mr-2" /><h3 className="text-lg font-bold">Security — Change Password</h3></div>
+          <form onSubmit={handleChangePassword} className="space-y-4">
+            <div><label className="block text-xs font-medium mb-1">New Password (min 6 chars)</label><input type="password" required minLength={6} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={newPass} onChange={e => setNewPass(e.target.value)} placeholder="Enter new password" /></div>
+            <div><label className="block text-xs font-medium mb-1">Confirm New Password</label><input type="password" required minLength={6} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} placeholder="Confirm new password" /></div>
+            <button type="submit" disabled={isChangingPass} className="w-full bg-gray-800 text-white py-3 rounded-xl font-bold shadow hover:bg-gray-900 transition disabled:opacity-50">{isChangingPass ? 'Changing...' : 'Change Password'}</button>
+          </form>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
           <div className="flex items-center mb-4 border-b pb-2"><Download className="text-gray-400 mr-2" /><h3 className="text-lg font-bold">Data Management</h3></div>
 
           <div className="bg-blue-50 border border-blue-100 rounded-lg p-6 flex flex-col items-center justify-center text-center">
@@ -2471,7 +2529,13 @@ const SettingsModule = () => {
         </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
-          <div className="flex items-center mb-4 border-b pb-2"><Users className="text-gray-400 mr-2" /><h3 className="text-lg font-bold">Staff Management</h3></div>
+          <div className="flex items-center justify-between mb-4 border-b pb-2">
+            <div className="flex items-center"><Users className="text-gray-400 mr-2" /><h3 className="text-lg font-bold">Staff Management</h3></div>
+            <div className="flex gap-2 text-xs font-bold">
+              <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded">{ownerCount} Owner{ownerCount !== 1 ? 's' : ''}</span>
+              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded">{users.filter(u => String(u.role).toLowerCase() === 'supervisor').length} Supervisor{users.filter(u => String(u.role).toLowerCase() === 'supervisor').length !== 1 ? 's' : ''}</span>
+            </div>
+          </div>
           <div className="mb-6">
             <h4 className="text-sm font-bold text-gray-500 mb-2">Current Staff</h4>
             <div className="space-y-2">
