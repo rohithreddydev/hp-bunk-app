@@ -47,6 +47,7 @@ const CATEGORIES = ['Fleet', 'Milk Tanker', 'School', 'Hospital', 'Individual', 
 
 // --- SUPABASE SETUP ---
 import { supabase } from './supabase';
+import { KiranaApp } from './KiranaApp';
 const rawUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
 const rawKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
 export const hasValidKeys = Boolean(rawUrl && rawKey && rawUrl !== 'undefined' && rawKey !== 'undefined');
@@ -860,7 +861,7 @@ const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
               </div>
               {[
                 { code: 'fuel', label: '⛽ Fuel Station', sub: 'Petrol / Diesel management', available: true },
-                { code: 'kirana', label: '🛒 Kirana Store', sub: 'Grocery & retail store', available: false },
+                { code: 'kirana', label: '🛒 Kirana Store', sub: 'Grocery & retail store', available: true },
                 { code: 'medical', label: '💊 Medical Shop', sub: 'Pharmacy & healthcare', available: false },
               ].map(b => (
                 <button key={b.code} onClick={() => selectBiz(b.code)}
@@ -2955,7 +2956,17 @@ const AppContent = () => {
   if (!user) return <LandingScreen onPrivacy={() => setCurrentRoute('privacy')} />;
   if (user.role === 'customer') return <CustomerPortalView />;
   const bizType = localStorage.getItem('app_biz_type') || 'fuel';
-  if (bizType === 'kirana' || bizType === 'medical') return <PlaceholderDashboard bizType={bizType} />;
+  if (bizType === 'kirana') {
+    return (
+      <KiranaApp
+        bunkId={user.bunkId || 'default'}
+        bunkName={settings?.bunkName || 'My Kirana Store'}
+        userRole={String(user.role || 'supervisor').toLowerCase()}
+        onLogout={handleLogout}
+      />
+    );
+  }
+  if (bizType === 'medical') return <PlaceholderDashboard bizType={bizType} />;
 
   const userRole = String(user.role || 'supervisor').toLowerCase();
 
