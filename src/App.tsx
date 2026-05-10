@@ -15,7 +15,7 @@ import React, { useState, createContext, useContext, useEffect, useMemo, Compone
 import {
   Users, BookOpen, Sun, Receipt, Fuel, Search, ChevronLeft,
   BarChart3, Settings, LogOut, Plus, AlertCircle, CheckCircle2,
-  Download, X, Truck, Trash2, Edit2, Menu, Filter, ChevronDown, ChevronRight, Loader2, UploadCloud, MessageCircle, Calendar, TrendingUp, TrendingDown, Wallet, Activity, SearchX
+  Download, X, Truck, Trash2, Edit2, Menu, Filter, ChevronDown, ChevronRight, Loader2, UploadCloud, MessageCircle, Calendar, TrendingUp, TrendingDown, Wallet, Activity, SearchX, Briefcase, Bell
 } from 'lucide-react';
 
 // --- TIMEZONE UTILS (IST STRICT) ---
@@ -690,9 +690,19 @@ const useAppContext = () => { const ctx = useContext(AppContext); if (!ctx) thro
 // --- COMPONENTS ---
 
 // 1. Auth Screens
-const LoginScreen = () => {
+const LandingScreen = () => {
   const { login, loginCustomer, signup, showAlert } = useAppContext();
-  const [tab, setTab] = useState<'staff' | 'customer'>('staff'); const [view, setView] = useState<'login' | 'signup'>('login');
+
+  const [step, setStep] = useState<'lang' | 'biz' | 'login'>(() => {
+    const lang = localStorage.getItem('app_lang');
+    const biz = localStorage.getItem('app_biz_type');
+    if (lang && biz) return 'login';
+    if (lang) return 'biz';
+    return 'lang';
+  });
+
+  const [tab, setTab] = useState<'staff' | 'customer'>('staff');
+  const [view, setView] = useState<'login' | 'signup'>('login');
   const [loginEmail, setLoginEmail] = useState(''); const [loginPass, setLoginPass] = useState('');
   const [regName, setRegName] = useState(''); const [regPhone, setRegPhone] = useState(''); const [regBunk, setRegBunk] = useState(''); const [regFuelCompany, setRegFuelCompany] = useState('Generic'); const [regEmail, setRegEmail] = useState(''); const [regPass, setRegPass] = useState('');
   const [custPhone, setCustPhone] = useState(''); const [custPin, setCustPin] = useState('');
@@ -700,46 +710,158 @@ const LoginScreen = () => {
 
   const switchView = (newView: 'login' | 'signup') => { setLoginEmail(''); setLoginPass(''); setRegName(''); setRegPhone(''); setRegBunk(''); setRegEmail(''); setRegPass(''); setView(newView); };
 
+  const selectLang = (l: string) => { localStorage.setItem('app_lang', l); setStep('biz'); };
+  const selectBiz = (b: string) => { localStorage.setItem('app_biz_type', b); setStep('login'); };
+  const goBack = () => {
+    if (step === 'login') { localStorage.removeItem('app_biz_type'); setStep('biz'); }
+    else if (step === 'biz') { localStorage.removeItem('app_lang'); setStep('lang'); }
+  };
+
+  const stepLabels = [{ key: 'lang', label: 'Language' }, { key: 'biz', label: 'Business' }, { key: 'login', label: 'Login' }];
+
   return (
-    <div className="min-h-[100dvh] bg-gray-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
-        <div className="bg-blue-900 p-6 text-center text-white">
-          <Fuel className="w-12 h-12 mx-auto mb-2 text-blue-300" />
-          <h1 className="text-2xl font-bold">FuelDesk SaaS</h1>
-          <p className="text-blue-200 text-sm">Universal Fuel Station Manager</p>
+    <div className="min-h-[100dvh] bg-gradient-to-br from-indigo-950 via-purple-950 to-blue-950 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="bg-gradient-to-r from-indigo-700 to-purple-700 p-6 text-center text-white">
+          <Briefcase className="w-12 h-12 mx-auto mb-2 text-indigo-200" />
+          <h1 className="text-2xl font-bold">Smart Biz AI</h1>
+          <p className="text-indigo-200 text-sm">Your AI-Powered Business Assistant</p>
         </div>
-        <div className="flex border-b">
-          <button className={`flex-1 py-3 text-sm font-semibold ${tab === 'staff' ? 'text-blue-900 border-b-2 border-blue-900 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`} onClick={() => setTab('staff')}>Staff Access</button>
-          <button className={`flex-1 py-3 text-sm font-semibold ${tab === 'customer' ? 'text-blue-900 border-b-2 border-blue-900 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`} onClick={() => setTab('customer')}>Customer Portal</button>
+        <div className="flex bg-gray-50 border-b">
+          {stepLabels.map((s, i) => (
+            <div key={s.key} className={`flex-1 py-2 text-center text-xs font-medium ${step === s.key ? 'text-indigo-700 border-b-2 border-indigo-700' : 'text-gray-400'}`}>
+              {i + 1}. {s.label}
+            </div>
+          ))}
         </div>
         <div className="p-6">
-          {tab === 'staff' && view === 'login' && (
-            <form onSubmit={async (e) => { e.preventDefault(); setIsSubmitting(true); await login(loginEmail, loginPass); setIsSubmitting(false); }} className="space-y-4 animate-in fade-in" autoComplete="off">
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label><input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" required /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Password</label><input type="password" value={loginPass} onChange={e => setLoginPass(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" required /></div>
-              <button type="submit" disabled={isSubmitting} className="w-full bg-blue-800 text-white p-3 rounded-lg font-bold hover:bg-blue-900 transition disabled:opacity-50">{isSubmitting ? 'Authenticating...' : 'Login to Dashboard'}</button>
-              <div className="flex flex-col items-center mt-4 space-y-3 text-sm"><button type="button" onClick={() => showAlert("Please contact your station owner to reset your password.")} className="text-blue-600 font-medium hover:underline">Forgot Password?</button><button type="button" onClick={() => switchView('signup')} className="text-gray-500 hover:text-gray-800 hover:underline">First time setup? Create Owner Account</button></div>
-            </form>
+          {step === 'lang' && (
+            <div className="space-y-3 animate-in fade-in">
+              <p className="text-gray-500 text-center text-sm mb-4">Select your preferred language</p>
+              {[
+                { code: 'english', label: '🇬🇧 English', sub: 'Continue in English' },
+                { code: 'telugu', label: '🇮🇳 తెలుగు', sub: 'తెలుగులో కొనసాగించండి' },
+                { code: 'hindi', label: '🇮🇳 हिंदी', sub: 'हिंदी में जारी रखें' },
+              ].map(l => (
+                <button key={l.code} onClick={() => selectLang(l.code)}
+                  className="w-full flex items-center justify-between p-4 border-2 border-gray-100 rounded-xl hover:border-indigo-400 hover:bg-indigo-50 transition-all group">
+                  <div className="text-left">
+                    <div className="font-semibold text-gray-800 group-hover:text-indigo-700">{l.label}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{l.sub}</div>
+                  </div>
+                  <ChevronRight className="text-gray-300 group-hover:text-indigo-500 shrink-0" size={20} />
+                </button>
+              ))}
+            </div>
           )}
-          {tab === 'staff' && view === 'signup' && (
-            <form onSubmit={async (e) => { e.preventDefault(); setIsSubmitting(true); await signup({ name: regName, phone: regPhone, bunkName: regBunk, fuelCompany: regFuelCompany, email: regEmail, pass: regPass }); setIsSubmitting(false); }} className="space-y-4 animate-in fade-in slide-in-from-right-4 max-h-[60vh] overflow-y-auto pr-1" autoComplete="off">
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Owner Full Name</label><input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" required /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label><input type="tel" value={regPhone} onChange={e => setRegPhone(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" required /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Fuel Station Name</label><input type="text" value={regBunk} onChange={e => setRegBunk(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" placeholder="e.g., Highway Fuels" required /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Fuel Brand / Company</label><select className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-base" value={regFuelCompany} onChange={e => setRegFuelCompany(e.target.value)}><option value="Generic">Independent / Generic</option><option>HPCL</option><option>IOCL</option><option>BPCL</option><option>Reliance</option><option>Nayara</option><option>Shell</option></select></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label><input type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" required /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Password (Min 6 chars)</label><input type="password" value={regPass} onChange={e => setRegPass(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" required minLength={6} /></div>
-              <button type="submit" disabled={isSubmitting} className="w-full bg-blue-800 text-white p-3 rounded-lg font-bold hover:bg-blue-900 transition mt-2 disabled:opacity-50">{isSubmitting ? 'Registering...' : 'Register & Setup SaaS'}</button>
-              <div className="text-center mt-4"><button type="button" onClick={() => switchView('login')} className="text-sm text-gray-500 hover:text-gray-800 hover:underline">Already have an account? Login here</button></div>
-            </form>
+          {step === 'biz' && (
+            <div className="space-y-3 animate-in fade-in">
+              <p className="text-gray-500 text-center text-sm mb-4">What type of business do you run?</p>
+              {[
+                { code: 'fuel', label: '⛽ Fuel Station', sub: 'Petrol / Diesel management', available: true },
+                { code: 'kirana', label: '🛒 Kirana Store', sub: 'Grocery & retail store', available: false },
+                { code: 'medical', label: '💊 Medical Shop', sub: 'Pharmacy & healthcare', available: false },
+              ].map(b => (
+                <button key={b.code} onClick={() => selectBiz(b.code)}
+                  className={`w-full flex items-center justify-between p-4 border-2 rounded-xl transition-all group ${b.available ? 'border-gray-100 hover:border-indigo-400 hover:bg-indigo-50' : 'border-gray-100 hover:border-orange-300 hover:bg-orange-50'}`}>
+                  <div className="text-left">
+                    <div className={`font-semibold ${b.available ? 'text-gray-800 group-hover:text-indigo-700' : 'text-gray-600 group-hover:text-orange-700'}`}>{b.label}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{b.sub}</div>
+                  </div>
+                  {b.available
+                    ? <ChevronRight className="text-gray-300 group-hover:text-indigo-500 shrink-0" size={20} />
+                    : <span className="text-xs bg-orange-100 text-orange-600 px-2 py-1 rounded-full font-medium shrink-0">Coming Soon</span>}
+                </button>
+              ))}
+              <button onClick={goBack} className="w-full text-center text-sm text-gray-400 hover:text-gray-600 mt-2 py-1">← Change language</button>
+            </div>
           )}
-          {tab === 'customer' && (
-            <form onSubmit={(e) => { e.preventDefault(); if (!/^\d{10}$/.test(custPhone)) { showAlert('Registered Mobile Number must be exactly 10 digits.'); return; } loginCustomer(custPhone, custPin); }} className="space-y-4 animate-in fade-in">
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">Registered Mobile Number</label><input type="tel" value={custPhone} onChange={e => setCustPhone(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" placeholder="10-digit number" required /></div>
-              <div><label className="block text-sm font-medium text-gray-700 mb-1">4-Digit PIN</label><input type="password" maxLength={4} value={custPin} onChange={e => setCustPin(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-center tracking-[0.5em] text-lg" required /></div>
-              <button type="submit" className="w-full bg-green-600 text-white p-3 rounded-lg font-bold hover:bg-green-700 transition">Check Balance</button>
-            </form>
+          {step === 'login' && (
+            <div className="animate-in fade-in">
+              <div className="flex border-b mb-5 -mx-6 px-6">
+                <button className={`flex-1 py-3 text-sm font-semibold ${tab === 'staff' ? 'text-indigo-700 border-b-2 border-indigo-700 -mb-px' : 'text-gray-500 hover:bg-gray-50'}`} onClick={() => setTab('staff')}>Staff Access</button>
+                <button className={`flex-1 py-3 text-sm font-semibold ${tab === 'customer' ? 'text-indigo-700 border-b-2 border-indigo-700 -mb-px' : 'text-gray-500 hover:bg-gray-50'}`} onClick={() => setTab('customer')}>Customer Portal</button>
+              </div>
+              {tab === 'staff' && view === 'login' && (
+                <form onSubmit={async (e) => { e.preventDefault(); setIsSubmitting(true); await login(loginEmail, loginPass); setIsSubmitting(false); }} className="space-y-4 animate-in fade-in" autoComplete="off">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label><input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Password</label><input type="password" value={loginPass} onChange={e => setLoginPass(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
+                  <button type="submit" disabled={isSubmitting} className="w-full bg-indigo-700 text-white p-3 rounded-lg font-bold hover:bg-indigo-800 transition disabled:opacity-50">{isSubmitting ? 'Authenticating...' : 'Login to Dashboard'}</button>
+                  <div className="flex flex-col items-center mt-4 space-y-3 text-sm"><button type="button" onClick={() => showAlert("Please contact your station owner to reset your password.")} className="text-indigo-600 font-medium hover:underline">Forgot Password?</button><button type="button" onClick={() => switchView('signup')} className="text-gray-500 hover:text-gray-800 hover:underline">First time setup? Create Owner Account</button></div>
+                </form>
+              )}
+              {tab === 'staff' && view === 'signup' && (
+                <form onSubmit={async (e) => { e.preventDefault(); setIsSubmitting(true); await signup({ name: regName, phone: regPhone, bunkName: regBunk, fuelCompany: regFuelCompany, email: regEmail, pass: regPass }); setIsSubmitting(false); }} className="space-y-4 animate-in fade-in slide-in-from-right-4 max-h-[60vh] overflow-y-auto pr-1" autoComplete="off">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Owner Full Name</label><input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label><input type="tel" value={regPhone} onChange={e => setRegPhone(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Fuel Station Name</label><input type="text" value={regBunk} onChange={e => setRegBunk(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" placeholder="e.g., Highway Fuels" required /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Fuel Brand / Company</label><select className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-base" value={regFuelCompany} onChange={e => setRegFuelCompany(e.target.value)}><option value="Generic">Independent / Generic</option><option>HPCL</option><option>IOCL</option><option>BPCL</option><option>Reliance</option><option>Nayara</option><option>Shell</option></select></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label><input type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Password (Min 6 chars)</label><input type="password" value={regPass} onChange={e => setRegPass(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required minLength={6} /></div>
+                  <button type="submit" disabled={isSubmitting} className="w-full bg-indigo-700 text-white p-3 rounded-lg font-bold hover:bg-indigo-800 transition mt-2 disabled:opacity-50">{isSubmitting ? 'Registering...' : 'Register & Setup'}</button>
+                  <div className="text-center mt-4"><button type="button" onClick={() => switchView('login')} className="text-sm text-gray-500 hover:text-gray-800 hover:underline">Already have an account? Login here</button></div>
+                </form>
+              )}
+              {tab === 'customer' && (
+                <form onSubmit={(e) => { e.preventDefault(); if (!/^\d{10}$/.test(custPhone)) { showAlert('Registered Mobile Number must be exactly 10 digits.'); return; } loginCustomer(custPhone, custPin); }} className="space-y-4 animate-in fade-in">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Registered Mobile Number</label><input type="tel" value={custPhone} onChange={e => setCustPhone(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" placeholder="10-digit number" required /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">4-Digit PIN</label><input type="password" maxLength={4} value={custPin} onChange={e => setCustPin(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-center tracking-[0.5em] text-lg" required /></div>
+                  <button type="submit" className="w-full bg-green-600 text-white p-3 rounded-lg font-bold hover:bg-green-700 transition">Check Balance</button>
+                </form>
+              )}
+              <button onClick={goBack} className="w-full text-center text-sm text-gray-400 hover:text-gray-600 mt-4 py-1">← Change business type</button>
+            </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Placeholder dashboard for Kirana / Medical (coming soon)
+const PlaceholderDashboard = ({ bizType }: { bizType: string }) => {
+  const { logout } = useAppContext();
+  const [notifyEmail, setNotifyEmail] = useState('');
+  const [notified, setNotified] = useState(false);
+  const isKirana = bizType === 'kirana';
+  const label = isKirana ? 'Kirana Store' : 'Medical Shop';
+  const icon = isKirana ? '🛒' : '💊';
+  const features = ['Daily Sales Tracking', 'Inventory Management', 'Customer Credit Ledger', 'Expense Reports', 'WhatsApp Bot Integration', 'Staff Management'];
+
+  return (
+    <div className="min-h-[100dvh] bg-gradient-to-br from-indigo-950 via-purple-950 to-blue-950 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="bg-gradient-to-r from-indigo-700 to-purple-700 p-6 text-center text-white">
+          <div className="text-4xl mb-2">{icon}</div>
+          <h1 className="text-2xl font-bold">Smart Biz AI</h1>
+          <p className="text-indigo-200 text-sm">{label} Module — Coming Soon!</p>
+        </div>
+        <div className="p-6">
+          <p className="text-gray-500 text-sm text-center mb-5">We're building this for you. Get notified when it launches!</p>
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            {features.map(f => (
+              <div key={f} className="flex items-center gap-2 p-3 bg-gray-100 rounded-lg opacity-50 cursor-not-allowed">
+                <div className="w-2 h-2 bg-gray-400 rounded-full shrink-0" />
+                <span className="text-xs text-gray-500 font-medium leading-tight">{f}</span>
+              </div>
+            ))}
+          </div>
+          {!notified ? (
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-gray-700">Notify me when {label} launches:</label>
+              <input type="email" value={notifyEmail} onChange={e => setNotifyEmail(e.target.value)} placeholder="your@email.com" className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" />
+              <button onClick={() => { if (notifyEmail.includes('@')) setNotified(true); }} className="w-full bg-indigo-700 text-white p-3 rounded-lg font-bold hover:bg-indigo-800 transition flex items-center justify-center gap-2">
+                <Bell size={16} /> Notify Me
+              </button>
+            </div>
+          ) : (
+            <div className="text-center p-4 bg-green-50 rounded-xl border border-green-200">
+              <CheckCircle2 className="w-8 h-8 text-green-600 mx-auto mb-2" />
+              <p className="text-green-700 font-semibold">You're on the list!</p>
+              <p className="text-green-600 text-sm mt-1">We'll notify {notifyEmail} when it's ready.</p>
+            </div>
+          )}
+          <button onClick={logout} className="w-full text-center text-sm text-gray-400 hover:text-gray-600 mt-5 py-1">Sign Out</button>
         </div>
       </div>
     </div>
@@ -2651,8 +2773,10 @@ const AppContent = () => {
     } else { setCurrentRoute(id); setIsSidebarOpen(false); }
   };
 
-  if (!user) return <LoginScreen />;
+  if (!user) return <LandingScreen />;
   if (user.role === 'customer') return <CustomerPortalView />;
+  const bizType = localStorage.getItem('app_biz_type') || 'fuel';
+  if (bizType === 'kirana' || bizType === 'medical') return <PlaceholderDashboard bizType={bizType} />;
 
   const userRole = String(user.role || 'supervisor').toLowerCase();
 
@@ -2672,7 +2796,7 @@ const AppContent = () => {
       {isSidebarOpen && (<div className="fixed inset-0 bg-black/60 z-20 md:hidden transition-opacity" onClick={() => setIsSidebarOpen(false)} />)}
       <aside className={`fixed inset-y-0 left-0 w-64 bg-blue-950 text-white flex flex-col shadow-2xl z-30 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}>
         <div className="p-6 border-b border-blue-900/50 flex justify-between items-center">
-          <div><div className="flex items-center space-x-3 text-blue-400 mb-1"><Fuel className="fill-current" /><span className="font-black text-xl text-white tracking-tight truncate max-w-[150px]">{settings?.bunkName || 'Business Manager'}</span></div><p className="text-blue-300 text-xs">Powered by FuelDesk</p></div>
+          <div><div className="flex items-center space-x-3 text-indigo-400 mb-1"><Briefcase size={20} className="shrink-0" /><span className="font-black text-xl text-white tracking-tight truncate max-w-[150px]">{settings?.bunkName || 'Business Manager'}</span></div><p className="text-blue-300 text-xs">Powered by Smart Biz AI</p></div>
           <button className="md:hidden text-gray-400 hover:text-white" onClick={() => setIsSidebarOpen(false)}><X size={24} /></button>
         </div>
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
@@ -2688,7 +2812,7 @@ const AppContent = () => {
       <main className="flex-1 flex flex-col h-[100dvh] overflow-hidden relative">
         <header className="md:hidden bg-blue-950 text-white p-4 flex justify-between items-center shadow-md z-10 sticky top-0 shrink-0">
           <button onClick={() => setIsSidebarOpen(true)} className="p-1 hover:bg-blue-900 rounded transition text-blue-200 hover:text-white"><Menu size={24} /></button>
-          <div className="flex items-center space-x-2 text-blue-400 font-black text-lg text-white"><Fuel className="w-5 h-5" /><span className="truncate max-w-[150px]">{settings?.bunkName || 'Manager'}</span></div>
+          <div className="flex items-center space-x-2 text-indigo-400 font-black text-lg text-white"><Briefcase className="w-5 h-5 shrink-0" /><span className="truncate max-w-[150px]">{settings?.bunkName || 'Manager'}</span></div>
           <button onClick={logout} className="text-blue-200 hover:text-white"><LogOut size={20} /></button>
         </header>
         <div className="flex-1 overflow-auto p-4 md:p-6 lg:p-8">
