@@ -31,6 +31,12 @@ const CATEGORIES = ['Fleet', 'Milk Tanker', 'School', 'Hospital', 'Individual', 
 import { supabase } from './supabase';
 import { CementApp } from './CementApp';
 import { OtherApp } from './OtherApp';
+import { HardwareApp } from './HardwareApp';
+import { RestaurantApp } from './RestaurantApp';
+import { AutoPartsApp } from './AutoPartsApp';
+import { AgricultureApp } from './AgricultureApp';
+import { TextileApp } from './TextileApp';
+import { StationeryApp } from './StationeryApp';
 const rawUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
 const rawKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
 export const hasValidKeys = Boolean(rawUrl && rawKey && rawUrl !== 'undefined' && rawKey !== 'undefined');
@@ -852,6 +858,7 @@ const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
                 { code: 'textile', label: '👗 Textile / Clothing', sub: 'Cloth & garment shop', available: true },
                 { code: 'auto_parts', label: '🚗 Auto Parts', sub: 'Vehicle spare parts', available: true },
                 { code: 'agriculture', label: '🌾 Agriculture / Seeds', sub: 'Seeds, fertilizer & pesticides', available: true },
+                { code: 'stationery', label: '📚 Stationery Shop', sub: 'Pens, notebooks & office supplies', available: true },
                 { code: 'general', label: '🏪 General Store', sub: 'Any other retail business', available: true },
               ].map(b => (
                 <button key={b.code} onClick={() => selectBiz(b.code)}
@@ -3059,7 +3066,14 @@ const AppContent = () => {
   if (user.role === 'customer') return <CustomerPortalView />;
   const bizType = localStorage.getItem('app_biz_type') || 'fuel';
   if (bizType === 'cement') return <CementApp bunkId={user.bunkId || ''} />;
-  const OTHER_BIZ_TYPES = ['kirana', 'medical', 'hardware', 'restaurant', 'textile', 'auto_parts', 'agriculture', 'stationery', 'general'];
+  if (bizType === 'hardware') return <HardwareApp bunkId={user.bunkId || ''} />;
+  if (bizType === 'restaurant') return <RestaurantApp bunkId={user.bunkId || ''} />;
+  if (bizType === 'auto_parts') return <AutoPartsApp bunkId={user.bunkId || ''} />;
+  if (bizType === 'agriculture') return <AgricultureApp bunkId={user.bunkId || ''} />;
+  if (bizType === 'textile') return <TextileApp bunkId={user.bunkId || ''} />;
+  if (bizType === 'stationery') return <StationeryApp bunkId={user.bunkId || ''} />;
+  // kirana, medical, general → generic OtherApp
+  const OTHER_BIZ_TYPES = ['kirana', 'medical', 'general'];
   if (OTHER_BIZ_TYPES.includes(bizType)) return <OtherApp bunkId={user.bunkId || ''} bizType={bizType} />;
 
   const userRole = String(user.role || 'supervisor').toLowerCase();
