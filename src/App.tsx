@@ -47,6 +47,7 @@ const CATEGORIES = ['Fleet', 'Milk Tanker', 'School', 'Hospital', 'Individual', 
 
 // --- SUPABASE SETUP ---
 import { supabase } from './supabase';
+import { CementApp } from './CementApp';
 const rawUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
 const rawKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
 export const hasValidKeys = Boolean(rawUrl && rawKey && rawUrl !== 'undefined' && rawKey !== 'undefined');
@@ -862,6 +863,7 @@ const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
                 { code: 'fuel', label: '⛽ Fuel Station', sub: 'Petrol / Diesel management', available: true },
                 { code: 'kirana', label: '🛒 Kirana Store', sub: 'Grocery & retail store', available: false },
                 { code: 'medical', label: '💊 Medical Shop', sub: 'Pharmacy & healthcare', available: false },
+                { code: 'cement', label: '🏗️ Cement & Steel', sub: 'Building materials & construction', available: true },
               ].map(b => (
                 <button key={b.code} onClick={() => selectBiz(b.code)}
                   className={`w-full flex items-center justify-between p-4 border-2 rounded-xl transition-all group ${b.available ? 'border-gray-100 hover:border-indigo-400 hover:bg-indigo-50' : 'border-gray-100 hover:border-orange-300 hover:bg-orange-50'}`}>
@@ -2956,6 +2958,7 @@ const AppContent = () => {
   if (user.role === 'customer') return <CustomerPortalView />;
   const bizType = localStorage.getItem('app_biz_type') || 'fuel';
   if (bizType === 'kirana' || bizType === 'medical') return <PlaceholderDashboard bizType={bizType} />;
+  if (bizType === 'cement') return <CementApp bunkId={user.bunkId || ''} />;
 
   const userRole = String(user.role || 'supervisor').toLowerCase();
 
