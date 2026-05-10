@@ -6,7 +6,7 @@ import {
   ArrowUpRight, ArrowDownRight, Loader2, Layers, DollarSign
 } from 'lucide-react';
 import { supabase } from './supabase';
-import { getTodayIST, formatISTDate } from './App';
+import { getTodayIST, formatISTDate } from './utils';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface Product {

@@ -13,7 +13,7 @@ import {
   Wallet, DollarSign, Calendar, Filter,
 } from 'lucide-react';
 import { supabase } from './supabase';
-import { getTodayIST, formatISTDate } from './App';
+import { getTodayIST, formatISTDate } from './utils';
 
 // ─── Currency helper ─────────────────────────────────────────────────────────
 function inr(n: number | null | undefined): string {

@@ -19,26 +19,8 @@ import {
 } from 'lucide-react';
 
 // --- TIMEZONE UTILS (IST STRICT) ---
-export function getTodayIST(): string {
-  const now = new Date();
-  const istOffset = 5.5 * 60 * 60 * 1000; // UTC+5:30
-  const ist = new Date(now.getTime() + istOffset);
-  return ist.toISOString().split('T')[0]; // "YYYY-MM-DD"
-}
-
-export function nowIST(): Date {
-  const now = new Date();
-  return new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
-}
-
-export function formatISTDate(dateStr: string | null | undefined): string {
-  if (!dateStr || typeof dateStr !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return '—';
-  try {
-    const d = new Date(dateStr.substring(0, 10) + 'T00:00:00+05:30');
-    if (isNaN(d.getTime())) return '—';
-    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
-  } catch { return '—'; }
-}
+// Re-export from utils.ts so existing callers continue to work
+export { getTodayIST, nowIST, formatISTDate } from './utils';
 
 const todayStr = getTodayIST();
 const currentMonthStr = todayStr.substring(0, 7);
@@ -2867,8 +2849,12 @@ const SettingsModule = () => {
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean, error: any, errorInfo: any }> {
   constructor(props: { children: ReactNode }) { super(props); this.state = { hasError: false, error: null, errorInfo: null }; }
 
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error, errorInfo: null };
+  }
+
   componentDidCatch(error: any, errorInfo: any) {
-    this.setState({ hasError: true, error, errorInfo });
+    this.setState({ errorInfo });
     console.error("ErrorBoundary caught an error:", error, errorInfo);
   }
 
@@ -2876,12 +2862,14 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-          <div className="max-w-xl w-full bg-white p-8 rounded-2xl shadow-xl text-center border-t-4 border-red-600">
-            <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-            <h1 className="text-2xl font-black text-gray-900 mb-2">System Interruption</h1>
-            <p className="text-gray-600 mb-6">We intercepted a background error before it could corrupt your session. You can safely reset the app to continue.</p>
+          <div className="max-w-xl w-full bg-white p-8 rounded-2xl shadow-xl text-center border-t-4 border-orange-500">
+            <AlertCircle className="w-16 h-16 text-orange-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-black text-gray-900 mb-2">Something went wrong</h1>
+            <p className="text-gray-600 mb-2">The app hit an unexpected error. Your data in Supabase is safe.</p>
+            <p className="text-sm text-gray-400 mb-6">Reload the page to continue — do not use "Clear Data" unless asked by support.</p>
 
-            <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-black transition mb-4">Safe Reset App</button>
+            <button onClick={() => window.location.reload()} className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-black transition mb-3">Reload App</button>
+            <button onClick={() => { localStorage.removeItem('app_biz_type'); localStorage.removeItem('app_bunk_id'); window.location.reload(); }} className="w-full border border-gray-300 text-gray-600 py-2 rounded-xl text-sm hover:bg-gray-50 transition mb-4">Reset Session (keeps your login)</button>
 
             {import.meta.env.DEV && (
               <details className="text-left bg-red-50 p-4 rounded-lg border border-red-100">
