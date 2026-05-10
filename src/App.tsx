@@ -48,6 +48,7 @@ const CATEGORIES = ['Fleet', 'Milk Tanker', 'School', 'Hospital', 'Individual', 
 // --- SUPABASE SETUP ---
 import { supabase } from './supabase';
 import { KiranaApp } from './KiranaApp';
+import { MedicalApp } from './MedicalApp';
 const rawUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
 const rawKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
 export const hasValidKeys = Boolean(rawUrl && rawKey && rawUrl !== 'undefined' && rawKey !== 'undefined');
@@ -862,7 +863,7 @@ const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
               {[
                 { code: 'fuel', label: '⛽ Fuel Station', sub: 'Petrol / Diesel management', available: true },
                 { code: 'kirana', label: '🛒 Kirana Store', sub: 'Grocery & retail store', available: true },
-                { code: 'medical', label: '💊 Medical Shop', sub: 'Pharmacy & healthcare', available: false },
+                { code: 'medical', label: '💊 Medical Shop', sub: 'Pharmacy & healthcare', available: true },
               ].map(b => (
                 <button key={b.code} onClick={() => selectBiz(b.code)}
                   className={`w-full flex items-center justify-between p-4 border-2 rounded-xl transition-all group ${b.available ? 'border-gray-100 hover:border-indigo-400 hover:bg-indigo-50' : 'border-gray-100 hover:border-orange-300 hover:bg-orange-50'}`}>
@@ -3088,7 +3089,13 @@ const AppContent = () => {
       />
     );
   }
-  if (bizType === 'medical') return <PlaceholderDashboard bizType={bizType} />;
+  if (bizType === 'medical') {
+    return (
+      <MedicalApp
+        bunkId={user.bunkId || 'default'}
+      />
+    );
+  }
 
   const userRole = String(user.role || 'supervisor').toLowerCase();
 
