@@ -48,6 +48,7 @@ const CATEGORIES = ['Fleet', 'Milk Tanker', 'School', 'Hospital', 'Individual', 
 // --- SUPABASE SETUP ---
 import { supabase } from './supabase';
 import { CementApp } from './CementApp';
+import { OtherApp } from './OtherApp';
 const rawUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
 const rawKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
 export const hasValidKeys = Boolean(rawUrl && rawKey && rawUrl !== 'undefined' && rawKey !== 'undefined');
@@ -861,19 +862,23 @@ const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
               </div>
               {[
                 { code: 'fuel', label: '⛽ Fuel Station', sub: 'Petrol / Diesel management', available: true },
-                { code: 'kirana', label: '🛒 Kirana Store', sub: 'Grocery & retail store', available: false },
-                { code: 'medical', label: '💊 Medical Shop', sub: 'Pharmacy & healthcare', available: false },
+                { code: 'kirana', label: '🛒 Kirana Store', sub: 'Grocery & daily retail', available: true },
+                { code: 'medical', label: '💊 Medical Shop', sub: 'Pharmacy & healthcare', available: true },
                 { code: 'cement', label: '🏗️ Cement & Steel', sub: 'Building materials & construction', available: true },
+                { code: 'hardware', label: '🔧 Hardware Store', sub: 'Tools, pipes & fittings', available: true },
+                { code: 'restaurant', label: '🍽️ Restaurant / Hotel', sub: 'Food & beverage billing', available: true },
+                { code: 'textile', label: '👗 Textile / Clothing', sub: 'Cloth & garment shop', available: true },
+                { code: 'auto_parts', label: '🚗 Auto Parts', sub: 'Vehicle spare parts', available: true },
+                { code: 'agriculture', label: '🌾 Agriculture / Seeds', sub: 'Seeds, fertilizer & pesticides', available: true },
+                { code: 'general', label: '🏪 General Store', sub: 'Any other retail business', available: true },
               ].map(b => (
                 <button key={b.code} onClick={() => selectBiz(b.code)}
-                  className={`w-full flex items-center justify-between p-4 border-2 rounded-xl transition-all group ${b.available ? 'border-gray-100 hover:border-indigo-400 hover:bg-indigo-50' : 'border-gray-100 hover:border-orange-300 hover:bg-orange-50'}`}>
+                  className="w-full flex items-center justify-between p-4 border-2 border-gray-100 rounded-xl transition-all group hover:border-indigo-400 hover:bg-indigo-50">
                   <div className="text-left">
-                    <div className={`font-semibold ${b.available ? 'text-gray-800 group-hover:text-indigo-700' : 'text-gray-600 group-hover:text-orange-700'}`}>{b.label}</div>
+                    <div className="font-semibold text-gray-800 group-hover:text-indigo-700">{b.label}</div>
                     <div className="text-xs text-gray-500 mt-0.5">{b.sub}</div>
                   </div>
-                  {b.available
-                    ? <ChevronRight className="text-gray-300 group-hover:text-indigo-500 shrink-0" size={20} />
-                    : <span className="text-xs bg-orange-100 text-orange-600 px-2 py-1 rounded-full font-medium shrink-0">Coming Soon</span>}
+                  <ChevronRight className="text-gray-300 group-hover:text-indigo-500 shrink-0" size={20} />
                 </button>
               ))}
               <button onClick={goBack} className="w-full text-center text-sm text-gray-400 hover:text-gray-600 mt-2 py-1">← Change language</button>
@@ -2957,8 +2962,9 @@ const AppContent = () => {
   if (!user) return <LandingScreen onPrivacy={() => setCurrentRoute('privacy')} />;
   if (user.role === 'customer') return <CustomerPortalView />;
   const bizType = localStorage.getItem('app_biz_type') || 'fuel';
-  if (bizType === 'kirana' || bizType === 'medical') return <PlaceholderDashboard bizType={bizType} />;
   if (bizType === 'cement') return <CementApp bunkId={user.bunkId || ''} />;
+  const OTHER_BIZ_TYPES = ['kirana', 'medical', 'hardware', 'restaurant', 'textile', 'auto_parts', 'agriculture', 'stationery', 'general'];
+  if (OTHER_BIZ_TYPES.includes(bizType)) return <OtherApp bunkId={user.bunkId || ''} bizType={bizType} />;
 
   const userRole = String(user.role || 'supervisor').toLowerCase();
 
