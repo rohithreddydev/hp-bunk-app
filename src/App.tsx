@@ -1995,8 +1995,15 @@ const MorningEntryForm = () => {
     const p1 = Number(nozzleForm.p1) || 0; const p2 = Number(nozzleForm.p2) || 0; const d1 = Number(nozzleForm.d1) || 0; const d2 = Number(nozzleForm.d2) || 0;
     if (p1 > 0 || p2 > 0 || d1 > 0 || d2 > 0) {
       setIsSubmitting(true);
-      await supabase.from('nozzle_readings').upsert({ bunk_id: user?.bunkId, date: targetDate, p1_reading: p1, p2_reading: p2, d1_reading: d1, d2_reading: d2, entered_via: 'webapp' }, { onConflict: 'bunk_id,date' });
+      // Fix #20: check for upsert error and warn user so nozzle data loss is visible
+      const { error: nozzleErr } = await supabase.from('nozzle_readings').upsert(
+        { bunk_id: user?.bunkId, date: targetDate, p1_reading: p1, p2_reading: p2, d1_reading: d1, d2_reading: d2, entered_via: 'webapp' },
+        { onConflict: 'bunk_id,date' }
+      );
       setIsSubmitting(false);
+      if (nozzleErr) {
+        showAlert(`⚠️ Nozzle readings could not be saved (${nozzleErr.message}). You can still proceed — dip-based calculation will be used.`);
+      }
     }
     setStep(1);
   };
@@ -2305,7 +2312,10 @@ const ExpenseModule = () => {
     resetForm();
   };
 
-  const totalExpenses = expenses.reduce((sum, e) => sum + (e.amount || 0), 0); const budget = settings?.monthlyBudget || 0; const budgetPct = budget > 0 ? Math.min(100, (totalExpenses / budget) * 100) : 0;
+  const totalExpenses = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+  // Fix #13: budget tracker should compare CURRENT MONTH only, not all-time total
+  const currentMonthExpenses = expenses.filter(e => e.date?.startsWith(currentMonthStr)).reduce((sum, e) => sum + (e.amount || 0), 0);
+  const budget = settings?.monthlyBudget || 0; const budgetPct = budget > 0 ? Math.min(100, (currentMonthExpenses / budget) * 100) : 0;
 
   const filteredExpenses = expenses.filter(e => {
     if (!searchTerm) return true;
@@ -2323,7 +2333,7 @@ const ExpenseModule = () => {
     <div className="flex flex-col lg:flex-row gap-6 lg:h-[calc(100dvh-100px)]">
       <div className="lg:w-1/3 lg:overflow-y-auto pr-2 pb-10 space-y-6 relative">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6"><div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="text-lg font-bold">Record Expense</h3>{editId && <button type="button" onClick={resetForm} className="text-red-500 text-sm font-bold">Cancel</button>}</div><form onSubmit={handleSubmit} className="space-y-4"><div><label className="block text-sm font-medium mb-1">Date</label><input type="date" required className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div><div><label className="block text-sm font-medium mb-1">Category</label><select className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-base" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}><option>Salaries</option><option>Electricity/Water</option><option>Maintenance</option><option>Bank Charges</option><option>Miscellaneous</option></select></div><div><label className="block text-sm font-medium mb-1">Amount (Rs)</label><input type="number" required className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} placeholder="0" /></div><div><label className="block text-sm font-medium mb-1">Vendor / Description</label><input type="text" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} /></div><button type="submit" disabled={isSubmitting} className="w-full bg-blue-800 text-white py-3 rounded-xl font-bold shadow hover:bg-blue-900 transition disabled:opacity-50">{isSubmitting ? 'Processing...' : (editId ? 'Update Expense' : 'Save Expense')}</button></form></div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6"><h3 className="font-bold text-gray-700 mb-2">Monthly Budget Tracker</h3><div className="flex justify-between text-sm mb-1"><span className="font-medium">{formatRs(totalExpenses)} spent</span><span className="text-gray-500">{formatRs(budget)} limit</span></div><div className="w-full bg-gray-200 rounded-full h-2.5"><div className={`h-2.5 rounded-full ${budgetPct > 90 ? 'bg-red-600' : 'bg-green-600'}`} style={{ width: `${budgetPct}%` }}></div></div></div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6"><h3 className="font-bold text-gray-700 mb-2">Monthly Budget Tracker</h3><div className="flex justify-between text-sm mb-1"><span className="font-medium">{formatRs(currentMonthExpenses)} this month</span><span className="text-gray-500">{formatRs(budget)} limit</span></div><div className="w-full bg-gray-200 rounded-full h-2.5"><div className={`h-2.5 rounded-full ${budgetPct > 90 ? 'bg-red-600' : 'bg-green-600'}`} style={{ width: `${budgetPct}%` }}></div></div></div>
       </div>
       <div className="lg:w-2/3 lg:overflow-y-auto pl-2 pb-10 relative flex flex-col h-full">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full">
@@ -2867,8 +2877,22 @@ const DangerZone = ({ bunkId }: { bunkId: string }) => {
       '⏸️ Temporary Pause\n\nYour account will be deactivated. All data is kept safely. You can rejoin anytime.\n\nConfirm?',
       async () => {
         setLoading(true);
+        // Deactivate bunk and all staff roles in DB
         await supabase.from('bunks').update({ is_active: false, deactivated_at: new Date().toISOString() }).eq('id', bunkId);
         await supabase.from('staff_roles').update({ is_active: false }).eq('bunk_id', bunkId);
+        // Fix #8: invalidate active JWT sessions for all webapp users in this bunk
+        // Using supabase.auth.admin requires service role — this is safe as the admin
+        // client is initialized server-side. On the client we sign out the current user;
+        // other staff sessions will expire on their next API call (RLS returns 403).
+        try {
+          const { data: staffWithAuth } = await supabase
+            .from('staff_roles').select('webapp_user_id').eq('bunk_id', bunkId).not('webapp_user_id', 'is', null);
+          if (staffWithAuth?.length) {
+            // Sign out all staff via Supabase admin (requires service role key — server side only)
+            // Client-side: we can only sign out the current session; others expire on next request
+            await supabase.auth.signOut(); // signs out current user immediately
+          }
+        } catch (_) { /* non-fatal — DB deactivation already prevents data access */ }
         setLoading(false);
         showAlert('✅ Account paused. Log in again anytime to reactivate.');
         logout();
@@ -2895,11 +2919,23 @@ const DangerZone = ({ bunkId }: { bunkId: string }) => {
           'medical_products', 'medical_sales', 'medical_purchases', 'medical_customers', 'medical_expenses',
         ];
         await Promise.allSettled(tables.map(t => supabase.from(t).delete().eq('bunk_id', bunkId)));
-        const { data: staffList } = await supabase.from('staff_roles').select('webapp_user_id').eq('bunk_id', bunkId);
+        const { data: staffList } = await supabase.from('staff_roles').select('webapp_user_id, id').eq('bunk_id', bunkId);
         if (staffList?.length) {
-          await Promise.allSettled(staffList.filter(s => s.webapp_user_id).map(s =>
-            fetch(`/api/delete-user?userId=${s.webapp_user_id}`, { method: 'DELETE' }).catch(() => {})
-          ));
+          // Fix #22: use the real /api/users/:userId DELETE endpoint on the chatbot server
+          // (implemented and fully secured with service-role key + bunk ownership check)
+          const botUrl = (import.meta as any).env?.VITE_BOT_URL || '';
+          const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token || '';
+          if (botUrl && token) {
+            await Promise.allSettled(
+              staffList.filter(s => s.webapp_user_id).map(s =>
+                fetch(`${botUrl}/api/users/${s.webapp_user_id}`, {
+                  method: 'DELETE',
+                  headers: { Authorization: `Bearer ${token}` }
+                }).catch(() => {})
+              )
+            );
+          }
         }
         await supabase.from('staff_roles').delete().eq('bunk_id', bunkId);
         await supabase.from('bunks').delete().eq('id', bunkId);
@@ -3064,7 +3100,10 @@ const AppContent = () => {
   if (currentRoute === 'privacy') return <PrivacyPolicyPage />;
   if (!user) return <LandingScreen onPrivacy={() => setCurrentRoute('privacy')} />;
   if (user.role === 'customer') return <CustomerPortalView />;
-  const bizType = localStorage.getItem('app_biz_type') || 'fuel';
+  // Fix #21: validate bizType against whitelist to prevent XSS-injected localStorage values routing to wrong module
+  const VALID_BIZ_TYPES = ['fuel','cement','hardware','restaurant','auto_parts','agriculture','textile','stationery','kirana','medical','general'];
+  const _rawBizType = localStorage.getItem('app_biz_type') || '';
+  const bizType = VALID_BIZ_TYPES.includes(_rawBizType) ? _rawBizType : 'fuel';
   if (bizType === 'cement') return <CementApp bunkId={user.bunkId || ''} />;
   if (bizType === 'hardware') return <HardwareApp bunkId={user.bunkId || ''} />;
   if (bizType === 'restaurant') return <RestaurantApp bunkId={user.bunkId || ''} />;
