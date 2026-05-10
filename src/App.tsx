@@ -312,12 +312,29 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   };
 
   const loginCustomer = (phone: string, pin: string) => {
-    const c = customers.find(c => c.phone === phone && c.pin === pin && c.portalAccess);
+    const normalize = (p: string) => p.replace(/[^0-9]/g, '').replace(/^91/, '').slice(-10);
+    const normInput = normalize(phone);
+    const c = customers.find(c => normalize(c.phone || '') === normInput && c.pin === pin && c.portalAccess);
     if (c) { saveUserSession({ id: c.id, name: c.companyName, email: '', role: 'customer', phone }); showAlert(`Welcome to your portal, ${c.companyName}!`); }
     else showAlert('Invalid PIN or mobile number not found.');
   };
 
-  const logout = async () => { await supabase.auth.signOut(); saveUserSession(null); setCustomers([]); setTransactions([]); setMorningEntries([]); setExpenses([]); setFuelPurchases([]); setUsers([]); setCurrentRoute('dashboard'); };
+  const logout = () => {
+    const doLogout = async () => {
+      await supabase.auth.signOut();
+      localStorage.removeItem('app_user_session');
+      localStorage.removeItem('app_biz_type');
+      localStorage.removeItem('app_lang');
+      saveUserSession(null);
+      setCustomers([]); setTransactions([]); setMorningEntries([]); setExpenses([]); setFuelPurchases([]); setUsers([]);
+      setCurrentRoute('dashboard');
+    };
+    if (unsavedForm) {
+      showConfirm('You have unsaved changes. Sign out anyway?', doLogout);
+    } else {
+      doLogout();
+    }
+  };
 
   const bId = user?.bunkId || 'default';
 
@@ -346,7 +363,14 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     setCustomers(customers.map(c => c.id === id ? { ...c, ...updates } : c)); showAlert("Customer details updated.");
   };
 
-  const deleteCustomer = async (id: string) => { const { error } = await supabase.from('customers').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setCustomers(customers.filter(c => c.id !== id)); showAlert("Customer permanently removed."); };
+  const deleteCustomer = (id: string) => {
+    showConfirm('Permanently delete this customer and all their transactions?', async () => {
+      const { error } = await supabase.from('customers').delete().eq('id', id);
+      if (error) return showAlert("Delete Failed: " + error.message);
+      setCustomers(customers.filter(c => c.id !== id));
+      showAlert("Customer permanently removed.");
+    });
+  };
 
   const addTransaction = async (t: any) => {
     const { data, error } = await supabase.from('transactions').insert([{
@@ -823,10 +847,19 @@ const PlaceholderDashboard = ({ bizType }: { bizType: string }) => {
   const { logout } = useAppContext();
   const [notifyEmail, setNotifyEmail] = useState('');
   const [notified, setNotified] = useState(false);
+  const [saving, setSaving] = useState(false);
   const isKirana = bizType === 'kirana';
   const label = isKirana ? 'Kirana Store' : 'Medical Shop';
   const icon = isKirana ? '🛒' : '💊';
   const features = ['Daily Sales Tracking', 'Inventory Management', 'Customer Credit Ledger', 'Expense Reports', 'WhatsApp Bot Integration', 'Staff Management'];
+
+  const handleNotify = async () => {
+    if (!notifyEmail.includes('@')) return;
+    setSaving(true);
+    await supabase.from('waitlist_emails').upsert({ email: notifyEmail, biz_type: bizType }, { onConflict: 'email' });
+    setSaving(false);
+    setNotified(true);
+  };
 
   return (
     <div className="min-h-[100dvh] bg-gradient-to-br from-indigo-950 via-purple-950 to-blue-950 flex items-center justify-center p-4">
@@ -850,8 +883,8 @@ const PlaceholderDashboard = ({ bizType }: { bizType: string }) => {
             <div className="space-y-3">
               <label className="block text-sm font-medium text-gray-700">Notify me when {label} launches:</label>
               <input type="email" value={notifyEmail} onChange={e => setNotifyEmail(e.target.value)} placeholder="your@email.com" className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" />
-              <button onClick={() => { if (notifyEmail.includes('@')) setNotified(true); }} className="w-full bg-indigo-700 text-white p-3 rounded-lg font-bold hover:bg-indigo-800 transition flex items-center justify-center gap-2">
-                <Bell size={16} /> Notify Me
+              <button onClick={handleNotify} disabled={saving} className="w-full bg-indigo-700 text-white p-3 rounded-lg font-bold hover:bg-indigo-800 transition flex items-center justify-center gap-2 disabled:opacity-50">
+                <Bell size={16} /> {saving ? 'Saving...' : 'Notify Me'}
               </button>
             </div>
           ) : (
