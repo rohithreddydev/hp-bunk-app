@@ -292,14 +292,35 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const cleanEmail = formData.email.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return showAlert("Please enter a valid email address.");
     if (formData.pass.length < 6) return showAlert("Password must be at least 6 characters.");
+    const cleanPhone = formData.phone.replace(/\D/g, '');
+    if (!/^[6-9]\d{9}$/.test(cleanPhone)) return showAlert("Please enter a valid 10-digit Indian mobile number.");
+    const normalizedPhone = `91${cleanPhone}`;
 
     const { data: authData, error: authError } = await supabase.auth.signUp({ email: cleanEmail, password: formData.pass, options: { emailRedirectTo: window.location.origin } });
     if (authError) return showAlert(`Registration Error: ${authError.message}`);
     if (!authData.user) return showAlert('Registration failed. Email might already exist.');
 
     const newBunkId = generateId();
-    await supabase.from('bunks').insert([{ id: newBunkId, name: formData.bunkName || 'My Fuel Station', owner_name: formData.name, fuel_company: formData.fuelCompany, current_od_balance: 0, current_hp_balance: 0, od_limit: 3000000 }]);
-    await supabase.from('profiles').insert([{ id: authData.user.id, name: formData.name, email: cleanEmail, role: 'owner', bunk_id: newBunkId }]);
+    const trialEndsAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+
+    await Promise.all([
+      supabase.from('bunks').insert([{
+        id: newBunkId, name: formData.bunkName || 'My Fuel Station',
+        owner_name: formData.name, owner_phone: normalizedPhone,
+        fuel_company: formData.fuelCompany,
+        current_od_balance: 0, current_hp_balance: 0, od_limit: 3000000,
+        subscription_plan: 'trial', trial_ends_at: trialEndsAt, is_active: true
+      }]),
+      supabase.from('profiles').insert([{
+        id: authData.user.id, name: formData.name, email: cleanEmail,
+        role: 'owner', bunk_id: newBunkId, phone: normalizedPhone
+      }]),
+      supabase.from('staff_roles').insert([{
+        bunk_id: newBunkId, phone: normalizedPhone, name: formData.name,
+        role: 'owner', is_active: true, email: cleanEmail,
+        webapp_user_id: authData.user.id
+      }]),
+    ]);
 
     if (!authData.session) {
       showAlert('Success! Please check your email inbox and click the verification link to log in.');
@@ -308,7 +329,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
     saveUserSession({ id: authData.user.id, name: formData.name, email: cleanEmail, role: 'owner', bunkId: newBunkId });
     if (formData.bunkName) updateSettings({ ...settings, bunkName: formData.bunkName });
-    showAlert('Account created and logged in successfully!');
+    showAlert(`Welcome to Smart Biz AI, ${formData.name}! Your 3-month free trial has started.`);
   };
 
   const loginCustomer = (phone: string, pin: string) => {
@@ -714,7 +735,7 @@ const useAppContext = () => { const ctx = useContext(AppContext); if (!ctx) thro
 // --- COMPONENTS ---
 
 // 1. Auth Screens
-const LandingScreen = () => {
+const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
   const { login, loginCustomer, signup, showAlert } = useAppContext();
 
   const [step, setStep] = useState<'lang' | 'biz' | 'login'>(() => {
@@ -734,11 +755,15 @@ const LandingScreen = () => {
 
   const switchView = (newView: 'login' | 'signup') => { setLoginEmail(''); setLoginPass(''); setRegName(''); setRegPhone(''); setRegBunk(''); setRegEmail(''); setRegPass(''); setView(newView); };
 
+  const waNumber = (import.meta as any).env?.VITE_WHATSAPP_NUMBER || '917093578438';
   const selectLang = (l: string) => { localStorage.setItem('app_lang', l); setStep('biz'); };
   const selectBiz = (b: string) => { localStorage.setItem('app_biz_type', b); setStep('login'); };
   const goBack = () => {
     if (step === 'login') { localStorage.removeItem('app_biz_type'); setStep('biz'); }
     else if (step === 'biz') { localStorage.removeItem('app_lang'); setStep('lang'); }
+  };
+  const openWhatsApp = () => {
+    window.open(`https://wa.me/${waNumber}?text=Hi, I want to register my business on Smart Biz AI`, '_blank');
   };
 
   const stepLabels = [{ key: 'lang', label: 'Language' }, { key: 'biz', label: 'Business' }, { key: 'login', label: 'Login' }];
@@ -780,7 +805,22 @@ const LandingScreen = () => {
           )}
           {step === 'biz' && (
             <div className="space-y-3 animate-in fade-in">
-              <p className="text-gray-500 text-center text-sm mb-4">What type of business do you run?</p>
+              <p className="text-gray-500 text-center text-sm mb-2">What type of business do you run?</p>
+              <button onClick={openWhatsApp} className="w-full flex items-center gap-3 p-3 bg-green-50 border-2 border-green-200 rounded-xl hover:border-green-400 hover:bg-green-100 transition-all group mb-1">
+                <div className="w-9 h-9 bg-green-500 rounded-full flex items-center justify-center shrink-0">
+                  <MessageCircle size={18} className="text-white" />
+                </div>
+                <div className="text-left flex-1">
+                  <div className="font-semibold text-green-800 text-sm">Register via WhatsApp (Recommended)</div>
+                  <div className="text-xs text-green-600">Tap to open chat · Set up in 5 minutes</div>
+                </div>
+                <ChevronRight className="text-green-400 shrink-0" size={18} />
+              </button>
+              <div className="flex items-center gap-2 text-gray-300 text-xs px-1 mb-1">
+                <div className="flex-1 h-px bg-gray-200" />
+                <span className="text-gray-400">or register in app below</span>
+                <div className="flex-1 h-px bg-gray-200" />
+              </div>
               {[
                 { code: 'fuel', label: '⛽ Fuel Station', sub: 'Petrol / Diesel management', available: true },
                 { code: 'kirana', label: '🛒 Kirana Store', sub: 'Grocery & retail store', available: false },
@@ -836,6 +876,9 @@ const LandingScreen = () => {
               <button onClick={goBack} className="w-full text-center text-sm text-gray-400 hover:text-gray-600 mt-4 py-1">← Change business type</button>
             </div>
           )}
+        <div className="px-6 pb-4 text-center text-xs text-gray-400">
+          By continuing you agree to our{' '}
+          <button onClick={onPrivacy} className="text-indigo-500 underline hover:text-indigo-700">Privacy Policy & Terms</button>
         </div>
       </div>
     </div>
@@ -2793,6 +2836,43 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
   }
 }
 
+// Privacy Policy & Terms
+const PrivacyPolicyPage = () => {
+  const waNumber = (import.meta as any).env?.VITE_WHATSAPP_NUMBER || '917093578438';
+  return (
+    <div className="min-h-[100dvh] bg-gray-50">
+      <div className="max-w-2xl mx-auto px-4 py-10">
+        <div className="flex items-center gap-3 mb-8">
+          <Briefcase className="text-indigo-700" size={28} />
+          <h1 className="text-2xl font-black text-gray-900">Smart Biz AI</h1>
+        </div>
+        <h2 className="text-xl font-bold text-gray-900 mb-1">Privacy Policy & Terms of Use</h2>
+        <p className="text-sm text-gray-500 mb-8">Effective date: May 2026 · Last updated: May 2026</p>
+        <div className="space-y-6 text-gray-700 text-sm leading-relaxed">
+          <section><h3 className="font-bold text-gray-900 mb-2">1. What We Collect</h3><p>We collect your name, mobile number, email address, and business details (station name, address, nozzle count, fuel rates, bank account names) during registration. We also log WhatsApp messages you send to our bot for the purpose of processing transactions and reports.</p></section>
+          <section><h3 className="font-bold text-gray-900 mb-2">2. How We Use Your Data</h3><p>Your data is used solely to operate the Smart Biz AI service: processing credit sales, generating reports, sending WhatsApp notifications, and maintaining your dashboard. We never sell your data to third parties.</p></section>
+          <section><h3 className="font-bold text-gray-900 mb-2">3. Data Storage</h3><p>All data is stored securely on Supabase (hosted on AWS, eu-west region). Data is encrypted at rest and in transit (TLS 1.2+). Row-Level Security is enforced so no other business can access your data.</p></section>
+          <section><h3 className="font-bold text-gray-900 mb-2">4. WhatsApp Integration</h3><p>Smart Biz AI uses the Meta WhatsApp Business API. Your conversations with our bot are processed through Meta's infrastructure. By using our WhatsApp bot, you agree to Meta's Privacy Policy at facebook.com/privacy/policy.</p></section>
+          <section><h3 className="font-bold text-gray-900 mb-2">5. Data Retention</h3><p>Your data is retained for the duration of your subscription. After account deletion, data is removed within 30 days. Transaction records may be retained for 7 years as required by Indian tax law (GST Act).</p></section>
+          <section><h3 className="font-bold text-gray-900 mb-2">6. Your Rights</h3><p>You may request export, correction, or deletion of your data at any time by contacting us. We will respond within 7 working days.</p></section>
+          <section><h3 className="font-bold text-gray-900 mb-2">7. Trial & Payments</h3><p>The 3-month free trial requires no credit card. After trial expiry, continued use requires a paid subscription. Pricing will be communicated before your trial ends. No charges are made without explicit consent.</p></section>
+          <section><h3 className="font-bold text-gray-900 mb-2">8. Governing Law</h3><p>These terms are governed by the laws of India. Any disputes are subject to the jurisdiction of courts in Hyderabad, Telangana.</p></section>
+          <section><h3 className="font-bold text-gray-900 mb-2">9. Contact Us</h3>
+            <p>For privacy concerns, data requests, or support:</p>
+            <ul className="mt-2 space-y-1">
+              <li>📱 WhatsApp: <a href={`https://wa.me/${waNumber}`} className="text-indigo-600 underline" target="_blank" rel="noopener noreferrer">+{waNumber}</a></li>
+              <li>📧 Email: support@smartbizai.in</li>
+            </ul>
+          </section>
+        </div>
+        <div className="mt-10 pt-6 border-t text-center text-xs text-gray-400">
+          © 2026 Smart Biz AI · Built with ❤️ in India
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Main Layout / Router
 const AppContent = () => {
   const { user, settings, logout, currentRoute, setCurrentRoute, unsavedForm, setUnsavedForm } = useAppContext();
@@ -2806,7 +2886,8 @@ const AppContent = () => {
     } else { setCurrentRoute(id); setIsSidebarOpen(false); }
   };
 
-  if (!user) return <LandingScreen />;
+  if (currentRoute === 'privacy') return <PrivacyPolicyPage />;
+  if (!user) return <LandingScreen onPrivacy={() => setCurrentRoute('privacy')} />;
   if (user.role === 'customer') return <CustomerPortalView />;
   const bizType = localStorage.getItem('app_biz_type') || 'fuel';
   if (bizType === 'kirana' || bizType === 'medical') return <PlaceholderDashboard bizType={bizType} />;
