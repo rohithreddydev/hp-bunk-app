@@ -393,21 +393,23 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     });
   };
 
-  const addTransaction = async (t: any) => {
+  const addTransaction = async (t: any): Promise<boolean> => {
     const { data, error } = await supabase.from('transactions').insert([{
       bunk_id: bId, customer_id: t.customerId, type: t.type, date: t.date,
       product: t.product, quantity: t.quantity, amount: t.amount,
       payment_mode: t.mode, vehicle_number: t.vehicleNumber, remarks: t.remarks
     }]).select();
-    if (error) { console.error('addTransaction error:', error); return showAlert("Transaction Failed: " + error.message); }
-    if (data && data.length > 0) {
-      // Use functional form to avoid stale closure on transactions array
-      setTransactions(prev => {
-        const newTx: Transaction = { ...t, id: String(data[0].id) };
-        if (prev.some(x => x.id === newTx.id)) return prev;
-        return [newTx, ...prev];
-      });
+    if (error) { console.error('addTransaction error:', error); showAlert("Transaction Failed: " + error.message); return false; }
+    if (!data || data.length === 0) {
+      showAlert("Save failed — please sign out and sign in again, then retry. If the issue continues, contact support.");
+      return false;
     }
+    setTransactions(prev => {
+      const newTx: Transaction = { ...t, id: String(data[0].id) };
+      if (prev.some(x => x.id === newTx.id)) return prev;
+      return [newTx, ...prev];
+    });
+    return true;
   };
 
   const updateTransaction = async (id: string, updates: any) => { const { error } = await supabase.from('transactions').update({ customer_id: updates.customerId, type: updates.type, date: updates.date, product: updates.product, quantity: updates.quantity, amount: updates.amount, payment_mode: updates.mode, vehicle_number: updates.vehicleNumber, remarks: updates.remarks }).eq('id', id); if (error) return showAlert("Update Failed: " + error.message); setTransactions(transactions.map(t => t.id === id ? { ...t, ...updates } : t)); showAlert("Transaction updated."); };
@@ -422,6 +424,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     // Use direct REST API fetch to bypass PostgREST schema cache issues with balance_od column
     const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
     const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
+    const { data: sessionData } = await supabase.auth.getSession();
+    const authToken = sessionData?.session?.access_token || supabaseKey;
     const body = {
       bunk_id: bId,
       entry_date: e.date,
@@ -450,8 +454,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         headers: {
           'Content-Type': 'application/json',
           'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-          // return=representation so we get the saved row id back
+          'Authorization': `Bearer ${authToken}`,
           'Prefer': 'return=representation',
         },
         body: JSON.stringify(body),
@@ -479,6 +482,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     // from the PostgREST schema cache on older deployments.
     const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
     const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
+    const { data: sessionData2 } = await supabase.auth.getSession();
+    const authToken2 = sessionData2?.session?.access_token || supabaseKey;
     const body = {
       entry_date: updates.date,
       petrol_dip_today: updates.petrolDip,
@@ -507,7 +512,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         headers: {
           'Content-Type': 'application/json',
           'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
+          'Authorization': `Bearer ${authToken2}`,
           'Prefer': 'return=representation',
         },
         body: JSON.stringify(body),
@@ -1686,17 +1691,18 @@ const CreditLedger = () => {
     } else {
       if (tab === 'sale') {
         if (amtNum > 0) {
-          // SINGLE credit_sale row with advance embedded in remarks
           const txType = product === 'Opening Balance' ? 'opening_balance' : 'credit_sale';
-          await addTransaction({ customerId: selCust, type: txType, date: txDate, product, quantity: qtyNum, amount: amtNum, vehicleNumber: selVehicle || undefined, remarks: buildRemarks() });
+          const ok = await addTransaction({ customerId: selCust, type: txType, date: txDate, product, quantity: qtyNum, amount: amtNum, vehicleNumber: selVehicle || undefined, remarks: buildRemarks() });
+          if (!ok) { setIsSubmitting(false); return; }
           showAlert(advNum > 0 ? `Saved! Credit ₹${amtNum.toLocaleString()} + Advance ₹${advNum.toLocaleString()}` : "Credit sale recorded!");
         } else if (advNum > 0) {
-          // Advance-only (no credit sale in this entry)
-          await addTransaction({ customerId: selCust, type: 'advance', date: txDate, amount: advNum, vehicleNumber: selVehicle || undefined, remarks: advanceRemarks || undefined });
+          const ok = await addTransaction({ customerId: selCust, type: 'advance', date: txDate, amount: advNum, vehicleNumber: selVehicle || undefined, remarks: advanceRemarks || undefined });
+          if (!ok) { setIsSubmitting(false); return; }
           showAlert(`Cash advance ₹${advNum.toLocaleString()} recorded!`);
         }
       } else {
-        await addTransaction({ customerId: selCust, type: 'payment', date: txDate, amount: amtNum, mode: payMode, vehicleNumber: selVehicle || undefined });
+        const ok = await addTransaction({ customerId: selCust, type: 'payment', date: txDate, amount: amtNum, mode: payMode, vehicleNumber: selVehicle || undefined });
+        if (!ok) { setIsSubmitting(false); return; }
         showAlert("Payment recorded successfully.");
       }
       resetForm(tab === 'payment');
