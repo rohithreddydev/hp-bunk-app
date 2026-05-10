@@ -2853,7 +2853,129 @@ const SettingsModule = () => {
           </form>
         </div>
       </div>
+
+      {/* Danger Zone — owner only */}
+      {user?.role === 'owner' && <DangerZone bunkId={user.bunkId || ''} onLogout={logout} showAlert={showAlert} showConfirm={showConfirm} />}
     </div>
+  );
+};
+
+// ─── Danger Zone ─────────────────────────────────────────────────────────────
+
+const DangerZone = ({ bunkId, onLogout, showAlert, showConfirm }: { bunkId: string; onLogout: () => void; showAlert: (m: string) => void; showConfirm: (m: string, onY: () => void) => void }) => {
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteType, setDeleteType] = useState<'pause' | 'delete' | null>(null);
+  const [confirmText, setConfirmText] = useState('');
+  const [processing, setProcessing] = useState(false);
+
+  const handlePause = async () => {
+    setProcessing(true);
+    await supabase.from('bunks').update({ is_active: false, is_paused: true, paused_at: new Date().toISOString(), pause_reason: 'owner_request' }).eq('id', bunkId);
+    setProcessing(false);
+    setShowDeleteModal(false);
+    showAlert('✅ Account paused. Your data is safe. You can reactivate anytime by logging back in or messaging the WhatsApp bot.');
+    setTimeout(() => onLogout(), 2000);
+  };
+
+  const handlePermanentDelete = async () => {
+    if (confirmText !== 'DELETE') return;
+    setProcessing(true);
+    await Promise.allSettled([
+      supabase.from('transactions').delete().eq('bunk_id', bunkId),
+      supabase.from('expenses').delete().eq('bunk_id', bunkId),
+      supabase.from('fuel_purchases').delete().eq('bunk_id', bunkId),
+      supabase.from('morning_entries').delete().eq('bunk_id', bunkId),
+    ]);
+    await Promise.allSettled([
+      supabase.from('customers').delete().eq('bunk_id', bunkId),
+      supabase.from('staff_roles').delete().eq('bunk_id', bunkId),
+      supabase.from('settings').delete().eq('bunk_id', bunkId),
+    ]);
+    await supabase.from('bunks').delete().eq('id', bunkId);
+    await supabase.auth.signOut();
+    localStorage.clear();
+    window.location.reload();
+  };
+
+  return (
+    <>
+      <div className="bg-white rounded-2xl shadow p-6 border-2 border-red-100">
+        <div className="flex items-center gap-3 mb-4 border-b border-red-100 pb-3">
+          <AlertTriangle className="text-red-500" size={20} />
+          <h3 className="text-lg font-bold text-red-700">Danger Zone</h3>
+        </div>
+        <p className="text-sm text-gray-500 mb-5">These actions affect your entire account. Only owners can perform them.</p>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between p-4 bg-orange-50 rounded-xl border border-orange-200">
+            <div>
+              <p className="font-semibold text-gray-900 text-sm">Pause Account</p>
+              <p className="text-xs text-gray-500">Deactivates your account temporarily. All data is preserved. Reactivate anytime.</p>
+            </div>
+            <button onClick={() => { setDeleteType('pause'); setConfirmText(''); setShowDeleteModal(true); }}
+              className="ml-4 shrink-0 px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium hover:bg-orange-600 transition">
+              Pause
+            </button>
+          </div>
+          <div className="flex items-center justify-between p-4 bg-red-50 rounded-xl border border-red-200">
+            <div>
+              <p className="font-semibold text-red-900 text-sm">Delete All Data</p>
+              <p className="text-xs text-red-600">Permanently deletes everything. This cannot be undone.</p>
+            </div>
+            <button onClick={() => { setDeleteType('delete'); setConfirmText(''); setShowDeleteModal(true); }}
+              className="ml-4 shrink-0 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition">
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {showDeleteModal && deleteType && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => !processing && setShowDeleteModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+            {deleteType === 'pause' ? (
+              <>
+                <div className="text-center mb-5">
+                  <div className="w-14 h-14 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <AlertTriangle size={24} className="text-orange-600" />
+                  </div>
+                  <h2 className="text-lg font-bold text-gray-900">Pause Account?</h2>
+                  <p className="text-sm text-gray-500 mt-2">Your account will be deactivated but all your data will be saved. You can return anytime by logging back in or messaging the WhatsApp bot.</p>
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setShowDeleteModal(false)} className="flex-1 py-3 border border-gray-300 rounded-xl font-medium text-sm hover:bg-gray-50">Cancel</button>
+                  <button onClick={handlePause} disabled={processing}
+                    className="flex-1 py-3 bg-orange-500 text-white rounded-xl font-bold text-sm hover:bg-orange-600 disabled:opacity-50 flex items-center justify-center gap-2">
+                    {processing ? <><RefreshCw size={14} className="animate-spin" />Pausing...</> : '⏸️ Yes, Pause Account'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-center mb-5">
+                  <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <Trash2 size={24} className="text-red-600" />
+                  </div>
+                  <h2 className="text-lg font-bold text-red-900">Delete Everything?</h2>
+                  <p className="text-sm text-gray-600 mt-2">This will permanently delete <strong>all your transactions, customers, reports, and account data</strong>. This cannot be undone.</p>
+                </div>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                  <p className="text-xs text-red-700 font-medium mb-2">Type <strong>DELETE</strong> to confirm:</p>
+                  <input type="text" value={confirmText} onChange={e => setConfirmText(e.target.value)}
+                    placeholder="Type DELETE here" className="w-full border border-red-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-500" />
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setShowDeleteModal(false)} className="flex-1 py-3 border border-gray-300 rounded-xl font-medium text-sm hover:bg-gray-50">Cancel</button>
+                  <button onClick={handlePermanentDelete} disabled={processing || confirmText !== 'DELETE'}
+                    className="flex-1 py-3 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                    {processing ? <><RefreshCw size={14} className="animate-spin" />Deleting...</> : '🗑️ Delete All Data'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 
