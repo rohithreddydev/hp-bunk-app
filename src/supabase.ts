@@ -3,9 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// This will tell you if your keys are missing instead of showing a white screen!
 if (!supabaseUrl || !supabaseKey) {
-  alert("Missing Supabase Keys! Make sure .env.local exists in your root folder and you have restarted the server.");
+  console.error('[FuelDesk] Missing Supabase env vars: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set in .env.local');
 }
 
 export const supabase = createClient(

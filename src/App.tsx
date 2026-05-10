@@ -11,7 +11,7 @@
 =============================================================================
 */
 
-import React, { useState, createContext, useContext, useEffect, useMemo, Component, type ReactNode } from 'react';
+import React, { useState, createContext, useContext, useEffect, useMemo, useCallback, Component, type ReactNode } from 'react';
 import {
   Users, BookOpen, Sun, Receipt, Fuel, Search, ChevronLeft,
   BarChart3, Settings, LogOut, Plus, AlertCircle, CheckCircle2,
@@ -31,10 +31,13 @@ export function nowIST(): Date {
   return new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
 }
 
-export function formatISTDate(dateStr: string): string {
-  if (!dateStr) return '';
-  const d = new Date(dateStr + 'T00:00:00+05:30');
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+export function formatISTDate(dateStr: string | null | undefined): string {
+  if (!dateStr || typeof dateStr !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(dateStr)) return '—';
+  try {
+    const d = new Date(dateStr.substring(0, 10) + 'T00:00:00+05:30');
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+  } catch { return '—'; }
 }
 
 const todayStr = getTodayIST();
@@ -42,36 +45,29 @@ const currentMonthStr = todayStr.substring(0, 7);
 const currentYearStr = todayStr.substring(0, 4);
 const CATEGORIES = ['Fleet', 'Milk Tanker', 'School', 'Hospital', 'Individual', 'Logistics', 'Other'];
 
-// --- BULLETPROOF SUPABASE SETUP ---
-// ⚠️ MAC/VS CODE USER: UNCOMMENT THE NEXT 5 LINES FOR PRODUCTION AND DELETE THE CANVAS MOCK! ⚠️
-
-import { createClient } from '@supabase/supabase-js';
+// --- SUPABASE SETUP ---
+import { supabase } from './supabase';
 const rawUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
 const rawKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
 export const hasValidKeys = Boolean(rawUrl && rawKey && rawUrl !== 'undefined' && rawKey !== 'undefined');
-export const supabase = createClient(rawUrl || 'https://placeholder.supabase.co', rawKey || 'placeholder-key');
-
-// --- CANVAS MOCK (DELETE THIS ENTIRE BLOCK WHEN RUNNING LOCALLY ON YOUR MAC) ---
-
-// ------------------------------------------------------------------------------------------
 
 // --- TYPES ---
 type Role = 'owner' | 'supervisor' | 'customer';
 interface User { id: string; name: string; email: string; role: Role; phone?: string; bunkId?: string; }
 interface Customer { id: string; category: string; companyName: string; ownerName?: string; phone: string; address?: string; paymentTerms?: string; driverName?: string; driverPhone?: string; vehicleNumbers?: string; creditLimit: number; status: 'Active' | 'Suspended' | 'Blocked'; pin: string; portalAccess: boolean; notifyOnCredit: boolean | null; }
-interface Transaction { id: string; customerId: string; type: 'credit_sale' | 'payment' | 'opening_balance' | 'advance'; date: string; product?: string; quantity?: number; rate?: number; amount: number; mode?: string; vehicleNumber?: string; remarks?: string; }
-interface MorningEntry { id: string; date: string; petrolDip: number; dieselDip: number; petrolSold: number; dieselSold: number; netProfit: number; variance: number; submitted: boolean; netValue: number; collectionsCash: number; balanceCash: number; collectionsBank: number; collectionsDigital: number; collectionDtp: number; collectionsCard: number; collectionsCredit: number; periodExpenses: number; balanceBank: number; balanceDigital: number; balanceOd: number; }
+interface Transaction { id: string; customerId: string; type: 'credit_sale' | 'payment' | 'opening_balance' | 'advance'; date: string; product?: string; quantity?: number; rate?: number; amount: number; mode?: string; vehicleNumber?: string; remarks?: string; reference?: string; }
+interface MorningEntry { id: string; date: string; petrolDip: number; dieselDip: number; petrolSold: number; dieselSold: number; netProfit: number; variance: number; submitted: boolean; netValue: number; collectionsCash: number; balanceCash: number; collectionsBank: number; collectionsDigital: number; collectionDtp: number; collectionsCard: number; collectionsCredit: number; periodExpenses: number; balanceBank: number; balanceDigital: number; balanceOd: number; openingBalance?: number; }
 interface Expense { id: string; date: string; category: string; amount: number; description: string; vendor: string; mode: string; }
 interface FuelPurchase { id: string; date: string; product: string; litres: number; rate: number; amount: number; supplier: string; invoice: string; mode: string; }
 
 interface AppContextType {
   user: User | null; dataLoading: boolean; unsavedForm: boolean; setUnsavedForm: (v: boolean) => void;
-  login: (email: string, pass: string) => Promise<void>; loginCustomer: (phone: string, pin: string) => void;
+  login: (email: string, pass: string) => Promise<boolean>; loginCustomer: (phone: string, pin: string) => void;
   signup: (data: { name: string, phone: string, bunkName: string, email: string, pass: string, fuelCompany: string }) => Promise<void>;
   logout: () => void; currentRoute: string; setCurrentRoute: (r: string) => void; customerFilter: string; setCustomerFilter: (f: string) => void;
   customers: Customer[]; transactions: Transaction[]; morningEntries: MorningEntry[]; expenses: Expense[]; fuelPurchases: FuelPurchase[]; users: User[]; settings: any;
   addCustomer: (c: any) => Promise<string | null>; updateCustomer: (id: string, updates: any) => Promise<void>; deleteCustomer: (id: string) => Promise<void>;
-  addTransaction: (t: any) => Promise<void>; updateTransaction: (id: string, updates: any) => Promise<void>; deleteTransaction: (id: string) => Promise<void>;
+  addTransaction: (t: any) => Promise<boolean>; updateTransaction: (id: string, updates: any) => Promise<void>; deleteTransaction: (id: string) => Promise<void>;
   addMorningEntry: (e: any) => Promise<void>; updateMorningEntry: (id: string, updates: any) => Promise<void>; deleteMorningEntry: (id: string) => Promise<void>;
   addExpense: (e: any) => Promise<void>; updateExpense: (id: string, updates: any) => Promise<void>; deleteExpense: (id: string) => Promise<void>;
   addFuelPurchase: (purchases: any) => Promise<void>; updateFuelPurchase: (id: string, updates: any) => Promise<void>; deleteFuelPurchase: (id: string) => Promise<void>;
@@ -146,15 +142,18 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       _setCurrentRoute(hash || 'dashboard');
     };
     window.addEventListener('popstate', handlePopState);
-    window.history.replaceState({ route: currentRoute }, '', `#${currentRoute}`);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [currentRoute]);
+  }, []);
 
   const [customerFilter, setCustomerFilter] = useState('All');
 
   const [customers, setCustomers] = useState<Customer[]>([]); const [transactions, setTransactions] = useState<Transaction[]>([]); const [morningEntries, setMorningEntries] = useState<MorningEntry[]>([]); const [expenses, setExpenses] = useState<Expense[]>([]); const [fuelPurchases, setFuelPurchases] = useState<FuelPurchase[]>([]); const [users, setUsers] = useState<User[]>([]);
 
-  const showAlert = (msg: string) => { setAlertMessage(msg); setTimeout(() => setAlertMessage(null), 4500); };
+  const showAlert = (msg: string) => {
+    setAlertMessage(msg);
+    const t = setTimeout(() => setAlertMessage(null), 5000);
+    return () => clearTimeout(t);
+  };
   const showConfirm = (message: string, onConfirm: () => void) => { setConfirmDialog({ message, onConfirm }); };
 
   const validateInputs = (amounts: number[], litres: number[]) => {
@@ -277,15 +276,16 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return () => { supabase.removeChannel(channel); };
   }, [user?.id, user?.bunkId]);
 
-  const login = async (email: string, pass: string) => {
+  const login = async (email: string, pass: string): Promise<boolean> => {
     const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password: pass });
-    if (error) { showAlert(`Login Failed: ${error.message}`); return; }
+    if (error) { showAlert(`Login Failed: ${error.message}`); return false; }
 
     const { data: profile, error: profError } = await supabase.from('profiles').select('*').eq('id', data.user.id).single();
-    if (profError || !profile) { showAlert(`Your profile is missing. Please contact support or sign up again.`); return; }
+    if (profError || !profile) { showAlert(`Your profile is missing. Please contact support or sign up again.`); return false; }
 
     saveUserSession({ id: String(profile.id), name: String(profile.name), email: String(profile.email), role: String(profile.role).toLowerCase() as Role, bunkId: String(profile.bunk_id) });
-    showAlert(`Welcome back, ${profile.name}!`);
+    showAlert(`✅ Welcome back, ${profile.name}!`);
+    return true;
   };
 
   const signup = async (formData: { name: string, phone: string, bunkName: string, email: string, pass: string, fuelCompany: string }) => {
@@ -329,7 +329,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
     saveUserSession({ id: authData.user.id, name: formData.name, email: cleanEmail, role: 'owner', bunkId: newBunkId });
     if (formData.bunkName) updateSettings({ ...settings, bunkName: formData.bunkName });
-    showAlert(`Welcome to Smart Biz AI, ${formData.name}! Your 3-month free trial has started.`);
+    showAlert(`✅ Welcome to Smart Biz AI, ${formData.name}! Your 3-month free trial has started.`);
   };
 
   const loginCustomer = (phone: string, pin: string) => {
@@ -711,8 +711,10 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         if (txInserts.length > 0) await supabase.from('transactions').insert(txInserts);
       }
 
-      showAlert(`Success: Imported ${successCount} new, Updated ${updateCount} existing accounts! Refreshing data...`);
-      setTimeout(() => window.location.reload(), 2000);
+      showAlert(`✅ Imported ${successCount} new, Updated ${updateCount} existing accounts!`);
+      // Reload customers from DB instead of full page reload
+      const { data: freshCusts } = await supabase.from('customers').select('*').eq('bunk_id', bId);
+      if (freshCusts) setCustomers(freshCusts.map((d: any) => ({ id: String(d.id), category: d.category || 'Other', companyName: d.company_name || 'Unknown', ownerName: d.owner_name || '', address: d.address || '', paymentTerms: d.payment_terms || 'Monthly', phone: d.phone || '', driverName: d.driver_name || '', driverPhone: d.driver_phone || '', vehicleNumbers: d.vehicle_numbers || '', creditLimit: Number(d.credit_limit) || 0, status: d.status || 'Active', pin: d.portal_pin || '', portalAccess: Boolean(d.portal_access), notifyOnCredit: d.notify_on_credit })));
     } catch (e: any) { console.error(e); showAlert(`Import Failed: ${e.message}. Ensure format: CompanyName, Phone, DriverName, DriverPhone, VehicleNumbers, CreditLimit, OpeningBalance`); } finally { setDataLoading(false); }
   };
 
@@ -733,7 +735,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const cleanPhone = phoneStr.replace(/\D/g, '');
     const finalPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
 
-    window.open(`https://wa.me/${finalPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+    window.open(`https://wa.me/${finalPhone}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
   };
 
   const sendWhatsAppReminder = (c: Customer) => {
@@ -745,13 +747,21 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const cleanPhone = phoneStr.replace(/\D/g, '');
     const finalPhone = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
 
-    window.open(`https://wa.me/${finalPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+    window.open(`https://wa.me/${finalPhone}?text=${encodeURIComponent(msg)}`, '_blank', 'noopener,noreferrer');
   };
 
   return (
     <AppContext.Provider value={{ user, dataLoading, unsavedForm, setUnsavedForm, login, loginCustomer, signup, logout, currentRoute, setCurrentRoute, customerFilter, setCustomerFilter, customers, transactions, morningEntries, expenses, fuelPurchases, users, settings, addCustomer, updateCustomer, deleteCustomer, addTransaction, updateTransaction, deleteTransaction, addMorningEntry, updateMorningEntry, deleteMorningEntry, addExpense, updateExpense, deleteExpense, addFuelPurchase, updateFuelPurchase, deleteFuelPurchase, addUser, deleteUser, updateSettings, changePassword, getCustomerBalance, getCustomerBalanceAsOf, bulkImportCustomers, showAlert, showConfirm, validateInputs, sendWhatsAppAlert, sendWhatsAppReminder }}>
       {children}
-      {alertMessage && (<div className="fixed top-4 left-4 right-4 sm:left-auto sm:right-5 sm:top-5 z-[9999] bg-gray-900 text-white px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4"><AlertCircle size={20} className="text-blue-400 shrink-0" /><p className="font-medium text-sm">{alertMessage}</p></div>)}
+      {alertMessage && (
+        <div className={`fixed top-4 left-4 right-4 sm:left-auto sm:right-5 sm:top-5 sm:max-w-sm z-[9999] px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4 ${alertMessage.startsWith('✅') || alertMessage.toLowerCase().includes('success') || alertMessage.toLowerCase().includes('saved') || alertMessage.toLowerCase().includes('updated') || alertMessage.toLowerCase().includes('welcome') ? 'bg-green-800 text-white' : 'bg-gray-900 text-white'}`}>
+          {alertMessage.startsWith('✅') || alertMessage.toLowerCase().includes('success') || alertMessage.toLowerCase().includes('saved') || alertMessage.toLowerCase().includes('updated') || alertMessage.toLowerCase().includes('welcome')
+            ? <CheckCircle2 size={20} className="text-green-300 shrink-0" />
+            : <AlertCircle size={20} className="text-blue-400 shrink-0" />}
+          <p className="font-medium text-sm flex-1">{alertMessage}</p>
+          <button onClick={() => setAlertMessage(null)} className="shrink-0 text-white/60 hover:text-white transition"><X size={16} /></button>
+        </div>
+      )}
       {confirmDialog && (<div className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4"><div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95"><div className="flex items-center text-red-600 mb-4 gap-2"><AlertCircle size={24} /><h3 className="text-lg font-bold text-gray-900">Confirm Action</h3></div><p className="text-gray-600 mb-8 font-medium">{confirmDialog.message}</p><div className="flex gap-3 justify-end"><button onClick={() => setConfirmDialog(null)} className="px-5 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-xl transition">Cancel</button><button onClick={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }} className="px-5 py-2 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition shadow-md shadow-red-200">Confirm</button></div></div></div>)}
     </AppContext.Provider>
   );
@@ -790,7 +800,7 @@ const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
     else if (step === 'biz') { localStorage.removeItem('app_lang'); setStep('lang'); }
   };
   const openWhatsApp = () => {
-    window.open(`https://wa.me/${waNumber}?text=Hi, I want to register my business on Smart Biz AI`, '_blank');
+    window.open(`https://wa.me/${waNumber}?text=Hi, I want to register my business on Smart Biz AI`, '_blank', 'noopener,noreferrer');
   };
 
   const stepLabels = [{ key: 'lang', label: 'Language' }, { key: 'biz', label: 'Business' }, { key: 'login', label: 'Login' }];
@@ -874,7 +884,7 @@ const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
                 <button className={`flex-1 py-3 text-sm font-semibold ${tab === 'customer' ? 'text-indigo-700 border-b-2 border-indigo-700 -mb-px' : 'text-gray-500 hover:bg-gray-50'}`} onClick={() => setTab('customer')}>Customer Portal</button>
               </div>
               {tab === 'staff' && view === 'login' && (
-                <form onSubmit={async (e) => { e.preventDefault(); setIsSubmitting(true); await login(loginEmail, loginPass); setIsSubmitting(false); }} className="space-y-4 animate-in fade-in" autoComplete="off">
+                <form onSubmit={async (e) => { e.preventDefault(); setIsSubmitting(true); const ok = await login(loginEmail, loginPass); if (!ok) setLoginPass(''); setIsSubmitting(false); }} className="space-y-4 animate-in fade-in" autoComplete="off">
                   <div><label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label><input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
                   <div><label className="block text-sm font-medium text-gray-700 mb-1">Password</label><input type="password" value={loginPass} onChange={e => setLoginPass(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
                   <button type="submit" disabled={isSubmitting} className="w-full bg-indigo-700 text-white p-3 rounded-lg font-bold hover:bg-indigo-800 transition disabled:opacity-50">{isSubmitting ? 'Authenticating...' : 'Login to Dashboard'}</button>
@@ -897,6 +907,7 @@ const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
                 <form onSubmit={(e) => { e.preventDefault(); if (!/^\d{10}$/.test(custPhone)) { showAlert('Registered Mobile Number must be exactly 10 digits.'); return; } loginCustomer(custPhone, custPin); }} className="space-y-4 animate-in fade-in">
                   <div><label className="block text-sm font-medium text-gray-700 mb-1">Registered Mobile Number</label><input type="tel" value={custPhone} onChange={e => setCustPhone(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" placeholder="10-digit number" required /></div>
                   <div><label className="block text-sm font-medium text-gray-700 mb-1">4-Digit PIN</label><input type="password" maxLength={4} value={custPin} onChange={e => setCustPin(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-center tracking-[0.5em] text-lg" required /></div>
+                  <p className="text-xs text-gray-400 text-center">Your PIN was shared by your fuel station. Contact them if you don't have it.</p>
                   <button type="submit" className="w-full bg-green-600 text-white p-3 rounded-lg font-bold hover:bg-green-700 transition">Check Balance</button>
                 </form>
               )}
@@ -1049,9 +1060,16 @@ const Dashboard = () => {
   if (dataLoading) return <div className="flex justify-center items-center p-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
 
   // --- 1. GLOBAL METRICS ---
-  const totalReceivables = customers.reduce((acc, c) => acc + getCustomerBalance(c.id), 0);
+  const { totalReceivables, overdueCount } = useMemo(() => {
+    let recv = 0; let over = 0;
+    for (const c of customers) {
+      const bal = getCustomerBalance(c.id);
+      recv += bal;
+      if (bal > c.creditLimit) over++;
+    }
+    return { totalReceivables: recv, overdueCount: over };
+  }, [customers, transactions]);
   const totalCustomers = customers.length;
-  const overdueCount = customers.filter(c => getCustomerBalance(c.id) > c.creditLimit).length;
 
   const sortedEntries = [...morningEntries].sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
   const latestEntry = sortedEntries.length > 0 ? sortedEntries[0] : null;
@@ -1282,17 +1300,18 @@ const Dashboard = () => {
                   <button onClick={() => setChartPage(p => Math.max(0, p - 1))} disabled={chartPage === 0} className="p-1 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-30 transition"><ChevronRight size={16} /></button>
                 </div>
               </div>
-              {/* Graph safely hidden on mobile phones, restored on tablets/desktops */}
+              {/* Bar chart on sm+, compact stats on mobile */}
               <div className="hidden sm:flex flex-1 items-end gap-1.5 h-40 mt-2 border-b border-gray-100 pb-2">
-                {chartData.length === 0 ? <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 text-sm"><BarChart3 size={32} className="mb-2 opacity-20" /> No data for this period</div> : chartData.map((d, i) => (
-                  <div key={i} className="relative flex-1 bg-gradient-to-t from-blue-500 to-blue-300 rounded-t-sm group transition-all hover:opacity-80 flex flex-col justify-end" style={{ height: `${Math.max(5, (d.value / maxChartVal) * 100)}%` }} title={`${d.label}: ${formatRs(d.value)}`}>
+                {chartData.length === 0 ? <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 text-sm"><BarChart3 size={32} className="mb-2 opacity-20" /> No data for this period</div> : chartData.map((d) => (
+                  <div key={d.label} className="relative flex-1 bg-gradient-to-t from-blue-500 to-blue-300 rounded-t-sm group transition-all hover:opacity-80 flex flex-col justify-end" style={{ height: `${Math.max(5, (d.value / maxChartVal) * 100)}%` }} title={`${d.label}: ${formatRs(d.value)}`}>
                     <div className="absolute opacity-0 group-hover:opacity-100 -top-8 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-[10px] py-1 px-2 rounded whitespace-nowrap z-10 transition-opacity pointer-events-none">{formatLakhs(d.value)}</div>
                     <span className="text-[8px] text-center text-blue-900 font-bold mb-1 opacity-0 group-hover:opacity-100 truncate w-full px-1">{d.label}</span>
                   </div>
                 ))}
               </div>
-              <div className="sm:hidden flex-1 flex items-center justify-center text-gray-400 text-xs italic border-y border-gray-100 py-4 my-2">
-                Detailed bar graph visible on larger screens
+              <div className="sm:hidden grid grid-cols-2 gap-2 mt-2 border-t pt-3">
+                <div className="bg-blue-50 rounded-lg p-2 text-center"><p className="text-[10px] text-blue-500 font-bold uppercase">Avg Daily</p><p className="text-sm font-bold text-blue-900">{formatLakhs(avgDailySalesRs)}</p></div>
+                <div className="bg-green-50 rounded-lg p-2 text-center"><p className="text-[10px] text-green-500 font-bold uppercase">Period Profit</p><p className={`text-sm font-bold ${pPeriodNetProfit < 0 ? 'text-red-600' : 'text-green-700'}`}>{formatLakhs(pPeriodNetProfit)}</p></div>
               </div>
               <div className="flex justify-between text-[10px] text-gray-400 mt-2 font-medium">
                 <span>Older</span><span>{period} Span</span><span>Newer</span>
@@ -1354,7 +1373,6 @@ const CustomerList = () => {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedCustId, setExpandedCustId] = useState<string | null>(null);
-  const [custTxPage, setCustTxPage] = useState(0);
 
   const userRole = String(user?.role || '').toLowerCase();
 
@@ -1452,6 +1470,9 @@ const CustomerList = () => {
   const [custPage, setCustPage] = useState(0);
   const paginatedCustomers = displayedCustomers.slice(custPage * 10, (custPage + 1) * 10);
   const totalCustPages = Math.ceil(displayedCustomers.length / 10);
+  const [custTxPages, setCustTxPages] = useState<Record<string, number>>({});
+  const getCustTxPage = (id: string) => custTxPages[id] || 0;
+  const setCustTxPage = (id: string, page: number) => setCustTxPages(prev => ({ ...prev, [id]: page }));
 
   if (dataLoading) return <div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
 
@@ -1537,13 +1558,14 @@ const CustomerList = () => {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
         <div className="overflow-x-auto flex-1">
           <table className="w-full text-left cursor-pointer">
-            <thead className="bg-gray-50 border-b"><tr><th className="p-4 text-sm font-medium text-gray-500 whitespace-nowrap">Customer Details</th><th className="p-4 text-sm font-medium text-gray-500 whitespace-nowrap">Category</th><th className="p-4 text-sm font-medium text-gray-500 text-center whitespace-nowrap">Bot</th><th className="p-4 text-sm font-medium text-gray-500 whitespace-nowrap">Outstanding</th><th className="p-4 text-sm font-medium text-gray-500 whitespace-nowrap">Limit</th><th className="p-4 text-sm font-medium text-gray-500 whitespace-nowrap">Portal PIN</th><th className="p-4 text-sm font-medium text-gray-500 text-center whitespace-nowrap">Actions</th></tr></thead>
+            <thead className="bg-gray-50 border-b"><tr><th className="p-4 text-sm font-medium text-gray-500 whitespace-nowrap">Customer Details</th><th className="p-4 text-sm font-medium text-gray-500 whitespace-nowrap">Category</th><th className="p-4 text-sm font-medium text-gray-500 text-center whitespace-nowrap">WhatsApp</th><th className="p-4 text-sm font-medium text-gray-500 whitespace-nowrap">Outstanding</th><th className="p-4 text-sm font-medium text-gray-500 whitespace-nowrap">Limit</th><th className="p-4 text-sm font-medium text-gray-500 whitespace-nowrap">Portal PIN</th><th className="p-4 text-sm font-medium text-gray-500 text-center whitespace-nowrap">Actions</th></tr></thead>
             <tbody className="divide-y divide-gray-100">
               {paginatedCustomers.length === 0 ? (<tr><td colSpan={7} className="p-10 text-center text-gray-400 flex flex-col items-center"><SearchX size={32} className="mb-2 opacity-50" />No customers found.</td></tr>) : paginatedCustomers.map((c, idx) => {
                 const bal = getCustomerBalance(c.id); const isOver = bal > c.creditLimit;
                 const isExpanded = expandedCustId === c.id;
 
                 const cTxs = transactions.filter(t => t.customerId === c.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                const custTxPage = getCustTxPage(c.id);
                 const paginatedTxs = cTxs.slice(custTxPage * 5, (custTxPage + 1) * 5);
                 const totalTxsPages = Math.ceil(cTxs.length / 5);
 
@@ -1558,7 +1580,7 @@ const CustomerList = () => {
 
                 return (
                   <React.Fragment key={c.id || `cust-${idx}`}>
-                    <tr onClick={() => { setExpandedCustId(isExpanded ? null : c.id); setCustTxPage(0); }} className="hover:bg-gray-50 transition-colors">
+                    <tr onClick={() => { setExpandedCustId(isExpanded ? null : c.id); }} className="hover:bg-gray-50 transition-colors">
                       <td className="p-4 min-w-[200px]"><p className="font-bold text-gray-900 flex items-center">{c.companyName} {isExpanded ? <ChevronDown size={14} className="ml-2 text-gray-400" /> : <ChevronRight size={14} className="ml-2 text-gray-400" />}</p><p className="text-xs text-gray-500">{c.phone.split(',')[0]} {c.ownerName ? `(${c.ownerName})` : ''}</p>{displayVehicles && <p className="text-[10px] text-gray-400 mt-1 truncate max-w-[250px]">{displayVehicles}</p>}</td>
                       <td className="p-4 text-sm text-gray-600 whitespace-nowrap">{c.category}</td>
                       <td className="p-4 text-center">
@@ -1584,9 +1606,9 @@ const CustomerList = () => {
                             <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex justify-between items-center">
                               Recent Transactions
                               <div className="flex items-center gap-2">
-                                <button onClick={() => setCustTxPage(p => Math.max(0, p - 1))} disabled={custTxPage === 0} className="p-1 bg-white rounded shadow-sm disabled:opacity-50 hover:bg-blue-50 transition"><ChevronLeft size={14} /></button>
+                                <button onClick={() => setCustTxPage(c.id, Math.max(0, custTxPage - 1))} disabled={custTxPage === 0} className="p-1 bg-white rounded shadow-sm disabled:opacity-50 hover:bg-blue-50 transition"><ChevronLeft size={14} /></button>
                                 <span className="text-[10px]">Page {custTxPage + 1} of {Math.max(1, totalTxsPages)}</span>
-                                <button onClick={() => setCustTxPage(p => Math.min(totalTxsPages - 1, p + 1))} disabled={custTxPage >= totalTxsPages - 1} className="p-1 bg-white rounded shadow-sm disabled:opacity-50 hover:bg-blue-50 transition"><ChevronRight size={14} /></button>
+                                <button onClick={() => setCustTxPage(c.id, Math.min(totalTxsPages - 1, custTxPage + 1))} disabled={custTxPage >= totalTxsPages - 1} className="p-1 bg-white rounded shadow-sm disabled:opacity-50 hover:bg-blue-50 transition"><ChevronRight size={14} /></button>
                               </div>
                             </h4>
                             {cTxs.length === 0 ? <p className="text-sm text-gray-500 italic">No transactions recorded yet.</p> : (
@@ -2534,10 +2556,12 @@ const MonthlyReports = () => {
     csv += `Gross Sales,${grossSalesRs}\nCredit Sales,${creditSales}\nPayments Received,${paymentsRec}\nTotal Expenses,${totalExpenses}\nFuel Cost,${fuelCost}\nNet Profit,${netProfit}\n\nTop Customers by Credit\nCustomer,Amount\n`;
     topCustomers.forEach(c => { csv += `"${c.name}",${c.credit}\n`; });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
+    link.href = url;
     link.download = `FuelDesk_Report_${selectedMonth}.csv`;
     link.click();
+    URL.revokeObjectURL(url);
   };
 
   if (dataLoading) return <div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
@@ -2624,6 +2648,7 @@ const SettingsModule = () => {
     await updateSettings({
       ...settings,
       bunkName: form.bunkName,
+      fuelCompany: form.fuelCompany || settings.fuelCompany,
       petrolRate: Number(form.petrolRate) || 0,
       dieselRate: Number(form.dieselRate) || 0,
       monthlyBudget: Number(form.monthlyBudget) || 0,
@@ -2693,10 +2718,12 @@ const SettingsModule = () => {
     });
 
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const exportUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
+    link.href = exportUrl;
     link.download = `FuelDesk_Export_${todayStr}.csv`;
     link.click();
+    URL.revokeObjectURL(exportUrl);
     showAlert("Master database downloaded successfully.");
   };
 
@@ -2713,7 +2740,10 @@ const SettingsModule = () => {
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
           <div className="flex items-center mb-4 border-b pb-2"><Settings className="text-gray-400 mr-2" /><h3 className="text-lg font-bold">Business & Rate Settings</h3></div>
           <form onSubmit={handleSave} className="space-y-4">
-            <div><label className="block text-sm font-medium mb-1">Business Name</label><input type="text" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.bunkName} onChange={e => setForm({ ...form, bunkName: e.target.value })} /></div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div><label className="block text-sm font-medium mb-1">Business Name</label><input type="text" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.bunkName} onChange={e => setForm({ ...form, bunkName: e.target.value })} /></div>
+              <div><label className="block text-sm font-medium mb-1">Fuel Brand / Company</label><select className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-base" value={form.fuelCompany || 'Generic'} onChange={e => setForm({ ...form, fuelCompany: e.target.value })}><option value="Generic">Independent / Generic</option><option>HPCL</option><option>IOCL</option><option>BPCL</option><option>Reliance</option><option>Nayara</option><option>Shell</option></select></div>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div><label className="block text-sm font-medium mb-1">Petrol Rate (Rs/L)</label><input type="number" step="0.01" className="w-full border p-3 rounded-lg font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.petrolRate || ''} onChange={e => setForm({ ...form, petrolRate: e.target.value })} placeholder="0.00" /></div>
               <div><label className="block text-sm font-medium mb-1">Diesel Rate (Rs/L)</label><input type="number" step="0.01" className="w-full border p-3 rounded-lg font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.dieselRate || ''} onChange={e => setForm({ ...form, dieselRate: e.target.value })} placeholder="0.00" /></div>
@@ -2736,15 +2766,11 @@ const SettingsModule = () => {
           <div className="space-y-3">
             <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg border border-green-100">
               <span className="text-sm font-medium text-gray-700">Bot Number</span>
-              <span className="font-bold text-green-800">+91 90636 78438</span>
+              <span className="font-bold text-green-800">+{((import.meta as any).env?.VITE_WHATSAPP_NUMBER || '917093578438').replace(/^(\d{2})(\d{5})(\d{5})$/, '$1 $2 $3')}</span>
             </div>
             <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg border">
               <span className="text-sm font-medium text-gray-700">Bot Status</span>
-              <span className="flex items-center gap-1.5 font-bold text-green-700"><span className="w-2 h-2 bg-green-500 rounded-full inline-block animate-pulse"></span>Active</span>
-            </div>
-            <div className="p-3 bg-yellow-50 border border-yellow-100 rounded-lg">
-              <p className="text-xs font-bold text-yellow-800 mb-1">⚠️ Schema Cache Issues?</p>
-              <p className="text-xs text-yellow-700">If you see "balance_od schema cache" errors, go to <strong>Supabase → API → Schema Cache → Reload</strong>, then hard-refresh this page (Ctrl+Shift+R).</p>
+              <span className="flex items-center gap-1.5 font-bold text-green-700"><span className="w-2 h-2 bg-green-500 rounded-full inline-block animate-pulse"></span>Deployed</span>
             </div>
           </div>
         </div>
@@ -2811,7 +2837,7 @@ const SettingsModule = () => {
               <div><label className="block text-xs font-medium mb-1">Email / Login ID</label><input type="email" required className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={staffForm.email} onChange={e => setStaffForm({ ...staffForm, email: e.target.value })} /></div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div><label className="block text-xs font-medium mb-1">Temporary Password</label><input type="text" required minLength={6} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={staffForm.password} onChange={e => setStaffForm({ ...staffForm, password: e.target.value })} /></div>
+              <div><label className="block text-xs font-medium mb-1">Temporary Password</label><input type="password" required minLength={6} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={staffForm.password} onChange={e => setStaffForm({ ...staffForm, password: e.target.value })} /></div>
               <div>
                 <label className="block text-xs font-medium mb-1">Role</label>
                 <select className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-base" value={staffForm.role} onChange={e => setStaffForm({ ...staffForm, role: e.target.value })}>
@@ -2850,13 +2876,15 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
 
             <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-black transition mb-4">Safe Reset App</button>
 
-            <details className="text-left bg-red-50 p-4 rounded-lg border border-red-100">
-              <summary className="text-sm font-bold text-red-800 cursor-pointer outline-none">View Technical Debug Log</summary>
-              <div className="mt-3 overflow-x-auto">
-                <p className="text-xs text-red-600 font-mono font-bold mb-2">{this.state.error && this.state.error.toString()}</p>
-                <pre className="text-[10px] text-red-500 font-mono whitespace-pre-wrap leading-tight">{this.state.errorInfo?.componentStack}</pre>
-              </div>
-            </details>
+            {import.meta.env.DEV && (
+              <details className="text-left bg-red-50 p-4 rounded-lg border border-red-100">
+                <summary className="text-sm font-bold text-red-800 cursor-pointer outline-none">View Technical Debug Log (Dev Only)</summary>
+                <div className="mt-3 overflow-x-auto">
+                  <p className="text-xs text-red-600 font-mono font-bold mb-2">{this.state.error && this.state.error.toString()}</p>
+                  <pre className="text-[10px] text-red-500 font-mono whitespace-pre-wrap leading-tight">{this.state.errorInfo?.componentStack}</pre>
+                </div>
+              </details>
+            )}
           </div>
         </div>
       );
@@ -2906,6 +2934,14 @@ const PrivacyPolicyPage = () => {
 const AppContent = () => {
   const { user, settings, logout, currentRoute, setCurrentRoute, unsavedForm, setUnsavedForm } = useAppContext();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    await logout();
+    setIsLoggingOut(false);
+  };
 
   const handleNavClick = (id: string) => {
     if (unsavedForm) {
@@ -2949,14 +2985,14 @@ const AppContent = () => {
         </nav>
         <div className="p-4 border-t border-blue-900/50">
           <div className="bg-blue-900/50 p-4 rounded-xl mb-4"><p className="text-sm font-bold truncate">{user.name}</p><p className="text-xs text-blue-300 uppercase tracking-wide mt-1">{userRole}</p></div>
-          <button onClick={logout} className="w-full flex items-center justify-center space-x-2 text-blue-300 hover:text-white py-2 transition"><LogOut size={18} /> <span>Sign Out</span></button>
+          <button onClick={handleLogout} disabled={isLoggingOut} className="w-full flex items-center justify-center space-x-2 text-blue-300 hover:text-white py-2 transition disabled:opacity-50">{isLoggingOut ? <Loader2 size={18} className="animate-spin" /> : <LogOut size={18} />} <span>{isLoggingOut ? 'Signing Out...' : 'Sign Out'}</span></button>
         </div>
       </aside>
       <main className="flex-1 flex flex-col h-[100dvh] overflow-hidden relative">
         <header className="md:hidden bg-blue-950 text-white p-4 flex justify-between items-center shadow-md z-10 sticky top-0 shrink-0">
           <button onClick={() => setIsSidebarOpen(true)} className="p-1 hover:bg-blue-900 rounded transition text-blue-200 hover:text-white"><Menu size={24} /></button>
           <div className="flex items-center space-x-2 text-indigo-400 font-black text-lg text-white"><Briefcase className="w-5 h-5 shrink-0" /><span className="truncate max-w-[150px]">{settings?.bunkName || 'Manager'}</span></div>
-          <button onClick={logout} className="text-blue-200 hover:text-white"><LogOut size={20} /></button>
+          <button onClick={handleLogout} disabled={isLoggingOut} className="text-blue-200 hover:text-white disabled:opacity-50">{isLoggingOut ? <Loader2 size={20} className="animate-spin" /> : <LogOut size={20} />}</button>
         </header>
         <div className="flex-1 overflow-auto p-4 md:p-6 lg:p-8">
           <div className="max-w-7xl mx-auto pb-10">
@@ -2982,7 +3018,16 @@ export default function App() {
         <div className="max-w-md bg-white p-8 rounded-2xl shadow-xl text-center border-t-4 border-red-600">
           <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
           <h1 className="text-2xl font-black text-gray-900 mb-2">Configuration Missing</h1>
-          <p className="text-gray-600 mb-6">The app deployed successfully, but cannot connect to the database because your Netlify keys are missing.</p>
+          <p className="text-gray-600 mb-4">The app deployed successfully, but cannot connect to the database because your Netlify environment variables are missing.</p>
+          <div className="text-left bg-gray-50 rounded-xl p-4 text-sm space-y-2 border">
+            <p className="font-bold text-gray-700">To fix this:</p>
+            <ol className="list-decimal list-inside space-y-1 text-gray-600">
+              <li>Go to Netlify → Site Settings → Environment Variables</li>
+              <li>Add <code className="bg-gray-200 px-1 rounded text-xs">VITE_SUPABASE_URL</code></li>
+              <li>Add <code className="bg-gray-200 px-1 rounded text-xs">VITE_SUPABASE_ANON_KEY</code></li>
+              <li>Redeploy the site</li>
+            </ol>
+          </div>
         </div>
       </div>
     );
