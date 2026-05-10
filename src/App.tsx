@@ -2841,6 +2841,114 @@ const SettingsModule = () => {
           </form>
         </div>
       </div>
+
+      {/* Danger Zone */}
+      {user?.role === 'owner' && <DangerZone bunkId={user.bunkId || ''} />}
+    </div>
+  );
+};
+
+// ── Danger Zone: Deactivate or permanently delete account ────────────────────
+const DangerZone = ({ bunkId }: { bunkId: string }) => {
+  const { showConfirm, showAlert, logout } = useAppContext();
+  const [choice, setChoice] = useState<'none' | 'temp' | 'perm'>('none');
+  const [permConfirm, setPermConfirm] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleTemp = () => {
+    showConfirm(
+      '⏸️ Temporary Pause\n\nYour account will be deactivated. All data is kept safely. You can rejoin anytime.\n\nConfirm?',
+      async () => {
+        setLoading(true);
+        await supabase.from('bunks').update({ is_active: false, deactivated_at: new Date().toISOString() }).eq('id', bunkId);
+        await supabase.from('staff_roles').update({ is_active: false }).eq('bunk_id', bunkId);
+        setLoading(false);
+        showAlert('✅ Account paused. Log in again anytime to reactivate.');
+        logout();
+      }
+    );
+  };
+
+  const handlePerm = async () => {
+    if (permConfirm.toUpperCase() !== 'DELETE') {
+      return showAlert('Type DELETE (in caps) to confirm permanent deletion.');
+    }
+    showConfirm(
+      '🗑️ PERMANENT DELETE\n\nThis will erase ALL your data — customers, transactions, reports, everything — forever.\n\nThis CANNOT be undone. Continue?',
+      async () => {
+        setLoading(true);
+        const tables = [
+          'transactions', 'expenses', 'fuel_purchases', 'morning_entries',
+          'customers', 'bunk_accounts', 'settings', 'pending_actions',
+          'processed_messages', 'gen_products', 'gen_sales', 'gen_purchases',
+          'gen_customers', 'gen_expenses', 'gen_suppliers', 'gen_customer_payments',
+          'cement_products', 'cement_sales', 'cement_purchases', 'cement_customers',
+          'cement_expenses', 'cement_deliveries', 'cement_customer_payments',
+          'kirana_products', 'kirana_sales', 'kirana_purchases', 'kirana_customers', 'kirana_expenses',
+          'medical_products', 'medical_sales', 'medical_purchases', 'medical_customers', 'medical_expenses',
+        ];
+        await Promise.allSettled(tables.map(t => supabase.from(t).delete().eq('bunk_id', bunkId)));
+        const { data: staffList } = await supabase.from('staff_roles').select('webapp_user_id').eq('bunk_id', bunkId);
+        if (staffList?.length) {
+          await Promise.allSettled(staffList.filter(s => s.webapp_user_id).map(s =>
+            fetch(`/api/delete-user?userId=${s.webapp_user_id}`, { method: 'DELETE' }).catch(() => {})
+          ));
+        }
+        await supabase.from('staff_roles').delete().eq('bunk_id', bunkId);
+        await supabase.from('bunks').delete().eq('id', bunkId);
+        setLoading(false);
+        showAlert('🗑️ Account permanently deleted. All data removed.');
+        logout();
+      }
+    );
+  };
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-red-100 p-6 mt-6">
+      <h3 className="text-lg font-bold text-red-700 mb-1 flex items-center gap-2">
+        <AlertCircle size={20} className="text-red-500" /> Danger Zone
+      </h3>
+      <p className="text-sm text-gray-500 mb-6">These actions affect your entire account. Proceed with caution.</p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Temporary pause */}
+        <div className="border border-orange-200 rounded-xl p-4 bg-orange-50">
+          <h4 className="font-bold text-orange-700 mb-1">⏸️ Temporary Pause</h4>
+          <p className="text-xs text-gray-600 mb-3">Deactivate your account. All data is kept safely for 12 months. You can rejoin anytime by logging back in or messaging on WhatsApp.</p>
+          <button onClick={handleTemp} disabled={loading}
+            className="w-full border border-orange-400 text-orange-700 py-2 rounded-lg font-semibold text-sm hover:bg-orange-100 transition disabled:opacity-50">
+            {loading ? 'Processing...' : 'Pause My Account'}
+          </button>
+        </div>
+
+        {/* Permanent delete */}
+        <div className="border border-red-200 rounded-xl p-4 bg-red-50">
+          <h4 className="font-bold text-red-700 mb-1">🗑️ Permanent Delete</h4>
+          <p className="text-xs text-gray-600 mb-3">Permanently deletes ALL data — customers, transactions, reports — forever. This cannot be undone.</p>
+          {choice !== 'perm'
+            ? <button onClick={() => setChoice('perm')}
+                className="w-full border border-red-400 text-red-700 py-2 rounded-lg font-semibold text-sm hover:bg-red-100 transition">
+                Delete My Account
+              </button>
+            : <div className="space-y-2">
+                <p className="text-xs text-red-600 font-medium">Type <strong>DELETE</strong> to confirm:</p>
+                <input type="text" value={permConfirm} onChange={e => setPermConfirm(e.target.value)}
+                  placeholder="Type DELETE here"
+                  className="w-full border border-red-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-400" />
+                <div className="flex gap-2">
+                  <button onClick={handlePerm} disabled={loading}
+                    className="flex-1 bg-red-600 text-white py-2 rounded-lg font-bold text-sm hover:bg-red-700 transition disabled:opacity-50">
+                    {loading ? '...' : 'Confirm Delete'}
+                  </button>
+                  <button onClick={() => { setChoice('none'); setPermConfirm(''); }}
+                    className="flex-1 border border-gray-300 text-gray-600 py-2 rounded-lg text-sm hover:bg-gray-50 transition">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+          }
+        </div>
+      </div>
     </div>
   );
 };
