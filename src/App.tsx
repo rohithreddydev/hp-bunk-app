@@ -394,11 +394,16 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   };
 
   const addTransaction = async (t: any): Promise<boolean> => {
-    const { data, error } = await supabase.from('transactions').insert([{
-      bunk_id: bId, customer_id: t.customerId, type: t.type, date: t.date,
-      product: t.product, quantity: t.quantity, amount: t.amount,
-      payment_mode: t.mode, vehicle_number: t.vehicleNumber, remarks: t.remarks
-    }]).select();
+    const row: any = {
+      bunk_id: bId, customer_id: t.customerId, type: t.type,
+      date: t.date, amount: t.amount,
+    };
+    if (t.product)       row.product        = t.product;
+    if (t.quantity)      row.quantity       = t.quantity;
+    if (t.mode)          row.payment_mode   = t.mode;
+    if (t.vehicleNumber) row.vehicle_number = t.vehicleNumber;
+    if (t.remarks)       row.remarks        = t.remarks;
+    const { data, error } = await supabase.from('transactions').insert([row]).select();
     if (error) { console.error('addTransaction error:', error); showAlert("Transaction Failed: " + error.message); return false; }
     if (!data || data.length === 0) {
       showAlert("Save failed — please sign out and sign in again, then retry. If the issue continues, contact support.");
