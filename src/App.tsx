@@ -876,9 +876,10 @@ const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
               <button onClick={goBack} className="w-full text-center text-sm text-gray-400 hover:text-gray-600 mt-4 py-1">← Change business type</button>
             </div>
           )}
-        <div className="px-6 pb-4 text-center text-xs text-gray-400">
-          By continuing you agree to our{' '}
-          <button onClick={onPrivacy} className="text-indigo-500 underline hover:text-indigo-700">Privacy Policy & Terms</button>
+        </div>
+        <div className="px-6 pb-5 text-center text-xs text-gray-400 space-y-1">
+          <button onClick={onPrivacy} className="text-indigo-500 underline hover:text-indigo-700">Privacy Policy &amp; Terms of Use</button>
+          <p>&#169; 2026 Smart Biz AI</p>
         </div>
       </div>
     </div>
