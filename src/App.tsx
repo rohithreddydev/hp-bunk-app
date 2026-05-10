@@ -361,10 +361,17 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   const addCustomer = async (c: any) => {
     const pin = Math.floor(1000 + Math.random() * 9000).toString();
-    const { data, error } = await supabase.from('customers').insert([{
-      bunk_id: bId, company_name: c.companyName, owner_name: c.ownerName, category: c.category, phone: c.phone, address: c.address, payment_terms: c.paymentTerms,
-      driver_name: c.driverName, driver_phone: c.driverPhone, vehicle_numbers: c.vehicleNumbers, credit_limit: c.creditLimit, status: c.status, portal_pin: pin, portal_access: true
-    }]).select();
+    const custRow: any = { bunk_id: bId, company_name: c.companyName, phone: c.phone, portal_pin: pin, portal_access: true };
+    if (c.ownerName)      custRow.owner_name      = c.ownerName;
+    if (c.category)       custRow.category        = c.category;
+    if (c.address)        custRow.address         = c.address;
+    if (c.paymentTerms)   custRow.payment_terms   = c.paymentTerms;
+    if (c.driverName)     custRow.driver_name     = c.driverName;
+    if (c.driverPhone)    custRow.driver_phone    = c.driverPhone;
+    if (c.vehicleNumbers) custRow.vehicle_numbers = c.vehicleNumbers;
+    if (c.creditLimit)    custRow.credit_limit    = c.creditLimit;
+    if (c.status)         custRow.status          = c.status;
+    const { data, error } = await supabase.from('customers').insert([custRow]).select();
 
     if (error) { showAlert('Failed to save: ' + error.message); return null; }
     if (data && data.length > 0) {
@@ -543,17 +550,27 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   };
   const deleteMorningEntry = async (id: string) => { const { error } = await supabase.from('morning_entries').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setMorningEntries(morningEntries.filter(m => m.id !== id)); showAlert("Morning entry deleted."); };
 
-  const addExpense = async (e: any) => { const { data, error } = await supabase.from('expenses').insert([{ bunk_id: bId, date: e.date, category: e.category, amount: e.amount, description: e.description, vendor: e.vendor, payment_mode: e.mode }]).select(); if (error) return showAlert("Failed to record expense: " + error.message); if (data && data.length > 0) setExpenses([{ ...e, id: data[0].id }, ...expenses]); showAlert("Expense recorded."); };
+  const addExpense = async (e: any) => {
+    const row: any = { bunk_id: bId, date: e.date, category: e.category, amount: e.amount };
+    if (e.description) row.description  = e.description;
+    if (e.vendor)      row.vendor       = e.vendor;
+    if (e.mode)        row.payment_mode = e.mode;
+    const { data, error } = await supabase.from('expenses').insert([row]).select();
+    if (error) return showAlert("Failed to record expense: " + error.message);
+    if (data && data.length > 0) setExpenses([{ ...e, id: data[0].id }, ...expenses]);
+    showAlert("Expense recorded.");
+  };
   const updateExpense = async (id: string, updates: any) => { const { error } = await supabase.from('expenses').update({ date: updates.date, category: updates.category, amount: updates.amount, description: updates.description, vendor: updates.vendor }).eq('id', id); if (error) return showAlert("Update Failed: " + error.message); setExpenses(expenses.map(e => e.id === id ? { ...e, ...updates } : e)); showAlert("Expense updated."); };
   const deleteExpense = async (id: string) => { const { error } = await supabase.from('expenses').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setExpenses(expenses.filter(e => e.id !== id)); showAlert("Expense deleted."); };
 
   const addFuelPurchase = async (purchases: any[]) => {
-    const rows = purchases.map(f => ({
-      bunk_id: bId, date: f.date, product: f.product,
-      litres: f.litres, rate: f.rate, amount: f.amount,
-      supplier: f.supplier || '', invoice: f.invoice || '',
-      payment_mode: f.mode || 'Bank Transfer'
-    }));
+    const rows = purchases.map(f => {
+      const row: any = { bunk_id: bId, date: f.date, product: f.product, litres: f.litres, rate: f.rate, amount: f.amount };
+      if (f.supplier)  row.supplier     = f.supplier;
+      if (f.invoice)   row.invoice      = f.invoice;
+      if (f.mode)      row.payment_mode = f.mode;
+      return row;
+    });
     const { data, error } = await supabase.from('fuel_purchases').insert(rows).select();
     if (error) return showAlert('Failed to record fuel: ' + error.message);
     if (data && data.length > 0) {
