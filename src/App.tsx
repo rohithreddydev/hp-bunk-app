@@ -869,28 +869,28 @@ const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
                 <span className="text-gray-400">or register in app below</span>
                 <div className="flex-1 h-px bg-gray-200" />
               </div>
-              {[
-                { code: 'fuel', label: '⛽ Fuel Station', sub: 'Petrol / Diesel management', available: true },
-                { code: 'kirana', label: '🛒 Kirana Store', sub: 'Grocery & daily retail', available: true },
-                { code: 'medical', label: '💊 Medical Shop', sub: 'Pharmacy & healthcare', available: true },
-                { code: 'cement', label: '🏗️ Cement & Steel', sub: 'Building materials & construction', available: true },
-                { code: 'hardware', label: '🔧 Hardware Store', sub: 'Tools, pipes & fittings', available: true },
-                { code: 'restaurant', label: '🍽️ Restaurant / Hotel', sub: 'Food & beverage billing', available: true },
-                { code: 'textile', label: '👗 Textile / Clothing', sub: 'Cloth & garment shop', available: true },
-                { code: 'auto_parts', label: '🚗 Auto Parts', sub: 'Vehicle spare parts', available: true },
-                { code: 'agriculture', label: '🌾 Agriculture / Seeds', sub: 'Seeds, fertilizer & pesticides', available: true },
-                { code: 'stationery', label: '📚 Stationery Shop', sub: 'Pens, notebooks & office supplies', available: true },
-                { code: 'general', label: '🏪 General Store', sub: 'Any other retail business', available: true },
-              ].map(b => (
-                <button key={b.code} onClick={() => selectBiz(b.code)}
-                  className="w-full flex items-center justify-between p-4 border-2 border-gray-100 rounded-xl transition-all group hover:border-indigo-400 hover:bg-indigo-50">
-                  <div className="text-left">
-                    <div className="font-semibold text-gray-800 group-hover:text-indigo-700">{b.label}</div>
-                    <div className="text-xs text-gray-500 mt-0.5">{b.sub}</div>
-                  </div>
-                  <ChevronRight className="text-gray-300 group-hover:text-indigo-500 shrink-0" size={20} />
-                </button>
-              ))}
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { code: 'fuel', label: '⛽ Fuel Station', sub: 'Petrol / Diesel' },
+                  { code: 'kirana', label: '🛒 Kirana Store', sub: 'Grocery & retail' },
+                  { code: 'medical', label: '💊 Medical Shop', sub: 'Pharmacy' },
+                  { code: 'cement', label: '🏗️ Cement & Steel', sub: 'Construction' },
+                  { code: 'hardware', label: '🔧 Hardware', sub: 'Tools & fittings' },
+                  { code: 'restaurant', label: '🍽️ Restaurant', sub: 'Food & beverage' },
+                  { code: 'textile', label: '👗 Textile', sub: 'Cloth & garments' },
+                  { code: 'auto_parts', label: '🚗 Auto Parts', sub: 'Vehicle spares' },
+                  { code: 'agriculture', label: '🌾 Agriculture', sub: 'Seeds & fertilizer' },
+                  { code: 'stationery', label: '📚 Stationery', sub: 'Office supplies' },
+                  { code: 'general', label: '🏪 General Store', sub: 'Any retail' },
+                ].map(b => (
+                  <button key={b.code} onClick={() => selectBiz(b.code)}
+                    className="flex flex-col items-start p-3 border-2 border-gray-100 rounded-xl transition-all hover:border-indigo-400 hover:bg-indigo-50 text-left group">
+                    <div className="text-xl mb-1">{b.label.split(' ')[0]}</div>
+                    <div className="font-semibold text-gray-800 group-hover:text-indigo-700 text-sm leading-tight">{b.label.slice(b.label.indexOf(' ') + 1)}</div>
+                    <div className="text-xs text-gray-400 mt-0.5">{b.sub}</div>
+                  </button>
+                ))}
+              </div>
               <button onClick={goBack} className="w-full text-center text-sm text-gray-400 hover:text-gray-600 mt-2 py-1">← Change language</button>
             </div>
           )}
@@ -3018,50 +3018,62 @@ const DangerZone = ({ bunkId }: { bunkId: string }) => {
 };
 
 // --- GLOBAL ERROR BOUNDARY ---
-class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean, error: any, errorInfo: any }> {
-  constructor(props: { children: ReactNode }) { super(props); this.state = { hasError: false, error: null, errorInfo: null }; }
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean, error: any, errorInfo: any, countdown: number }> {
+  private _timer: ReturnType<typeof setTimeout> | null = null;
+  private _interval: ReturnType<typeof setInterval> | null = null;
+
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null, countdown: 3 };
+  }
 
   static getDerivedStateFromError(error: any) {
-    return { hasError: true, error, errorInfo: null };
+    return { hasError: true, error, errorInfo: null, countdown: 3 };
   }
 
   componentDidCatch(error: any, errorInfo: any) {
     this.setState({ errorInfo });
-    console.error("ErrorBoundary caught an error:", error, errorInfo);
-    // Auto-clear stale localStorage session that may have caused the crash
-    // This handles the case where the user deleted their Supabase account but
-    // the old app_user_session is still stored, causing a React render crash
-    try {
-      const staleSession = localStorage.getItem('app_user_session');
-      if (staleSession) {
-        console.warn('[ErrorBoundary] Clearing stale session to prevent repeated crash');
-        localStorage.removeItem('app_user_session');
-        localStorage.removeItem('app_biz_type');
+    console.error('[ErrorBoundary] Caught:', error, errorInfo);
+    // Clear ALL localStorage (including Supabase auth tokens sb-xxx-auth-token)
+    // This is the only reliable way to break the stale-session crash loop
+    try { localStorage.clear(); } catch (_) {}
+    // Auto-reload after countdown so user doesn't need to click anything
+    let count = 3;
+    this._interval = setInterval(() => {
+      count -= 1;
+      this.setState({ countdown: count });
+      if (count <= 0) {
+        if (this._interval) clearInterval(this._interval);
+        window.location.reload();
       }
-    } catch (_) { /* ignore */ }
+    }, 1000);
+  }
+
+  componentWillUnmount() {
+    if (this._timer) clearTimeout(this._timer);
+    if (this._interval) clearInterval(this._interval);
   }
 
   render() {
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-          <div className="max-w-xl w-full bg-white p-8 rounded-2xl shadow-xl text-center border-t-4 border-orange-500">
-            <AlertCircle className="w-16 h-16 text-orange-500 mx-auto mb-4" />
-            <h1 className="text-2xl font-black text-gray-900 mb-2">Something went wrong</h1>
-            <p className="text-gray-600 mb-2">The app hit an unexpected error. Your data in Supabase is safe.</p>
-            <p className="text-sm text-gray-500 mb-1">This usually happens when your account session is stale or was deleted.</p>
-            <p className="text-sm text-gray-400 mb-6">Your session has been cleared. Click Reload to log in again.</p>
-
-            <button onClick={() => window.location.reload()} className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-black transition mb-3">🔄 Reload App</button>
-            <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="w-full border border-gray-300 text-gray-600 py-2 rounded-xl text-sm hover:bg-gray-50 transition mb-4">🧹 Full Reset (clears all local data)</button>
-
+          <div className="max-w-sm w-full bg-white p-8 rounded-2xl shadow-xl text-center border-t-4 border-orange-500">
+            <div className="w-16 h-16 mx-auto mb-4 bg-orange-50 rounded-full flex items-center justify-center">
+              <AlertCircle className="text-orange-500" size={32} />
+            </div>
+            <h1 className="text-xl font-black text-gray-900 mb-2">Session Reset</h1>
+            <p className="text-gray-500 text-sm mb-1">A stale session was detected and cleared.</p>
+            <p className="text-gray-400 text-sm mb-6">Reloading in <span className="font-bold text-orange-500">{this.state.countdown}s</span>…</p>
+            <button onClick={() => { if (this._interval) clearInterval(this._interval); window.location.reload(); }}
+              className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-black transition">
+              🔄 Reload Now
+            </button>
             {import.meta.env.DEV && (
-              <details className="text-left bg-red-50 p-4 rounded-lg border border-red-100">
-                <summary className="text-sm font-bold text-red-800 cursor-pointer outline-none">View Technical Debug Log (Dev Only)</summary>
-                <div className="mt-3 overflow-x-auto">
-                  <p className="text-xs text-red-600 font-mono font-bold mb-2">{this.state.error && this.state.error.toString()}</p>
-                  <pre className="text-[10px] text-red-500 font-mono whitespace-pre-wrap leading-tight">{this.state.errorInfo?.componentStack}</pre>
-                </div>
+              <details className="text-left bg-red-50 p-3 rounded-lg border border-red-100 mt-4">
+                <summary className="text-xs font-bold text-red-800 cursor-pointer">Debug (dev only)</summary>
+                <p className="text-xs text-red-600 font-mono mt-2">{this.state.error?.toString()}</p>
+                <pre className="text-[10px] text-red-500 font-mono whitespace-pre-wrap">{this.state.errorInfo?.componentStack}</pre>
               </details>
             )}
           </div>
