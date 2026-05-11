@@ -141,8 +141,10 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   const [customers, setCustomers] = useState<Customer[]>([]); const [transactions, setTransactions] = useState<Transaction[]>([]); const [morningEntries, setMorningEntries] = useState<MorningEntry[]>([]); const [expenses, setExpenses] = useState<Expense[]>([]); const [fuelPurchases, setFuelPurchases] = useState<FuelPurchase[]>([]); const [users, setUsers] = useState<User[]>([]);
 
-  const showAlert = (msg: string) => {
-    setAlertMessage(msg);
+  const showAlert = (msg: any) => {
+    // Coerce to string — prevents crash if called with Error object or non-string
+    const safeMsg = typeof msg === 'string' ? msg : (msg?.message ?? String(msg));
+    setAlertMessage(safeMsg);
     const t = setTimeout(() => setAlertMessage(null), 5000);
     return () => clearTimeout(t);
   };
@@ -171,7 +173,9 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   useEffect(() => {
     if (!hasValidKeys) return;
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then((result) => {
+      // Guard: result.data can be null if network fails or session is invalid
+      const session = result?.data?.session ?? null;
       if (session?.user && !user) {
         supabase.from('profiles').select('*').eq('id', session.user.id).single().then(({ data: profile, error: profErr }) => {
           if (profile) {
@@ -188,6 +192,10 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           }
         });
       }
+    }).catch((err) => {
+      console.warn('[Auth] getSession error — clearing local session:', err?.message);
+      localStorage.removeItem('app_user_session');
+      saveUserSession(null);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => { if (!session) saveUserSession(null); });
     return () => subscription.unsubscribe();
@@ -756,7 +764,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
     <AppContext.Provider value={{ user, dataLoading, unsavedForm, setUnsavedForm, login, loginCustomer, signup, logout, currentRoute, setCurrentRoute, customerFilter, setCustomerFilter, customers, transactions, morningEntries, expenses, fuelPurchases, users, settings, addCustomer, updateCustomer, deleteCustomer, addTransaction, updateTransaction, deleteTransaction, addMorningEntry, updateMorningEntry, deleteMorningEntry, addExpense, updateExpense, deleteExpense, addFuelPurchase, updateFuelPurchase, deleteFuelPurchase, addUser, deleteUser, updateSettings, changePassword, getCustomerBalance, getCustomerBalanceAsOf, bulkImportCustomers, showAlert, showConfirm, validateInputs, sendWhatsAppAlert, sendWhatsAppReminder }}>
       {children}
-      {alertMessage && (
+      {typeof alertMessage === 'string' && alertMessage.length > 0 && (
         <div className={`fixed top-4 left-4 right-4 sm:left-auto sm:right-5 sm:top-5 sm:max-w-sm z-[9999] px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4 ${alertMessage.startsWith('✅') || alertMessage.toLowerCase().includes('success') || alertMessage.toLowerCase().includes('saved') || alertMessage.toLowerCase().includes('updated') || alertMessage.toLowerCase().includes('welcome') ? 'bg-green-800 text-white' : 'bg-gray-900 text-white'}`}>
           {alertMessage.startsWith('✅') || alertMessage.toLowerCase().includes('success') || alertMessage.toLowerCase().includes('saved') || alertMessage.toLowerCase().includes('updated') || alertMessage.toLowerCase().includes('welcome')
             ? <CheckCircle2 size={20} className="text-green-300 shrink-0" />
