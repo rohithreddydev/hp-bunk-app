@@ -202,12 +202,12 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }, []);
 
   const mapTx = (d: any): Transaction => ({
-    id: String(d.id), customerId: String(d.customer_id),
-    type: d.type || 'credit_sale', date: String(d.date || getTodayIST()),
-    product: d.product || '', quantity: Number(d.quantity) || 0,
+    id: String(d.id || ''), customerId: String(d.customer_id || ''),
+    type: String(d.type || 'credit_sale'), date: String(d.date || getTodayIST()),
+    product: String(d.product || ''), quantity: Number(d.quantity) || 0,
     rate: Number(d.rate) || 0, amount: Number(d.amount) || 0,
-    mode: d.payment_mode || '', vehicleNumber: d.vehicle_number || '',
-    remarks: d.remarks || d.notes || ''
+    mode: String(d.payment_mode || ''), vehicleNumber: String(d.vehicle_number || ''),
+    remarks: String(d.remarks || d.notes || '')
   });
 
   useEffect(() => {
@@ -238,14 +238,14 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           setSettings(cloudSettings); localStorage.setItem('app_settings', JSON.stringify(cloudSettings));
         }
 
-        if (custData) setCustomers(custData.map((d: any) => ({ id: String(d.id), category: d.category || 'Other', companyName: d.company_name || 'Unknown', ownerName: d.owner_name || '', address: d.address || '', paymentTerms: d.payment_terms || 'Monthly', phone: d.phone || '', driverName: d.driver_name || '', driverPhone: d.driver_phone || '', vehicleNumbers: d.vehicle_numbers || '', creditLimit: Number(d.credit_limit) || 0, status: d.status || 'Active', pin: d.portal_pin || '', portalAccess: Boolean(d.portal_access), notifyOnCredit: d.notify_on_credit })));
+        if (custData) setCustomers(custData.map((d: any) => ({ id: String(d.id || ''), category: String(d.category || 'Other'), companyName: String(d.company_name || 'Unknown'), ownerName: String(d.owner_name || ''), address: String(d.address || ''), paymentTerms: String(d.payment_terms || 'Monthly'), phone: String(d.phone || ''), driverName: String(d.driver_name || ''), driverPhone: String(d.driver_phone || ''), vehicleNumbers: String(d.vehicle_numbers || ''), creditLimit: Number(d.credit_limit) || 0, status: String(d.status || 'Active'), pin: String(d.portal_pin || ''), portalAccess: Boolean(d.portal_access), notifyOnCredit: Boolean(d.notify_on_credit) })));
         if (txData) setTransactions(txData.map(mapTx));
-        if (expData) setExpenses(expData.map((d: any) => ({ id: String(d.id), date: String(d.date || getTodayIST()), category: d.category || 'Other', amount: Number(d.amount) || 0, description: d.description || '', vendor: d.vendor || '', mode: d.payment_mode || '' })));
-        if (fuelData) setFuelPurchases(fuelData.map((d: any) => ({ id: String(d.id), date: String(d.date || getTodayIST()), product: d.product || 'Diesel', litres: Number(d.litres) || 0, rate: Number(d.rate) || 0, amount: Number(d.amount) || Number(d.total_amount) || 0, supplier: d.supplier || d.vendor || '', invoice: d.invoice || d.invoice_number || '', mode: d.payment_mode || '' })));
-        if (profData) setUsers(profData.map((d: any) => ({ id: String(d.id), name: d.name || 'Staff', email: d.email || '', role: String(d.role || 'supervisor').toLowerCase(), bunkId: String(d.bunk_id) } as any)));
+        if (expData) setExpenses(expData.map((d: any) => ({ id: String(d.id || ''), date: String(d.date || getTodayIST()), category: String(d.category || 'Other'), amount: Number(d.amount) || 0, description: String(d.description || ''), vendor: String(d.vendor || ''), mode: String(d.payment_mode || '') })));
+        if (fuelData) setFuelPurchases(fuelData.map((d: any) => ({ id: String(d.id || ''), date: String(d.date || getTodayIST()), product: String(d.product || 'Diesel'), litres: Number(d.litres) || 0, rate: Number(d.rate) || 0, amount: Number(d.amount) || Number(d.total_amount) || 0, supplier: String(d.supplier || d.vendor || ''), invoice: String(d.invoice || d.invoice_number || ''), mode: String(d.payment_mode || '') })));
+        if (profData) setUsers(profData.map((d: any) => ({ id: String(d.id || ''), name: String(d.name || 'Staff'), email: String(d.email || ''), role: String(d.role || 'supervisor').toLowerCase(), bunkId: String(d.bunk_id || '') } as any)));
         if (morningData) setMorningEntries(morningData.map((d: any) => ({
-          id: String(d.id), date: String(d.entry_date || getTodayIST()), petrolDip: Number(d.petrol_dip_today) || 0, dieselDip: Number(d.diesel_dip_today) || 0, petrolSold: Number(d.petrol_sold_litres) || 0, dieselSold: Number(d.diesel_sold_litres) || 0, netProfit: Number(d.net_profit) || 0, variance: Number(d.collection_variance) || 0, submitted: true, netValue: Number(d.bunk_net_value) || 0,
-          collectionsCash: Number(d.collections_cash) || 0, balanceCash: Number(d.balance_cash) || 0, collectionsBank: Number(d.collections_sbi) || 0, collectionsDigital: Number(d.collections_hppay) || 0, collectionDtp: Number(d.collections_dtp) || 0, collectionsCard: Number(d.collections_paytm) || 0, collectionsCredit: Number(d.collections_credit) || 0, periodExpenses: Number(d.period_expenses) || 0, balanceBank: Number(d.balance_sbi) || 0, balanceDigital: Number(d.balance_hp) || 0, balanceOd: Number(d.balance_od) || 0
+          id: String(d.id || ''), date: String(d.entry_date || getTodayIST()), petrolDip: Number(d.petrol_dip_today) || 0, dieselDip: Number(d.diesel_dip_today) || 0, petrolSold: Number(d.petrol_sold_litres) || 0, dieselSold: Number(d.diesel_sold_litres) || 0, netProfit: Number(d.net_profit) || 0, variance: Number(d.collection_variance) || 0, submitted: true, netValue: Number(d.bunk_net_value) || 0,
+          collectionsCash: Number(d.collections_cash) || 0, balanceCash: Number(d.balance_cash) || 0, collectionsBank: Number(d.collections_sbi) || 0, collectionsDigital: Number(d.collections_hppay) || 0, collectionDtp: Number(d.collections_dtp) || 0, collectionsCard: Number(d.collections_paytm) || 0, collectionsCredit: Number(d.collections_credit) || 0, periodExpenses: Number(d.period_expenses) || 0, balanceBank: Number(d.balance_sbi) || 0, balanceDigital: Number(d.balance_hp) || 0, balanceOd: Number(d.balnce_od || d.balance_od) || 0
         })));
       } catch (e) { console.error("Fetch error:", e); showAlert('Failed to sync. Please check your internet connection.'); } finally { setDataLoading(false); }
     };
@@ -869,7 +869,7 @@ const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
                 <span className="text-gray-400">or register in app below</span>
                 <div className="flex-1 h-px bg-gray-200" />
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 {[
                   { code: 'fuel', label: '⛽ Fuel Station', sub: 'Petrol / Diesel' },
                   { code: 'kirana', label: '🛒 Kirana Store', sub: 'Grocery & retail' },
