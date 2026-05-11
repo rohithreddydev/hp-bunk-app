@@ -2757,7 +2757,12 @@ const SettingsModule = () => {
 
   const userRole = String(user?.role || '').toLowerCase();
 
-  if (dataLoading) return <div className="flex justify-center p-20"><Loader2 className="w-8 h-8 an  return (
+  if (dataLoading) return <div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
+  if (userRole !== 'owner') return <div className="p-8 text-center text-red-600 font-bold">Settings are only accessible to the owner.</div>;
+
+  const ownerCount = users.filter(u => String(u.role).toLowerCase() === 'owner').length;
+
+  return (
     <div className="space-y-5 pb-10 max-w-3xl mx-auto">
 
       {/* Business & Rate Settings */}
