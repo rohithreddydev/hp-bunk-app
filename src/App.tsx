@@ -836,7 +836,7 @@ const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
             <div className="space-y-3 animate-in fade-in">
               <p className="text-gray-500 text-center text-sm mb-4">Select your preferred language</p>
               {[
-                { code: 'english', label: '🇬🇧 English', sub: 'Continue in English' },
+                { code: 'english', label: '🇮🇳 English', sub: 'Continue in English' },
                 { code: 'telugu', label: '🇮🇳 తెలుగు', sub: 'తెలుగులో కొనసాగించండి' },
                 { code: 'hindi', label: '🇮🇳 हिंदी', sub: 'हिंदी में जारी रखें' },
               ].map(l => (
@@ -1584,8 +1584,9 @@ const CustomerList = () => {
 
                 const cTxs = transactions.filter(t => t.customerId === c.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
                 const custTxPage = getCustTxPage(c.id);
-                const paginatedTxs = cTxs.slice(custTxPage * 5, (custTxPage + 1) * 5);
-                const totalTxsPages = Math.ceil(cTxs.length / 5);
+                const TX_PER_PAGE = 15;
+                const paginatedTxs = cTxs.slice(custTxPage * TX_PER_PAGE, (custTxPage + 1) * TX_PER_PAGE);
+                const totalTxsPages = Math.ceil(cTxs.length / TX_PER_PAGE);
 
                 let displayVehicles = '';
                 if (c.vehicleNumbers) {
@@ -1619,38 +1620,86 @@ const CustomerList = () => {
                     </tr>
                     {isExpanded && (
                       <tr>
-                        <td colSpan={7} className="p-0 bg-gray-50 border-b-2 border-blue-200">
-                          <div className="p-4 pl-12 animate-in fade-in slide-in-from-top-2">
-                            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3 flex justify-between items-center">
-                              Recent Transactions
-                              <div className="flex items-center gap-2">
-                                <button onClick={() => setCustTxPage(c.id, Math.max(0, custTxPage - 1))} disabled={custTxPage === 0} className="p-1 bg-white rounded shadow-sm disabled:opacity-50 hover:bg-blue-50 transition"><ChevronLeft size={14} /></button>
-                                <span className="text-[10px]">Page {custTxPage + 1} of {Math.max(1, totalTxsPages)}</span>
-                                <button onClick={() => setCustTxPage(c.id, Math.min(totalTxsPages - 1, custTxPage + 1))} disabled={custTxPage >= totalTxsPages - 1} className="p-1 bg-white rounded shadow-sm disabled:opacity-50 hover:bg-blue-50 transition"><ChevronRight size={14} /></button>
-                              </div>
-                            </h4>
-                            {cTxs.length === 0 ? <p className="text-sm text-gray-500 italic">No transactions recorded yet.</p> : (
-                              <table className="w-full text-sm bg-white rounded-lg shadow-sm overflow-hidden">
-                                <tbody>
-                                  {paginatedTxs.map(tx => {
-                                    let displayAmount = tx.amount;
-                                    let advStr = '';
-                                    if (tx.type === 'credit_sale' && tx.remarks?.startsWith('advance:')) {
-                                      const parts = tx.remarks.split('|');
-                                      const advAmt = Number(parts[0].split(':')[1]) || 0;
-                                      displayAmount += advAmt;
-                                      advStr = ` (+ ${formatRs(advAmt)} Adv)`;
-                                    }
-                                    return (
-                                      <tr key={tx.id} className="border-b last:border-b-0 hover:bg-blue-50/50">
-                                        <td className="p-3 text-gray-500 w-32">{formatISTDate(tx.date)}</td>
-                                        <td className="p-3 capitalize font-medium">{tx.type.replace('_', ' ')} {tx.product ? `(${tx.product})` : ''} {advStr} <span className="text-xs text-gray-400 block">{tx.vehicleNumber}</span></td>
-                                        <td className={`p-3 text-right font-bold ${tx.type === 'payment' ? 'text-green-600' : 'text-red-600'}`}>{tx.type === 'payment' ? '-' : '+'}{formatRs(displayAmount)}</td>
-                                      </tr>
-                                    )
-                                  })}
-                                </tbody>
-                              </table>
+                        <td colSpan={7} className="p-0 bg-blue-50/40 border-b-2 border-blue-200">
+                          <div className="p-4 pl-8 animate-in fade-in slide-in-from-top-2">
+                            {/* Header */}
+                            <div className="flex justify-between items-center mb-3">
+                              <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-2">
+                                <Receipt size={14} />
+                                Transaction History
+                                <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                  {cTxs.length} total
+                                </span>
+                              </h4>
+                            </div>
+
+                            {cTxs.length === 0 ? (
+                              <p className="text-sm text-gray-500 italic py-4 text-center">No transactions recorded yet.</p>
+                            ) : (
+                              <>
+                                <table className="w-full text-sm bg-white rounded-xl shadow-sm overflow-hidden border border-gray-100">
+                                  <thead>
+                                    <tr className="bg-gray-50 border-b">
+                                      <th className="p-3 text-left text-xs font-semibold text-gray-500 w-28">Date</th>
+                                      <th className="p-3 text-left text-xs font-semibold text-gray-500">Type / Details</th>
+                                      <th className="p-3 text-right text-xs font-semibold text-gray-500">Amount</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {paginatedTxs.map(tx => {
+                                      let displayAmount = tx.amount;
+                                      let advStr = '';
+                                      if (tx.type === 'credit_sale' && tx.remarks?.startsWith('advance:')) {
+                                        const parts = tx.remarks.split('|');
+                                        const advAmt = Number(parts[0].split(':')[1]) || 0;
+                                        displayAmount += advAmt;
+                                        advStr = ` (+ ${formatRs(advAmt)} Adv)`;
+                                      }
+                                      const isPayment = tx.type === 'payment';
+                                      return (
+                                        <tr key={tx.id} className="border-b last:border-b-0 hover:bg-blue-50/50 transition-colors">
+                                          <td className="p-3 text-gray-500 text-xs whitespace-nowrap">{formatISTDate(tx.date)}</td>
+                                          <td className="p-3">
+                                            <span className="font-medium capitalize">{tx.type.replace('_', ' ')}</span>
+                                            {tx.product && <span className="text-gray-500"> ({tx.product})</span>}
+                                            {advStr && <span className="text-orange-600 text-xs">{advStr}</span>}
+                                            {tx.vehicleNumber && <span className="text-xs text-gray-400 block">{tx.vehicleNumber}</span>}
+                                          </td>
+                                          <td className={`p-3 text-right font-bold whitespace-nowrap ${isPayment ? 'text-green-600' : 'text-red-600'}`}>
+                                            {isPayment ? '-' : '+'}{formatRs(displayAmount)}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+
+                                {/* Pagination bar — always shown when there are transactions */}
+                                <div className="flex justify-between items-center mt-3 pt-3 border-t border-blue-100">
+                                  <span className="text-xs text-gray-500">
+                                    Showing {custTxPage * TX_PER_PAGE + 1}–{Math.min((custTxPage + 1) * TX_PER_PAGE, cTxs.length)} of <strong>{cTxs.length}</strong> transactions
+                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setCustTxPage(c.id, Math.max(0, custTxPage - 1)); }}
+                                      disabled={custTxPage === 0}
+                                      className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold hover:bg-blue-50 hover:border-blue-300 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-sm flex items-center gap-1"
+                                    >
+                                      <ChevronLeft size={13} /> Previous
+                                    </button>
+                                    <span className="text-xs font-semibold text-gray-600 px-2">
+                                      Page {custTxPage + 1} / {Math.max(1, totalTxsPages)}
+                                    </span>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setCustTxPage(c.id, Math.min(totalTxsPages - 1, custTxPage + 1)); }}
+                                      disabled={custTxPage >= totalTxsPages - 1}
+                                      className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold hover:bg-blue-50 hover:border-blue-300 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-sm flex items-center gap-1"
+                                    >
+                                      Next <ChevronRight size={13} />
+                                    </button>
+                                  </div>
+                                </div>
+                              </>
                             )}
                           </div>
                         </td>
@@ -2781,6 +2830,40 @@ const SettingsModule = () => {
           </div>
           <button type="submit" disabled={isSubmitting} className="w-full bg-blue-800 text-white py-3 rounded-xl font-bold shadow hover:bg-blue-900 transition disabled:opacity-50">{isSubmitting ? 'Saving...' : 'Update Settings'}</button>
         </form>
+      </div>
+
+      {/* Language Preference */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
+        <div className="flex items-center mb-4 border-b pb-2">
+          <span className="text-xl mr-2">🌐</span>
+          <h3 className="text-lg font-bold">Language / భాష / भाषा</h3>
+        </div>
+        <p className="text-sm text-gray-500 mb-4">Choose the language for WhatsApp bot replies.</p>
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { code: 'en', label: '🇮🇳 English' },
+            { code: 'te', label: '🇮🇳 తెలుగు' },
+            { code: 'hi', label: '🇮🇳 हिंदी' },
+          ].map(l => (
+            <button key={l.code}
+              onClick={async () => {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (!session?.user) return showAlert('Not authenticated.');
+                const { data: prof } = await supabase.from('profiles').select('bunk_id').eq('id', session.user.id).maybeSingle();
+                const bid = prof?.bunk_id || user?.bunkId;
+                if (!bid) return showAlert('Could not find bunk. Try re-logging in.');
+                const { error } = await supabase.from('bunks').update({ language: l.code }).eq('id', bid);
+                if (error) return showAlert('Failed to update language: ' + error.message);
+                showAlert(`✅ Language updated! The bot will now reply in ${l.label.split(' ')[1] || l.label}.`);
+              }}
+              className={`py-3 px-2 rounded-xl border-2 font-semibold text-sm transition-all hover:border-indigo-400 hover:bg-indigo-50 ${
+                settings?.language === l.code ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-700'
+              }`}>
+              {l.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-gray-400 mt-3">⚠️ This only changes the WhatsApp bot language. The webapp is always in English.</p>
       </div>
 
       {/* WhatsApp Bot Status */}
