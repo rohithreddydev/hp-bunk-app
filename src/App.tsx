@@ -2757,131 +2757,121 @@ const SettingsModule = () => {
 
   const userRole = String(user?.role || '').toLowerCase();
 
-  if (dataLoading) return <div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
-  if (userRole !== 'owner') return <div className="p-8 text-center text-red-600 font-bold">Settings are only accessible to the owner.</div>;
+  if (dataLoading) return <div className="flex justify-center p-20"><Loader2 className="w-8 h-8 an  return (
+    <div className="space-y-5 pb-10 max-w-3xl mx-auto">
 
-  const ownerCount = users.filter(u => String(u.role).toLowerCase() === 'owner').length;
+      {/* Business & Rate Settings */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
+        <div className="flex items-center mb-4 border-b pb-2"><Settings className="text-gray-400 mr-2" /><h3 className="text-lg font-bold">Business &amp; Rate Settings</h3></div>
+        <form onSubmit={handleSave} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div><label className="block text-sm font-medium mb-1">Business Name</label><input type="text" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.bunkName} onChange={e => setForm({ ...form, bunkName: e.target.value })} /></div>
+            <div><label className="block text-sm font-medium mb-1">Fuel Brand / Company</label><select className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-base" value={form.fuelCompany || 'Generic'} onChange={e => setForm({ ...form, fuelCompany: e.target.value })}><option value="Generic">Independent / Generic</option><option>HPCL</option><option>IOCL</option><option>BPCL</option><option>Reliance</option><option>Nayara</option><option>Shell</option></select></div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div><label className="block text-sm font-medium mb-1">Petrol Rate (Rs/L)</label><input type="number" step="0.01" className="w-full border p-3 rounded-lg font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.petrolRate || ''} onChange={e => setForm({ ...form, petrolRate: e.target.value })} placeholder="0.00" /></div>
+            <div><label className="block text-sm font-medium mb-1">Diesel Rate (Rs/L)</label><input type="number" step="0.01" className="w-full border p-3 rounded-lg font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.dieselRate || ''} onChange={e => setForm({ ...form, dieselRate: e.target.value })} placeholder="0.00" /></div>
+            <div><label className="block text-sm font-medium mb-1">OD Limit (Rs)</label><input type="number" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.odLimit || ''} onChange={e => setForm({ ...form, odLimit: e.target.value })} placeholder="3000000" /></div>
+            <div><label className="block text-sm font-medium mb-1">Monthly Budget (Rs)</label><input type="number" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.monthlyBudget || ''} onChange={e => setForm({ ...form, monthlyBudget: e.target.value })} placeholder="0" /></div>
+          </div>
+          <button type="submit" disabled={isSubmitting} className="w-full bg-blue-800 text-white py-3 rounded-xl font-bold shadow hover:bg-blue-900 transition disabled:opacity-50">{isSubmitting ? 'Saving...' : 'Update Settings'}</button>
+        </form>
+      </div>
 
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-10">
-      <div className="space-y-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
-          <div className="flex items-center mb-4 border-b pb-2"><Settings className="text-gray-400 mr-2" /><h3 className="text-lg font-bold">Business & Rate Settings</h3></div>
-          <form onSubmit={handleSave} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div><label className="block text-sm font-medium mb-1">Business Name</label><input type="text" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.bunkName} onChange={e => setForm({ ...form, bunkName: e.target.value })} /></div>
-              <div><label className="block text-sm font-medium mb-1">Fuel Brand / Company</label><select className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-base" value={form.fuelCompany || 'Generic'} onChange={e => setForm({ ...form, fuelCompany: e.target.value })}><option value="Generic">Independent / Generic</option><option>HPCL</option><option>IOCL</option><option>BPCL</option><option>Reliance</option><option>Nayara</option><option>Shell</option></select></div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div><label className="block text-sm font-medium mb-1">Petrol Rate (Rs/L)</label><input type="number" step="0.01" className="w-full border p-3 rounded-lg font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.petrolRate || ''} onChange={e => setForm({ ...form, petrolRate: e.target.value })} placeholder="0.00" /></div>
-              <div><label className="block text-sm font-medium mb-1">Diesel Rate (Rs/L)</label><input type="number" step="0.01" className="w-full border p-3 rounded-lg font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.dieselRate || ''} onChange={e => setForm({ ...form, dieselRate: e.target.value })} placeholder="0.00" /></div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">OD Account Total Limit (Rs)</label>
-                <input type="number" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.odLimit || ''} onChange={e => setForm({ ...form, odLimit: e.target.value })} placeholder="3000000" />
-                <p className="text-xs text-gray-500 mt-1">The maximum amount you can draw from OD</p>
-              </div>
-              <div><label className="block text-sm font-medium mb-1">Monthly Expense Budget (Rs)</label><input type="number" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.monthlyBudget || ''} onChange={e => setForm({ ...form, monthlyBudget: e.target.value })} placeholder="0" /></div>
-            </div>
-            <button type="submit" disabled={isSubmitting} className="w-full bg-blue-800 text-white py-3 rounded-xl font-bold shadow hover:bg-blue-900 transition disabled:opacity-50">{isSubmitting ? 'Saving...' : 'Update Settings'}</button>
-          </form>
-        </div>
-
-        {/* WhatsApp Bot Info Card (FIX 10) */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
-          <div className="flex items-center mb-4 border-b pb-2"><MessageCircle className="text-green-500 mr-2" /><h3 className="text-lg font-bold">WhatsApp Bot Status</h3></div>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg border border-green-100">
-              <span className="text-sm font-medium text-gray-700">Bot Number</span>
-              <span className="font-bold text-green-800">+{((import.meta as any).env?.VITE_WHATSAPP_NUMBER || '917093578438').replace(/^(\d{2})(\d{5})(\d{5})$/, '$1 $2 $3')}</span>
-            </div>
-            <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg border">
-              <span className="text-sm font-medium text-gray-700">Bot Status</span>
-              <span className="flex items-center gap-1.5 font-bold text-green-700"><span className="w-2 h-2 bg-green-500 rounded-full inline-block animate-pulse"></span>Deployed</span>
-            </div>
+      {/* WhatsApp Bot Status */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
+        <div className="flex items-center mb-4 border-b pb-2"><MessageCircle className="text-green-500 mr-2" /><h3 className="text-lg font-bold">WhatsApp Bot Status</h3></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg border border-green-100">
+            <span className="text-sm font-medium text-gray-700">Bot Number</span>
+            <span className="font-bold text-green-800">+{((import.meta as any).env?.VITE_WHATSAPP_NUMBER || '917093578438').replace(/^(\d{2})(\d{5})(\d{5})$/, '$1 $2 $3')}</span>
+          </div>
+          <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg border">
+            <span className="text-sm font-medium text-gray-700">Bot Status</span>
+            <span className="flex items-center gap-1.5 font-bold text-green-700"><span className="w-2 h-2 bg-green-500 rounded-full inline-block animate-pulse"></span>Deployed</span>
           </div>
         </div>
       </div>
 
-      <div className="space-y-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
-          <div className="flex items-center mb-4 border-b pb-2"><Settings className="text-gray-400 mr-2" /><h3 className="text-lg font-bold">Security — Change Password</h3></div>
-          <form onSubmit={handleChangePassword} className="space-y-4">
+      {/* Security */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
+        <div className="flex items-center mb-4 border-b pb-2"><Settings className="text-gray-400 mr-2" /><h3 className="text-lg font-bold">Security — Change Password</h3></div>
+        <form onSubmit={handleChangePassword} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div><label className="block text-xs font-medium mb-1">New Password (min 6 chars)</label><input type="password" required minLength={6} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={newPass} onChange={e => setNewPass(e.target.value)} placeholder="Enter new password" /></div>
             <div><label className="block text-xs font-medium mb-1">Confirm New Password</label><input type="password" required minLength={6} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} placeholder="Confirm new password" /></div>
-            <button type="submit" disabled={isChangingPass} className="w-full bg-gray-800 text-white py-3 rounded-xl font-bold shadow hover:bg-gray-900 transition disabled:opacity-50">{isChangingPass ? 'Changing...' : 'Change Password'}</button>
-          </form>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
-          <div className="flex items-center mb-4 border-b pb-2"><Download className="text-gray-400 mr-2" /><h3 className="text-lg font-bold">Data Management</h3></div>
-
-          <div className="bg-blue-50 border border-blue-100 rounded-lg p-6 flex flex-col items-center justify-center text-center">
-            <UploadCloud className="w-12 h-12 text-blue-400 mb-4" />
-            <h4 className="font-bold text-blue-900 mb-2">Need to Import Data?</h4>
-            <p className="text-sm text-blue-700 mb-6 max-w-sm">To ensure database integrity and eliminate duplicate records, bulk data migration is currently handled securely by your development team.</p>
-            <button type="button" onClick={() => showConfirm("Contact your developer to execute a secure database migration script directly into Supabase.", () => { })} className="px-6 bg-blue-800 text-white py-2.5 rounded-lg font-bold text-sm hover:bg-blue-900 shadow transition">Request Data Migration</button>
           </div>
+          <button type="submit" disabled={isChangingPass} className="w-full bg-gray-800 text-white py-3 rounded-xl font-bold shadow hover:bg-gray-900 transition disabled:opacity-50">{isChangingPass ? 'Changing...' : 'Change Password'}</button>
+        </form>
+      </div>
 
-          <div className="mt-4">
-            <button onClick={handleExportData} className="w-full flex items-center justify-center p-4 bg-gray-50 border rounded-xl hover:bg-blue-50 hover:border-blue-200 transition group">
-              <Download className="text-gray-400 group-hover:text-blue-600 mr-3" size={20} />
-              <span className="text-sm font-bold text-gray-700 group-hover:text-blue-800">Export Full Database to CSV</span>
-            </button>
+      {/* Data Management */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
+        <div className="flex items-center mb-4 border-b pb-2"><Download className="text-gray-400 mr-2" /><h3 className="text-lg font-bold">Data Management</h3></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="bg-blue-50 border border-blue-100 rounded-lg p-5 flex flex-col items-center justify-center text-center">
+            <UploadCloud className="w-10 h-10 text-blue-400 mb-3" />
+            <h4 className="font-bold text-blue-900 mb-1">Need to Import Data?</h4>
+            <p className="text-xs text-blue-700 mb-4">Bulk data migration is handled securely by your development team.</p>
+            <button type="button" onClick={() => showConfirm("Contact your developer to execute a secure database migration script directly into Supabase.", () => { })} className="px-5 bg-blue-800 text-white py-2 rounded-lg font-bold text-sm hover:bg-blue-900 shadow transition">Request Data Migration</button>
           </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
-          <div className="flex items-center justify-between mb-4 border-b pb-2">
-            <div className="flex items-center"><Users className="text-gray-400 mr-2" /><h3 className="text-lg font-bold">Staff Management</h3></div>
-            <div className="flex gap-2 text-xs font-bold">
-              <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded">{ownerCount} Owner{ownerCount !== 1 ? 's' : ''}</span>
-              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded">{users.filter(u => String(u.role).toLowerCase() === 'supervisor').length} Supervisor{users.filter(u => String(u.role).toLowerCase() === 'supervisor').length !== 1 ? 's' : ''}</span>
-            </div>
-          </div>
-          <div className="mb-6">
-            <h4 className="text-sm font-bold text-gray-500 mb-2">Current Staff</h4>
-            <div className="space-y-2">
-              {users.length === 0 ? <p className="text-sm text-gray-500">No staff found.</p> : users.map((u, idx) => {
-                const canDelete = String(u.role).toLowerCase() !== 'owner' || ownerCount > 1;
-                return (
-                  <div key={u.id || `staff-${idx}`} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg border">
-                    <div><p className="font-bold text-sm">{u.name}</p><p className="text-xs text-gray-500">{u.email}</p></div>
-                    <div className="flex items-center gap-3">
-                      <span className={`px-2 py-1 text-xs rounded uppercase font-bold ${String(u.role).toLowerCase() === 'owner' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>{u.role}</span>
-                      {canDelete && (<button onClick={() => showConfirm(`Revoke access for ${u.name}?`, () => deleteUser(u.id))} className="text-red-500 hover:bg-red-100 p-1.5 rounded transition"><Trash2 size={16} /></button>)}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          <form onSubmit={handleAddStaff} className="space-y-4 pt-4 border-t">
-            <h4 className="text-sm font-bold text-gray-500">Add New Staff Member</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div><label className="block text-xs font-medium mb-1">Name</label><input type="text" required className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={staffForm.name} onChange={e => setStaffForm({ ...staffForm, name: e.target.value })} /></div>
-              <div><label className="block text-xs font-medium mb-1">Email / Login ID</label><input type="email" required className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={staffForm.email} onChange={e => setStaffForm({ ...staffForm, email: e.target.value })} /></div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div><label className="block text-xs font-medium mb-1">Temporary Password</label><input type="password" required minLength={6} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={staffForm.password} onChange={e => setStaffForm({ ...staffForm, password: e.target.value })} /></div>
-              <div>
-                <label className="block text-xs font-medium mb-1">Role</label>
-                <select className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-base" value={staffForm.role} onChange={e => setStaffForm({ ...staffForm, role: e.target.value })}>
-                  <option value="supervisor">Supervisor</option>
-                  <option value="owner">Owner (Full Access)</option>
-                </select>
-              </div>
-            </div>
-            <button type="submit" disabled={isSubmittingStaff} className="w-full bg-gray-800 text-white py-3 rounded-xl font-bold shadow hover:bg-gray-900 transition disabled:opacity-50">
-              {isSubmittingStaff ? 'Processing...' : 'Create Account'}
-            </button>
-          </form>
+          <button onClick={handleExportData} className="flex flex-col items-center justify-center p-5 bg-gray-50 border rounded-xl hover:bg-blue-50 hover:border-blue-200 transition group min-h-[140px]">
+            <Download className="text-gray-400 group-hover:text-blue-600 mb-2" size={24} />
+            <span className="text-sm font-bold text-gray-700 group-hover:text-blue-800">Export Full Database to CSV</span>
+            <span className="text-xs text-gray-400 mt-1">All customers &amp; transactions</span>
+          </button>
         </div>
       </div>
 
-      {/* Danger Zone */}
+      {/* Staff Management */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
+        <div className="flex items-center justify-between mb-4 border-b pb-2">
+          <div className="flex items-center"><Users className="text-gray-400 mr-2" /><h3 className="text-lg font-bold">Staff Management</h3></div>
+          <div className="flex gap-2 text-xs font-bold">
+            <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded">{ownerCount} Owner{ownerCount !== 1 ? 's' : ''}</span>
+            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded">{users.filter(u => String(u.role).toLowerCase() === 'supervisor').length} Supervisor{users.filter(u => String(u.role).toLowerCase() === 'supervisor').length !== 1 ? 's' : ''}</span>
+          </div>
+        </div>
+        <div className="mb-5">
+          <h4 className="text-sm font-bold text-gray-500 mb-2">Current Staff</h4>
+          <div className="space-y-2">
+            {users.length === 0 ? <p className="text-sm text-gray-500">No staff found.</p> : users.map((u, idx) => {
+              const canDelete = String(u.role).toLowerCase() !== 'owner' || ownerCount > 1;
+              return (
+                <div key={u.id || `staff-${idx}`} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg border">
+                  <div><p className="font-bold text-sm">{u.name}</p><p className="text-xs text-gray-500">{u.email}</p></div>
+                  <div className="flex items-center gap-3">
+                    <span className={`px-2 py-1 text-xs rounded uppercase font-bold ${String(u.role).toLowerCase() === 'owner' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>{u.role}</span>
+                    {canDelete && (<button onClick={() => showConfirm(`Revoke access for ${u.name}?`, () => deleteUser(u.id))} className="text-red-500 hover:bg-red-100 p-1.5 rounded transition"><Trash2 size={16} /></button>)}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+        <form onSubmit={handleAddStaff} className="space-y-4 pt-4 border-t">
+          <h4 className="text-sm font-bold text-gray-500">Add New Staff Member</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div><label className="block text-xs font-medium mb-1">Name</label><input type="text" required className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={staffForm.name} onChange={e => setStaffForm({ ...staffForm, name: e.target.value })} /></div>
+            <div><label className="block text-xs font-medium mb-1">Email / Login ID</label><input type="email" required className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={staffForm.email} onChange={e => setStaffForm({ ...staffForm, email: e.target.value })} /></div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div><label className="block text-xs font-medium mb-1">Temporary Password</label><input type="password" required minLength={6} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={staffForm.password} onChange={e => setStaffForm({ ...staffForm, password: e.target.value })} /></div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Role</label>
+              <select className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-base" value={staffForm.role} onChange={e => setStaffForm({ ...staffForm, role: e.target.value })}>
+                <option value="supervisor">Supervisor</option>
+                <option value="owner">Owner (Full Access)</option>
+              </select>
+            </div>
+          </div>
+          <button type="submit" disabled={isSubmittingStaff} className="w-full bg-gray-800 text-white py-3 rounded-xl font-bold shadow hover:bg-gray-900 transition disabled:opacity-50">
+            {isSubmittingStaff ? 'Processing...' : 'Create Account'}
+          </button>
+        </form>
+      </div>
+
+      {/* Danger Zone — always last, full-width */}
       {user?.role === 'owner' && <DangerZone bunkId={user.bunkId || ''} />}
     </div>
   );
