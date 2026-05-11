@@ -19,8 +19,10 @@ import {
 } from 'lucide-react';
 
 // --- TIMEZONE UTILS (IST STRICT) ---
-// Re-export from utils.ts so existing callers continue to work
-export { getTodayIST, nowIST, formatISTDate } from './utils';
+// Import into local scope (so the module-level calls below work)
+// AND re-export so other files can import from App.tsx if needed
+import { getTodayIST, nowIST, formatISTDate } from './utils';
+export { getTodayIST, nowIST, formatISTDate };
 
 const todayStr = getTodayIST();
 const currentMonthStr = todayStr.substring(0, 7);
