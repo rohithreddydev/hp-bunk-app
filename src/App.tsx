@@ -171,8 +171,19 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     if (!hasValidKeys) return;
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user && !user) {
-        supabase.from('profiles').select('*').eq('id', session.user.id).single().then(({ data: profile }) => {
-          if (profile) saveUserSession({ id: String(profile.id), name: String(profile.name), email: String(profile.email), role: String(profile.role).toLowerCase() as Role, bunkId: String(profile.bunk_id) });
+        supabase.from('profiles').select('*').eq('id', session.user.id).single().then(({ data: profile, error: profErr }) => {
+          if (profile) {
+            saveUserSession({ id: String(profile.id), name: String(profile.name), email: String(profile.email), role: String(profile.role).toLowerCase() as Role, bunkId: String(profile.bunk_id) });
+          } else {
+            // Profile missing (account was deleted from Supabase) — sign out cleanly
+            // so the user sees the login screen instead of crashing with ErrorBoundary
+            console.warn('[Auth] Session found but profile missing — auto sign-out:', profErr?.message);
+            supabase.auth.signOut().then(() => {
+              localStorage.removeItem('app_user_session');
+              localStorage.removeItem('app_biz_type');
+              saveUserSession(null);
+            });
+          }
         });
       }
     });
@@ -3007,6 +3018,17 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
   componentDidCatch(error: any, errorInfo: any) {
     this.setState({ errorInfo });
     console.error("ErrorBoundary caught an error:", error, errorInfo);
+    // Auto-clear stale localStorage session that may have caused the crash
+    // This handles the case where the user deleted their Supabase account but
+    // the old app_user_session is still stored, causing a React render crash
+    try {
+      const staleSession = localStorage.getItem('app_user_session');
+      if (staleSession) {
+        console.warn('[ErrorBoundary] Clearing stale session to prevent repeated crash');
+        localStorage.removeItem('app_user_session');
+        localStorage.removeItem('app_biz_type');
+      }
+    } catch (_) { /* ignore */ }
   }
 
   render() {
@@ -3017,10 +3039,11 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
             <AlertCircle className="w-16 h-16 text-orange-500 mx-auto mb-4" />
             <h1 className="text-2xl font-black text-gray-900 mb-2">Something went wrong</h1>
             <p className="text-gray-600 mb-2">The app hit an unexpected error. Your data in Supabase is safe.</p>
-            <p className="text-sm text-gray-400 mb-6">Reload the page to continue — do not use "Clear Data" unless asked by support.</p>
+            <p className="text-sm text-gray-500 mb-1">This usually happens when your account session is stale or was deleted.</p>
+            <p className="text-sm text-gray-400 mb-6">Your session has been cleared. Click Reload to log in again.</p>
 
-            <button onClick={() => window.location.reload()} className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-black transition mb-3">Reload App</button>
-            <button onClick={() => { localStorage.removeItem('app_biz_type'); localStorage.removeItem('app_bunk_id'); window.location.reload(); }} className="w-full border border-gray-300 text-gray-600 py-2 rounded-xl text-sm hover:bg-gray-50 transition mb-4">Reset Session (keeps your login)</button>
+            <button onClick={() => window.location.reload()} className="w-full bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-black transition mb-3">🔄 Reload App</button>
+            <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="w-full border border-gray-300 text-gray-600 py-2 rounded-xl text-sm hover:bg-gray-50 transition mb-4">🧹 Full Reset (clears all local data)</button>
 
             {import.meta.env.DEV && (
               <details className="text-left bg-red-50 p-4 rounded-lg border border-red-100">
