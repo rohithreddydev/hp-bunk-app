@@ -1074,9 +1074,7 @@ const Dashboard = () => {
     { val: '12', label: 'Dec' }
   ];
 
-  if (dataLoading) return <div className="flex justify-center items-center p-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
-
-  // --- 1. GLOBAL METRICS ---
+  // --- 1. GLOBAL METRICS --- (all hooks MUST come before any early return)
   const { totalReceivables, overdueCount } = useMemo(() => {
     let recv = 0; let over = 0;
     for (const c of customers) {
@@ -1186,6 +1184,9 @@ const Dashboard = () => {
 
   // Status Card
   const todayEntry = morningEntries.find(e => e.date === getTodayIST());
+
+  // Early return AFTER all hooks (Rules of Hooks compliance)
+  if (dataLoading) return <div className="flex justify-center items-center p-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
 
   return (
     <div className="space-y-6">
