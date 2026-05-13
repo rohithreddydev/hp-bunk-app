@@ -3,8 +3,9 @@ import {
   Package, ShoppingCart, Users, Truck, BarChart3, Receipt, Settings,
   Plus, Search, AlertTriangle, TrendingUp, TrendingDown, RefreshCw,
   CheckCircle2, Clock, MapPin, Phone, X, ChevronRight, Building2,
-  ArrowUpRight, ArrowDownRight, Loader2, Layers, DollarSign
+  ArrowUpRight, ArrowDownRight, Loader2, Layers, DollarSign, LogOut,
 } from 'lucide-react';
+import { SettingsTab } from './SettingsTab';
 import { supabase } from './supabase';
 import { getTodayIST, formatISTDate } from './utils';
 
@@ -70,8 +71,8 @@ const inr = (n: number) => `₹${Number(n || 0).toLocaleString('en-IN', { minimu
 const today = getTodayIST();
 
 // ── Main Component ───────────────────────────────────────────────────────────
-export function CementApp({ bunkId }: { bunkId: string }) {
-  const [tab, setTab] = useState<'dashboard' | 'inventory' | 'sales' | 'customers' | 'deliveries' | 'purchases' | 'expenses' | 'reports' | 'suppliers'>('dashboard');
+export function CementApp({ bunkId, onLogout, user }: { bunkId: string; onLogout: () => void; user: { name: string; email: string; role: string } }) {
+  const [tab, setTab] = useState<'dashboard' | 'inventory' | 'sales' | 'customers' | 'deliveries' | 'purchases' | 'expenses' | 'reports' | 'suppliers' | 'settings'>('dashboard');
 
   const tabs = [
     { id: 'dashboard',  label: 'Dashboard',   icon: BarChart3 },
@@ -83,6 +84,7 @@ export function CementApp({ bunkId }: { bunkId: string }) {
     { id: 'expenses',   label: 'Expenses',    icon: Receipt },
     { id: 'reports',    label: 'Reports',     icon: TrendingUp },
     { id: 'suppliers',  label: 'Suppliers',   icon: Building2 },
+    { id: 'settings',   label: 'Settings',    icon: Settings },
   ] as const;
 
   return (
@@ -94,6 +96,9 @@ export function CementApp({ bunkId }: { bunkId: string }) {
           <div className="font-bold text-lg leading-tight">CementDesk AI</div>
           <div className="text-orange-100 text-xs">Building Materials Store</div>
         </div>
+        <button onClick={onLogout} className="ml-auto p-2 rounded-lg hover:bg-white/20 transition" title="Sign Out">
+          <LogOut size={20} />
+        </button>
       </div>
 
       {/* Tab Bar */}
@@ -125,6 +130,7 @@ export function CementApp({ bunkId }: { bunkId: string }) {
         {tab === 'expenses'   && <ExpensesTab bunkId={bunkId} />}
         {tab === 'reports'    && <ReportsTab bunkId={bunkId} />}
         {tab === 'suppliers'  && <SuppliersTab bunkId={bunkId} />}
+        {tab === 'settings'   && <SettingsTab bunkId={bunkId} user={user} onLogout={onLogout} />}
       </div>
     </div>
   );
@@ -219,6 +225,24 @@ function DashboardTab({ bunkId }: { bunkId: string }) {
               <div className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
                 <MapPin size={10} /> {d.site_address}
               </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <div className="flex items-center gap-2 mb-3"><CheckCircle2 size={16} className="text-green-600" /><h3 className="font-semibold text-gray-700">Today's Checklist</h3></div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {[
+            { done: stats.todaySales > 0, text: "Record today's sales" },
+            { done: stats.lowStockCount === 0, text: `Reorder low stock${stats.lowStockCount > 0 ? ` (${stats.lowStockCount} items)` : ''}` },
+            { done: stats.pendingDeliveries === 0, text: `Dispatch pending deliveries${stats.pendingDeliveries > 0 ? ` (${stats.pendingDeliveries})` : ''}` },
+            { done: stats.outstandingTotal === 0, text: `Collect outstanding${stats.outstandingTotal > 0 ? ` (${inr(stats.outstandingTotal)})` : ''}` },
+          ].map((item, i) => (
+            <div key={i} className="flex items-center gap-2.5 p-2.5 rounded-lg bg-gray-50">
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${item.done ? 'bg-green-100' : 'bg-yellow-100'}`}>
+                {item.done ? <CheckCircle2 size={12} className="text-green-600" /> : <AlertTriangle size={12} className="text-yellow-600" />}
+              </div>
+              <span className={`text-sm leading-tight ${item.done ? 'line-through text-gray-400' : 'text-gray-700'}`}>{item.text}</span>
             </div>
           ))}
         </div>
@@ -701,6 +725,10 @@ function CustomersTab({ bunkId }: { bunkId: string }) {
   const [editing, setEditing] = useState<Customer | null>(null);
   const [form, setForm] = useState({ name: '', phone: '', address: '', customer_type: 'retail', gstin: '', credit_limit: 0 });
   const [saving, setSaving] = useState(false);
+  const [payModal, setPayModal] = useState<Customer | null>(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [payMode, setPayMode] = useState('cash');
+  const [payingSaving, setPayingSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -723,6 +751,17 @@ function CustomersTab({ bunkId }: { bunkId: string }) {
     if (editing) await supabase.from('cement_customers').update(payload).eq('id', editing.id);
     else await supabase.from('cement_customers').insert({ ...payload, outstanding_amount: 0, total_purchases: 0 });
     setSaving(false); setShowForm(false); load();
+  };
+
+  const handleCollectPayment = async () => {
+    if (!payModal) return;
+    const amt = parseFloat(payAmount);
+    if (!amt || amt <= 0) return;
+    if (amt > payModal.outstanding_amount) return;
+    setPayingSaving(true);
+    await supabase.from('cement_customers').update({ outstanding_amount: Number(payModal.outstanding_amount) - amt }).eq('id', payModal.id);
+    setPayingSaving(false);
+    setPayModal(null); setPayAmount(''); load();
   };
 
   if (loading) return <div className="flex justify-center py-16"><Loader2 className="animate-spin text-orange-500" size={32} /></div>;
@@ -750,16 +789,16 @@ function CustomersTab({ bunkId }: { bunkId: string }) {
 
       <div className="space-y-3">
         {filtered.map(c => (
-          <div key={c.id} className="bg-white rounded-xl border border-gray-100 p-4 cursor-pointer hover:shadow-sm"
-            onClick={() => { setEditing(c); setForm({ name: c.name, phone: c.phone || '', address: c.address || '', customer_type: c.customer_type, gstin: c.gstin || '', credit_limit: c.credit_limit }); setShowForm(true); }}>
+          <div key={c.id} className="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-sm">
             <div className="flex justify-between items-start">
-              <div>
+              <div className="flex-1 cursor-pointer" onClick={() => { setEditing(c); setForm({ name: c.name, phone: c.phone || '', address: c.address || '', customer_type: c.customer_type, gstin: c.gstin || '', credit_limit: c.credit_limit }); setShowForm(true); }}>
                 <div className="font-medium text-gray-800">{c.name}</div>
                 <div className="text-xs text-gray-400 mt-0.5 capitalize">{c.customer_type} {c.phone ? `· ${c.phone}` : ''}</div>
               </div>
-              <div className="text-right">
+              <div className="text-right flex flex-col items-end gap-1.5">
                 {c.outstanding_amount > 0 && <div className="text-sm font-bold text-red-600">{inr(c.outstanding_amount)}</div>}
                 <div className="text-xs text-gray-400">Total: {inr(c.total_purchases)}</div>
+                {c.outstanding_amount > 0 && <button onClick={() => { setPayModal(c); setPayAmount(''); setPayMode('cash'); }} className="bg-orange-500 text-white text-xs px-3 py-1 rounded-lg hover:bg-orange-600 font-medium">Collect</button>}
               </div>
             </div>
           </div>
@@ -797,6 +836,23 @@ function CustomersTab({ bunkId }: { bunkId: string }) {
             <button onClick={save} disabled={saving} className="w-full bg-orange-600 text-white py-3 rounded-xl font-semibold hover:bg-orange-700 disabled:opacity-50 flex items-center justify-center gap-2">
               {saving && <Loader2 size={16} className="animate-spin" />}
               {editing ? 'Update' : 'Add Customer'}
+            </button>
+          </div>
+        </div>
+      )}
+      {payModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 space-y-4">
+            <div className="flex justify-between items-center">
+              <h3 className="font-bold text-gray-800">Collect Payment</h3>
+              <button onClick={() => setPayModal(null)}><X size={20} className="text-gray-400" /></button>
+            </div>
+            <p className="text-sm text-gray-600">Customer: <span className="font-semibold">{payModal.name}</span></p>
+            <p className="text-sm text-red-600 font-medium">Outstanding: {inr(payModal.outstanding_amount)}</p>
+            <div><label className="text-xs font-medium text-gray-600 mb-1 block">Amount Received (₹) *</label><input type="number" min="1" max={payModal.outstanding_amount} value={payAmount} onChange={e => setPayAmount(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-400 focus:outline-none" autoFocus /></div>
+            <div><label className="text-xs font-medium text-gray-600 mb-1 block">Payment Mode</label><select value={payMode} onChange={e => setPayMode(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm">{['cash','upi','card','cheque'].map(m => <option key={m}>{m}</option>)}</select></div>
+            <button onClick={handleCollectPayment} disabled={payingSaving} className="w-full bg-orange-600 text-white py-3 rounded-xl font-semibold hover:bg-orange-700 disabled:opacity-50 flex items-center justify-center gap-2">
+              {payingSaving && <Loader2 size={16} className="animate-spin" />}Confirm Payment
             </button>
           </div>
         </div>

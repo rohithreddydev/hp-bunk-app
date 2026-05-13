@@ -37,6 +37,8 @@ import { AutoPartsApp } from './AutoPartsApp';
 import { AgricultureApp } from './AgricultureApp';
 import { TextileApp } from './TextileApp';
 import { StationeryApp } from './StationeryApp';
+import { KiranaApp } from './KiranaApp';
+import { MedicalApp } from './MedicalApp';
 const rawUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
 const rawKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
 export const hasValidKeys = Boolean(rawUrl && rawKey && rawUrl !== 'undefined' && rawKey !== 'undefined');
@@ -53,7 +55,7 @@ interface FuelPurchase { id: string; date: string; product: string; litres: numb
 interface AppContextType {
   user: User | null; dataLoading: boolean; unsavedForm: boolean; setUnsavedForm: (v: boolean) => void;
   login: (email: string, pass: string) => Promise<boolean>; loginCustomer: (phone: string, pin: string) => void;
-  signup: (data: { name: string, phone: string, bunkName: string, email: string, pass: string, fuelCompany: string }) => Promise<void>;
+  signup: (data: { name: string, phone: string, bunkName: string, email: string, pass: string, fuelCompany: string, bizType: string, drugLicense?: string, season?: string, cashInHand?: number, cashInBank?: number, stockValue?: number, customerReceivables?: number, supplierPayables?: number }) => Promise<void>;
   logout: () => void; currentRoute: string; setCurrentRoute: (r: string) => void; customerFilter: string; setCustomerFilter: (f: string) => void;
   customers: Customer[]; transactions: Transaction[]; morningEntries: MorningEntry[]; expenses: Expense[]; fuelPurchases: FuelPurchase[]; users: User[]; settings: any;
   addCustomer: (c: any) => Promise<string | null>; updateCustomer: (id: string, updates: any) => Promise<void>; deleteCustomer: (id: string) => Promise<void>;
@@ -215,6 +217,11 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           const b = bunkData[0];
           const cloudSettings = { bunkName: b.name || '', fuelCompany: b.fuel_company || '', petrolRate: Number(b.petrol_rate) || 0, dieselRate: Number(b.diesel_rate) || 0, monthlyBudget: Number(b.monthly_budget) || 0, odLimit: Number(b.od_limit) || 3000000, currentOdBalance: Number(b.current_od_balance) || 0, currentHpBalance: Number(b.current_hp_balance) || 0, initialPetrolDip: Number(settings?.initialPetrolDip) || 0, initialDieselDip: Number(settings?.initialDieselDip) || 0 };
           setSettings(cloudSettings); localStorage.setItem('app_settings', JSON.stringify(cloudSettings));
+          // Auto-sync biz_type from bunk record so module routing survives localStorage clears
+          if (b.biz_type && b.biz_type !== 'unknown') {
+            const existing = localStorage.getItem('app_biz_type');
+            if (!existing) localStorage.setItem('app_biz_type', b.biz_type);
+          }
         }
 
         if (custData) setCustomers(custData.map((d: any) => ({ id: String(d.id), category: d.category || 'Other', companyName: d.company_name || 'Unknown', ownerName: d.owner_name || '', address: d.address || '', paymentTerms: d.payment_terms || 'Monthly', phone: d.phone || '', driverName: d.driver_name || '', driverPhone: d.driver_phone || '', vehicleNumbers: d.vehicle_numbers || '', creditLimit: Number(d.credit_limit) || 0, status: d.status || 'Active', pin: d.portal_pin || '', portalAccess: Boolean(d.portal_access), notifyOnCredit: d.notify_on_credit })));
@@ -278,7 +285,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return true;
   };
 
-  const signup = async (formData: { name: string, phone: string, bunkName: string, email: string, pass: string, fuelCompany: string }) => {
+  const signup = async (formData: { name: string, phone: string, bunkName: string, email: string, pass: string, fuelCompany: string, bizType: string, drugLicense?: string, season?: string, cashInHand?: number, cashInBank?: number, stockValue?: number, customerReceivables?: number, supplierPayables?: number }) => {
     const cleanEmail = formData.email.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return showAlert("Please enter a valid email address.");
     if (formData.pass.length < 6) return showAlert("Password must be at least 6 characters.");
@@ -292,12 +299,26 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
     const newBunkId = generateId();
     const trialEndsAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+    const netWorth = (formData.cashInHand || 0) + (formData.cashInBank || 0) + (formData.stockValue || 0) + (formData.customerReceivables || 0) - (formData.supplierPayables || 0);
+    const defaultBizName: Record<string, string> = { fuel: 'My Fuel Station', kirana: 'My Kirana Store', medical: 'My Medical Shop', cement: 'My Cement Depot', hardware: 'My Hardware Shop', restaurant: 'My Restaurant', textile: 'My Textile Shop', auto_parts: 'My Auto Parts', agriculture: 'My Agro Shop', stationery: 'My Stationery', general: 'My Business' };
 
     await Promise.all([
       supabase.from('bunks').insert([{
-        id: newBunkId, name: formData.bunkName || 'My Fuel Station',
+        id: newBunkId,
+        name: formData.bunkName || defaultBizName[formData.bizType] || 'My Business',
         owner_name: formData.name, owner_phone: normalizedPhone,
-        fuel_company: formData.fuelCompany,
+        fuel_company: formData.bizType === 'fuel' ? formData.fuelCompany : null,
+        biz_type: formData.bizType || 'fuel',
+        opening_cash: formData.cashInHand || 0,
+        opening_bank: formData.cashInBank || 0,
+        opening_stock: formData.stockValue || 0,
+        opening_receivables: formData.customerReceivables || 0,
+        opening_payables: formData.supplierPayables || 0,
+        opening_net_worth: netWorth,
+        biz_metadata: {
+          drug_license: formData.drugLicense || null,
+          agriculture_season: formData.season || null,
+        },
         current_od_balance: 0, current_hp_balance: 0, od_limit: 3000000,
         subscription_plan: 'trial', trial_ends_at: trialEndsAt, is_active: true
       }]),
@@ -311,6 +332,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         webapp_user_id: authData.user.id
       }]),
     ]);
+
+    localStorage.setItem('app_biz_type', formData.bizType || 'fuel');
 
     if (!authData.session) {
       showAlert('Success! Please check your email inbox and click the verification link to log in.');
@@ -775,12 +798,15 @@ const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
 
   const [tab, setTab] = useState<'staff' | 'customer'>('staff');
   const [view, setView] = useState<'login' | 'signup'>('login');
+  const [signupStep, setSignupStep] = useState<'basic' | 'networth'>('basic');
   const [loginEmail, setLoginEmail] = useState(''); const [loginPass, setLoginPass] = useState('');
   const [regName, setRegName] = useState(''); const [regPhone, setRegPhone] = useState(''); const [regBunk, setRegBunk] = useState(''); const [regFuelCompany, setRegFuelCompany] = useState('Generic'); const [regEmail, setRegEmail] = useState(''); const [regPass, setRegPass] = useState('');
+  const [regDrugLicense, setRegDrugLicense] = useState(''); const [regSeason, setRegSeason] = useState('Kharif');
+  const [regCash, setRegCash] = useState(''); const [regBank, setRegBank] = useState(''); const [regStock, setRegStock] = useState(''); const [regReceivables, setRegReceivables] = useState(''); const [regPayables, setRegPayables] = useState('');
   const [custPhone, setCustPhone] = useState(''); const [custPin, setCustPin] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const switchView = (newView: 'login' | 'signup') => { setLoginEmail(''); setLoginPass(''); setRegName(''); setRegPhone(''); setRegBunk(''); setRegEmail(''); setRegPass(''); setView(newView); };
+  const switchView = (newView: 'login' | 'signup') => { setLoginEmail(''); setLoginPass(''); setRegName(''); setRegPhone(''); setRegBunk(''); setRegEmail(''); setRegPass(''); setRegDrugLicense(''); setRegSeason('Kharif'); setRegCash(''); setRegBank(''); setRegStock(''); setRegReceivables(''); setRegPayables(''); setSignupStep('basic'); setView(newView); };
 
   const waNumber = (import.meta as any).env?.VITE_WHATSAPP_NUMBER || '917093578438';
   const selectLang = (l: string) => { localStorage.setItem('app_lang', l); setStep('biz'); };
@@ -887,18 +913,44 @@ const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
                   <div className="flex flex-col items-center mt-4 space-y-3 text-sm"><button type="button" onClick={() => showAlert("Please contact your station owner to reset your password.")} className="text-indigo-600 font-medium hover:underline">Forgot Password?</button><button type="button" onClick={() => switchView('signup')} className="text-gray-500 hover:text-gray-800 hover:underline">First time setup? Create Owner Account</button></div>
                 </form>
               )}
-              {tab === 'staff' && view === 'signup' && (
-                <form onSubmit={async (e) => { e.preventDefault(); setIsSubmitting(true); await signup({ name: regName, phone: regPhone, bunkName: regBunk, fuelCompany: regFuelCompany, email: regEmail, pass: regPass }); setIsSubmitting(false); }} className="space-y-4 animate-in fade-in slide-in-from-right-4 max-h-[60vh] overflow-y-auto pr-1" autoComplete="off">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Owner Full Name</label><input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label><input type="tel" value={regPhone} onChange={e => setRegPhone(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Fuel Station Name</label><input type="text" value={regBunk} onChange={e => setRegBunk(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" placeholder="e.g., Highway Fuels" required /></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Fuel Brand / Company</label><select className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-base" value={regFuelCompany} onChange={e => setRegFuelCompany(e.target.value)}><option value="Generic">Independent / Generic</option><option>HPCL</option><option>IOCL</option><option>BPCL</option><option>Reliance</option><option>Nayara</option><option>Shell</option></select></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label><input type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Password (Min 6 chars)</label><input type="password" value={regPass} onChange={e => setRegPass(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required minLength={6} /></div>
-                  <button type="submit" disabled={isSubmitting} className="w-full bg-indigo-700 text-white p-3 rounded-lg font-bold hover:bg-indigo-800 transition mt-2 disabled:opacity-50">{isSubmitting ? 'Registering...' : 'Register & Setup'}</button>
-                  <div className="text-center mt-4"><button type="button" onClick={() => switchView('login')} className="text-sm text-gray-500 hover:text-gray-800 hover:underline">Already have an account? Login here</button></div>
-                </form>
-              )}
+              {tab === 'staff' && view === 'signup' && (() => {
+                const selBiz = localStorage.getItem('app_biz_type') || 'fuel';
+                const bizNameLabel: Record<string,string> = { fuel:'Fuel Station Name', kirana:'Store Name', medical:'Medical Shop Name', cement:'Shop / Depot Name', hardware:'Hardware Shop Name', restaurant:'Restaurant / Hotel Name', textile:'Shop Name', auto_parts:'Shop Name', agriculture:'Agro Shop Name', stationery:'Shop Name', general:'Business Name' };
+                const bizNamePlaceholder: Record<string,string> = { fuel:'e.g., Highway Fuels', kirana:'e.g., Sri Rama Kirana', medical:'e.g., Sri Medicals', cement:'e.g., Ravi Cement Depot', hardware:'e.g., Kumar Hardware', restaurant:'e.g., Hotel Srinivas', textile:'e.g., Sri Sai Textiles', auto_parts:'e.g., Auto World', agriculture:'e.g., Kissan Agro', stationery:'e.g., Sri Stationery', general:'e.g., My Business' };
+                const netWorthCalc = (Number(regCash)||0)+(Number(regBank)||0)+(Number(regStock)||0)+(Number(regReceivables)||0)-(Number(regPayables)||0);
+                const fmtNW = (n: number) => new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(n);
+                if (signupStep === 'basic') return (
+                  <form onSubmit={(e) => { e.preventDefault(); setSignupStep('networth'); }} className="space-y-4 animate-in fade-in slide-in-from-right-4 max-h-[60vh] overflow-y-auto pr-1" autoComplete="off">
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Owner Full Name</label><input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label><input type="tel" value={regPhone} onChange={e => setRegPhone(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">{bizNameLabel[selBiz] || 'Business Name'}</label><input type="text" value={regBunk} onChange={e => setRegBunk(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" placeholder={bizNamePlaceholder[selBiz] || 'e.g., My Business'} required /></div>
+                    {selBiz === 'fuel' && <div><label className="block text-sm font-medium text-gray-700 mb-1">Fuel Brand / Company</label><select className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-base" value={regFuelCompany} onChange={e => setRegFuelCompany(e.target.value)}><option value="Generic">Independent / Generic</option><option>HPCL</option><option>IOCL</option><option>BPCL</option><option>Reliance</option><option>Nayara</option><option>Shell</option></select></div>}
+                    {selBiz === 'medical' && <div><label className="block text-sm font-medium text-gray-700 mb-1">Drug License Number <span className="text-gray-400 text-xs">(optional)</span></label><input type="text" value={regDrugLicense} onChange={e => setRegDrugLicense(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" placeholder="e.g., DL/TG/2024/12345" /></div>}
+                    {selBiz === 'agriculture' && <div><label className="block text-sm font-medium text-gray-700 mb-1">Main Crop Season</label><select className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-base" value={regSeason} onChange={e => setRegSeason(e.target.value)}><option>Kharif</option><option>Rabi</option><option>Both</option><option>Year Round</option></select></div>}
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label><input type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Password (Min 6 chars)</label><input type="password" value={regPass} onChange={e => setRegPass(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required minLength={6} /></div>
+                    <button type="submit" className="w-full bg-indigo-700 text-white p-3 rounded-lg font-bold hover:bg-indigo-800 transition mt-2">Continue → Net Worth Setup</button>
+                    <div className="text-center mt-4"><button type="button" onClick={() => switchView('login')} className="text-sm text-gray-500 hover:text-gray-800 hover:underline">Already have an account? Login here</button></div>
+                  </form>
+                );
+                return (
+                  <form onSubmit={async (e) => { e.preventDefault(); setIsSubmitting(true); await signup({ name: regName, phone: regPhone, bunkName: regBunk, fuelCompany: regFuelCompany, email: regEmail, pass: regPass, bizType: selBiz, drugLicense: regDrugLicense, season: regSeason, cashInHand: Number(regCash)||0, cashInBank: Number(regBank)||0, stockValue: Number(regStock)||0, customerReceivables: Number(regReceivables)||0, supplierPayables: Number(regPayables)||0 }); setIsSubmitting(false); }} className="space-y-3 animate-in fade-in slide-in-from-right-4 max-h-[62vh] overflow-y-auto pr-1" autoComplete="off">
+                    <p className="text-xs text-gray-500 text-center pb-1 border-b">Opening Balance — helps calculate your net worth. <span className="text-indigo-600 font-medium">You can skip all fields.</span></p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div><label className="block text-xs font-medium text-gray-600 mb-1">Cash in Hand (₹)</label><input type="number" min="0" value={regCash} onChange={e => setRegCash(e.target.value)} className="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm" placeholder="0" /></div>
+                      <div><label className="block text-xs font-medium text-gray-600 mb-1">Cash in Bank (₹)</label><input type="number" min="0" value={regBank} onChange={e => setRegBank(e.target.value)} className="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm" placeholder="0" /></div>
+                      <div><label className="block text-xs font-medium text-gray-600 mb-1">Stock Value (₹)</label><input type="number" min="0" value={regStock} onChange={e => setRegStock(e.target.value)} className="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm" placeholder="0" /></div>
+                      <div><label className="block text-xs font-medium text-gray-600 mb-1">Customer Dues (₹)</label><input type="number" min="0" value={regReceivables} onChange={e => setRegReceivables(e.target.value)} className="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm" placeholder="0" /></div>
+                      <div className="col-span-2"><label className="block text-xs font-medium text-red-600 mb-1">Supplier Payables (₹) <span className="text-gray-400 font-normal">— subtracted</span></label><input type="number" min="0" value={regPayables} onChange={e => setRegPayables(e.target.value)} className="w-full p-2.5 border border-red-200 rounded-lg focus:ring-2 focus:ring-red-400 outline-none text-sm" placeholder="0" /></div>
+                    </div>
+                    <div className={`p-3 rounded-xl text-center font-bold text-lg border-2 ${netWorthCalc >= 0 ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                      Net Worth: {fmtNW(netWorthCalc)}
+                    </div>
+                    <button type="submit" disabled={isSubmitting} className="w-full bg-indigo-700 text-white p-3 rounded-lg font-bold hover:bg-indigo-800 transition disabled:opacity-50">{isSubmitting ? 'Registering...' : 'Complete Registration'}</button>
+                    <button type="button" onClick={() => setSignupStep('basic')} className="w-full text-sm text-gray-500 hover:text-gray-700 py-1">← Back to Basic Info</button>
+                  </form>
+                );
+              })()}
               {tab === 'customer' && (
                 <form onSubmit={(e) => { e.preventDefault(); if (!/^\d{10}$/.test(custPhone)) { showAlert('Registered Mobile Number must be exactly 10 digits.'); return; } loginCustomer(custPhone, custPin); }} className="space-y-4 animate-in fade-in">
                   <div><label className="block text-sm font-medium text-gray-700 mb-1">Registered Mobile Number</label><input type="tel" value={custPhone} onChange={e => setCustPhone(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" placeholder="10-digit number" required /></div>
@@ -3104,16 +3156,17 @@ const AppContent = () => {
   const VALID_BIZ_TYPES = ['fuel','cement','hardware','restaurant','auto_parts','agriculture','textile','stationery','kirana','medical','general'];
   const _rawBizType = localStorage.getItem('app_biz_type') || '';
   const bizType = VALID_BIZ_TYPES.includes(_rawBizType) ? _rawBizType : 'fuel';
-  if (bizType === 'cement') return <CementApp bunkId={user.bunkId || ''} />;
-  if (bizType === 'hardware') return <HardwareApp bunkId={user.bunkId || ''} />;
-  if (bizType === 'restaurant') return <RestaurantApp bunkId={user.bunkId || ''} />;
-  if (bizType === 'auto_parts') return <AutoPartsApp bunkId={user.bunkId || ''} />;
-  if (bizType === 'agriculture') return <AgricultureApp bunkId={user.bunkId || ''} />;
-  if (bizType === 'textile') return <TextileApp bunkId={user.bunkId || ''} />;
-  if (bizType === 'stationery') return <StationeryApp bunkId={user.bunkId || ''} />;
-  // kirana, medical, general → generic OtherApp
-  const OTHER_BIZ_TYPES = ['kirana', 'medical', 'general'];
-  if (OTHER_BIZ_TYPES.includes(bizType)) return <OtherApp bunkId={user.bunkId || ''} bizType={bizType} />;
+  const _moduleUser = { name: user.name, email: user.email, role: user.role };
+  if (bizType === 'cement') return <CementApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'hardware') return <HardwareApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'restaurant') return <RestaurantApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'auto_parts') return <AutoPartsApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'agriculture') return <AgricultureApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'textile') return <TextileApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'stationery') return <StationeryApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'kirana') return <KiranaApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'medical') return <MedicalApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'general') return <OtherApp bunkId={user.bunkId || ''} bizType={bizType} onLogout={logout} user={_moduleUser} />;
 
   const userRole = String(user.role || 'supervisor').toLowerCase();
 
