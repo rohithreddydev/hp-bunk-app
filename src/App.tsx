@@ -1959,7 +1959,7 @@ const CreditLedger = () => {
 
 // Morning Entry Module
 const MorningEntryForm = () => {
-  const { user, settings, expenses, addMorningEntry, updateMorningEntry, deleteMorningEntry, morningEntries, transactions, fuelPurchases, updateSettings, showConfirm, validateInputs, dataLoading, setUnsavedForm, customers, getCustomerBalanceAsOf } = useAppContext();
+  const { user, settings, expenses, addMorningEntry, updateMorningEntry, deleteMorningEntry, morningEntries, transactions, fuelPurchases, updateSettings, showAlert, showConfirm, validateInputs, dataLoading, setUnsavedForm, customers, getCustomerBalanceAsOf } = useAppContext();
   const [step, setStep] = useState(0); const [submitted, setSubmitted] = useState(false); const [editId, setEditId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -2007,9 +2007,9 @@ const MorningEntryForm = () => {
   useEffect(() => {
     if (step === 0 && !editId) {
       supabase.from('nozzle_readings').select('*').eq('bunk_id', user?.bunkId).eq('date', targetDate).single().then(({ data }: any) => {
-        if (data && data.entered_via === 'bot') {
+        if (data) {
           setNozzleForm({ p1: data.p1_reading?.toString() || '', p2: data.p2_reading?.toString() || '', d1: data.d1_reading?.toString() || '', d2: data.d2_reading?.toString() || '' });
-          setNozzleSynced(true);
+          setNozzleSynced(data.entered_via === 'bot');
         } else { setNozzleSynced(false); setNozzleForm({ p1: '', p2: '', d1: '', d2: '' }); }
       });
     }
@@ -2047,11 +2047,12 @@ const MorningEntryForm = () => {
     const p1 = Number(nozzleForm.p1) || 0; const p2 = Number(nozzleForm.p2) || 0; const d1 = Number(nozzleForm.d1) || 0; const d2 = Number(nozzleForm.d2) || 0;
     if (p1 > 0 || p2 > 0 || d1 > 0 || d2 > 0) {
       setIsSubmitting(true);
-      // Fix #20: check for upsert error and warn user so nozzle data loss is visible
-      const { error: nozzleErr } = await supabase.from('nozzle_readings').upsert(
-        { bunk_id: user?.bunkId, date: targetDate, p1_reading: p1, p2_reading: p2, d1_reading: d1, d2_reading: d2, entered_via: 'webapp' },
-        { onConflict: 'bunk_id,date' }
-      );
+      // Try update first; if no row exists, insert. This avoids needing a DB unique constraint.
+      const payload = { p1_reading: p1, p2_reading: p2, d1_reading: d1, d2_reading: d2, entered_via: 'webapp' };
+      const { data: existing } = await supabase.from('nozzle_readings').select('id').eq('bunk_id', user?.bunkId).eq('date', targetDate).maybeSingle();
+      const { error: nozzleErr } = existing
+        ? await supabase.from('nozzle_readings').update(payload).eq('id', existing.id)
+        : await supabase.from('nozzle_readings').insert({ bunk_id: user?.bunkId, date: targetDate, ...payload });
       setIsSubmitting(false);
       if (nozzleErr) {
         showAlert(`⚠️ Nozzle readings could not be saved (${nozzleErr.message}). You can still proceed — dip-based calculation will be used.`);
@@ -2080,6 +2081,12 @@ const MorningEntryForm = () => {
     : Math.max(0, yesterdayDiesel - dDip);
 
   const petrolSalesVal = petrolSold * (settings?.petrolRate || 0); const dieselSalesVal = dieselSold * (settings?.dieselRate || 0); const totalSalesVal = petrolSalesVal + dieselSalesVal;
+
+  // Dip-based sales always computed (for nozzle vs dip comparison)
+  const dipPetrolSold = Math.max(0, yesterdayPetrol - pDip);
+  const dipDieselSold = Math.max(0, yesterdayDiesel - dDip);
+  const dipSalesVal = dipPetrolSold * (settings?.petrolRate || 0) + dipDieselSold * (settings?.dieselRate || 0);
+  const nozzleVsDipVariance = useNozzleBased ? totalSalesVal - dipSalesVal : null;
 
   const openingBal = Number(form.openingBalance) || 0;
   const totalCollected = (Number(form.cashRaw) || 0) + (Number(form.bankRaw) || 0) + (Number(form.digitalRaw) || 0) + (Number(form.dtpRaw) || 0) + (Number(form.cardRaw) || 0);
@@ -2254,7 +2261,24 @@ const MorningEntryForm = () => {
                 </div>
               </div>
 
-              <div className={`p-6 rounded-xl border flex justify-between items-center mt-6 shadow-sm ${variance < 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}><div><h4 className={`font-black text-lg ${variance < 0 ? 'text-red-800' : 'text-green-800'}`}>Reconciliation Status</h4><p className="text-sm opacity-80 mt-1">Total Accounted minus Theoretical Sales.</p></div><span className={`text-2xl md:text-3xl font-black whitespace-nowrap ml-4 ${variance < 0 ? 'text-red-600' : 'text-green-600'}`}>{variance < 0 ? '-' : '+'}{formatRs(Math.abs(variance))}</span></div>
+              <div className="space-y-3 mt-6">
+                <div className={`p-6 rounded-xl border flex justify-between items-center shadow-sm ${variance < 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
+                  <div>
+                    <h4 className={`font-black text-lg ${variance < 0 ? 'text-red-800' : 'text-green-800'}`}>Collection Variance</h4>
+                    <p className="text-sm opacity-80 mt-1">Total Accounted minus {useNozzleBased ? 'Nozzle-Based' : 'Dip-Based'} Sales. Cash/credit vs theoretical.</p>
+                  </div>
+                  <span className={`text-2xl md:text-3xl font-black whitespace-nowrap ml-4 ${variance < 0 ? 'text-red-600' : 'text-green-600'}`}>{variance < 0 ? '-' : '+'}{formatRs(Math.abs(variance))}</span>
+                </div>
+                {nozzleVsDipVariance !== null && (
+                  <div className={`p-6 rounded-xl border flex justify-between items-center shadow-sm ${Math.abs(nozzleVsDipVariance) > 500 ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
+                    <div>
+                      <h4 className={`font-black text-lg ${Math.abs(nozzleVsDipVariance) > 500 ? 'text-amber-800' : 'text-blue-800'}`}>Nozzle vs Dip Variance</h4>
+                      <p className="text-sm opacity-80 mt-1">Nozzle-dispensed ({(petrolSold + dieselSold).toFixed(1)}L) vs Dip-measured ({(dipPetrolSold + dipDieselSold).toFixed(1)}L) stock difference.</p>
+                    </div>
+                    <span className={`text-2xl md:text-3xl font-black whitespace-nowrap ml-4 ${Math.abs(nozzleVsDipVariance) > 500 ? 'text-amber-600' : 'text-blue-600'}`}>{nozzleVsDipVariance < 0 ? '-' : '+'}{formatRs(Math.abs(nozzleVsDipVariance))}</span>
+                  </div>
+                )}
+              </div>
 
               {/* EXPLICIT NET WORTH PREVIEW (OWNER ONLY) */}
               {userRole === 'owner' && (
@@ -2294,7 +2318,7 @@ const MorningEntryForm = () => {
         <div className="p-5 border-b bg-gray-50"><h3 className="font-bold text-gray-800">Ledger History</h3></div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-white border-b"><tr><th className="p-4 text-gray-500 whitespace-nowrap">Date</th><th className="p-4 text-gray-500 whitespace-nowrap">Gross Sales</th><th className="p-4 text-gray-500 whitespace-nowrap">Remitted</th><th className="p-4 text-gray-500 whitespace-nowrap">Credit Extended</th><th className="p-4 text-gray-500 whitespace-nowrap">Status</th>{userRole === 'owner' && <th className="p-4 text-gray-500 text-center whitespace-nowrap">Actions</th>}</tr></thead>
+            <thead className="bg-white border-b"><tr><th className="p-4 text-gray-500 whitespace-nowrap">Date</th><th className="p-4 text-gray-500 whitespace-nowrap">Gross Sales</th><th className="p-4 text-gray-500 whitespace-nowrap">Remitted</th><th className="p-4 text-gray-500 whitespace-nowrap">Credit Extended</th><th className="p-4 text-gray-500 whitespace-nowrap">Collection Variance</th>{userRole === 'owner' && <th className="p-4 text-gray-500 text-center whitespace-nowrap">Actions</th>}</tr></thead>
             <tbody className="divide-y divide-gray-100">
               {paginatedEntries.length === 0 ? (<tr><td colSpan={6} className="p-10 flex flex-col items-center justify-center text-gray-400"><SearchX size={32} className="mb-2 opacity-50" />No past entries.</td></tr>) : paginatedEntries.map((e, idx) => (
                 <tr key={e.id || `entry-${idx}`} className={`hover:bg-gray-50 transition ${editId === e.id ? 'bg-blue-50/50' : ''}`}>
