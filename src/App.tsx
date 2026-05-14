@@ -48,7 +48,7 @@ type Role = 'owner' | 'supervisor' | 'customer';
 interface User { id: string; name: string; email: string; role: Role; phone?: string; bunkId?: string; }
 interface Customer { id: string; category: string; companyName: string; ownerName?: string; phone: string; address?: string; paymentTerms?: string; driverName?: string; driverPhone?: string; vehicleNumbers?: string; creditLimit: number; status: 'Active' | 'Suspended' | 'Blocked'; pin: string; portalAccess: boolean; notifyOnCredit: boolean | null; }
 interface Transaction { id: string; customerId: string; type: 'credit_sale' | 'payment' | 'opening_balance' | 'advance'; date: string; product?: string; quantity?: number; rate?: number; amount: number; mode?: string; vehicleNumber?: string; remarks?: string; reference?: string; }
-interface MorningEntry { id: string; date: string; petrolDip: number; dieselDip: number; petrolSold: number; dieselSold: number; netProfit: number; variance: number; submitted: boolean; netValue: number; collectionsCash: number; balanceCash: number; collectionsBank: number; collectionsDigital: number; collectionDtp: number; collectionsCard: number; collectionsCredit: number; periodExpenses: number; balanceBank: number; balanceDigital: number; balanceOd: number; openingBalance?: number; }
+interface MorningEntry { id: string; date: string; petrolDip: number; dieselDip: number; petrolSold: number; dieselSold: number; netProfit: number; variance: number; submitted: boolean; netValue: number; collectionsCash: number; balanceCash: number; collectionsBank: number; collectionsDigital: number; collectionDtp: number; collectionsCard: number; collectionsCredit: number; periodExpenses: number; balanceBank: number; balanceDigital: number; balanceOd: number; openingBalance?: number; petrolRateAtEntry?: number; dieselRateAtEntry?: number; }
 interface Expense { id: string; date: string; category: string; amount: number; description: string; vendor: string; mode: string; }
 interface FuelPurchase { id: string; date: string; product: string; litres: number; rate: number; amount: number; supplier: string; invoice: string; mode: string; }
 
@@ -247,14 +247,15 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       collectionsBank: Number(d.collections_sbi) || 0, collectionsDigital: Number(d.collections_hppay) || 0,
       collectionDtp: Number(d.collections_dtp) || 0, collectionsCard: Number(d.collections_paytm) || 0,
       collectionsCredit: Number(d.collections_credit) || 0, periodExpenses: Number(d.period_expenses) || 0,
-      balanceBank: Number(d.balance_sbi) || 0, balanceDigital: Number(d.balance_hp) || 0, balanceOd: Number(d.balance_od) || 0
+      balanceBank: Number(d.balance_sbi) || 0, balanceDigital: Number(d.balance_hp) || 0, balanceOd: Number(d.balance_od) || 0,
+      petrolRateAtEntry: Number(d.petrol_rate_at_entry) || 0, dieselRateAtEntry: Number(d.diesel_rate_at_entry) || 0
     });
     const channel = supabase
       .channel(`bunk-realtime-${targetBunk}`)
       // Transactions
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'transactions', filter: `bunk_id=eq.${targetBunk}` }, (payload) => { const newTx = mapTx(payload.new); setTransactions(prev => { if (prev.some(t => t.id === newTx.id)) return prev; return [newTx, ...prev]; }); })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'transactions', filter: `bunk_id=eq.${targetBunk}` }, (payload) => { const updated = mapTx(payload.new); setTransactions(prev => prev.map(t => t.id === updated.id ? updated : t)); })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'transactions' }, (payload) => { setTransactions(prev => prev.filter(t => t.id !== String((payload.old as any).id))); })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'transactions', filter: `bunk_id=eq.${targetBunk}` }, (payload) => { setTransactions(prev => prev.filter(t => t.id !== String((payload.old as any).id))); })
       // Expenses
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'expenses', filter: `bunk_id=eq.${targetBunk}` }, (payload) => { const d = payload.new as any; const newExp = { id: String(d.id), date: String(d.date || getTodayIST()), category: d.category || 'Other', amount: Number(d.amount) || 0, description: d.description || '', vendor: d.vendor || '', mode: d.payment_mode || '' }; setExpenses(prev => { if (prev.some(e => e.id === newExp.id)) return prev; return [newExp, ...prev]; }); })
       // Morning Entries — bot saves dip/sold/collections via WhatsApp
@@ -268,7 +269,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'morning_entries', filter: `bunk_id=eq.${targetBunk}` }, (payload) => { const um = mapMorningEntry(payload.new); setMorningEntries(prev => prev.map(m => m.id === um.id ? um : m)); })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'morning_entries' }, (payload) => { setMorningEntries(prev => prev.filter(m => m.id !== String((payload.old as any).id))); })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'morning_entries', filter: `bunk_id=eq.${targetBunk}` }, (payload) => { setMorningEntries(prev => prev.filter(m => m.id !== String((payload.old as any).id))); })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [user?.id, user?.bunkId]);
@@ -399,14 +400,14 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { error } = await supabase.from('customers').update({
       company_name: updates.companyName, owner_name: updates.ownerName, category: updates.category, phone: updates.phone, address: updates.address, payment_terms: updates.paymentTerms,
       credit_limit: updates.creditLimit, driver_name: updates.driverName, driver_phone: updates.driverPhone, vehicle_numbers: updates.vehicleNumbers
-    }).eq('id', id);
+    }).eq('id', id).eq('bunk_id', bId);
     if (error) return showAlert("Update Failed: " + error.message);
     setCustomers(customers.map(c => c.id === id ? { ...c, ...updates } : c)); showAlert("Customer details updated.");
   };
 
   const deleteCustomer = (id: string) => {
     showConfirm('Permanently delete this customer and all their transactions?', async () => {
-      const { error } = await supabase.from('customers').delete().eq('id', id);
+      const { error } = await supabase.from('customers').delete().eq('id', id).eq('bunk_id', bId);
       if (error) return showAlert("Delete Failed: " + error.message);
       setCustomers(customers.filter(c => c.id !== id));
       showAlert("Customer permanently removed.");
@@ -437,8 +438,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return true;
   };
 
-  const updateTransaction = async (id: string, updates: any) => { const { error } = await supabase.from('transactions').update({ customer_id: updates.customerId, type: updates.type, date: updates.date, product: updates.product, quantity: updates.quantity, amount: updates.amount, payment_mode: updates.mode, vehicle_number: updates.vehicleNumber, remarks: updates.remarks }).eq('id', id); if (error) return showAlert("Update Failed: " + error.message); setTransactions(transactions.map(t => t.id === id ? { ...t, ...updates } : t)); showAlert("Transaction updated."); };
-  const deleteTransaction = async (id: string) => { const { error } = await supabase.from('transactions').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setTransactions(transactions.filter(t => t.id !== id)); showAlert("Record deleted."); };
+  const updateTransaction = async (id: string, updates: any) => { const { error } = await supabase.from('transactions').update({ customer_id: updates.customerId, type: updates.type, date: updates.date, product: updates.product, quantity: updates.quantity, amount: updates.amount, payment_mode: updates.mode, vehicle_number: updates.vehicleNumber, remarks: updates.remarks }).eq('id', id).eq('bunk_id', bId); if (error) return showAlert("Update Failed: " + error.message); setTransactions(transactions.map(t => t.id === id ? { ...t, ...updates } : t)); showAlert("Transaction updated."); };
+  const deleteTransaction = async (id: string) => { const { error } = await supabase.from('transactions').delete().eq('id', id).eq('bunk_id', bId); if (error) return showAlert("Delete Failed: " + error.message); setTransactions(transactions.filter(t => t.id !== id)); showAlert("Record deleted."); };
 
   const addMorningEntry = async (e: any) => {
     // Guard against double-submission for the same date
@@ -472,6 +473,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       balance_od: e.balanceOd,
       balance_cash: e.balanceCash,
       bunk_net_value: e.netValue,
+      petrol_rate_at_entry: settings?.petrolRate || 0,
+      diesel_rate_at_entry: settings?.dieselRate || 0,
     };
     try {
       const resp = await fetch(`${supabaseUrl}/rest/v1/morning_entries`, {
@@ -529,10 +532,12 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       balance_od: updates.balanceOd,
       balance_cash: updates.balanceCash,
       bunk_net_value: updates.netValue,
+      petrol_rate_at_entry: settings?.petrolRate || 0,
+      diesel_rate_at_entry: settings?.dieselRate || 0,
     };
     try {
-      // PATCH to /morning_entries?id=eq.<id> — updates exactly that one row, never inserts.
-      const resp = await fetch(`${supabaseUrl}/rest/v1/morning_entries?id=eq.${id}`, {
+      // PATCH to /morning_entries?id=eq.<id>&bunk_id=eq.<bId> — scoped to this bunk (defense-in-depth beyond RLS).
+      const resp = await fetch(`${supabaseUrl}/rest/v1/morning_entries?id=eq.${id}&bunk_id=eq.${bId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -561,7 +566,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       showAlert('Update Failed (network): ' + err.message);
     }
   };
-  const deleteMorningEntry = async (id: string) => { const { error } = await supabase.from('morning_entries').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setMorningEntries(morningEntries.filter(m => m.id !== id)); showAlert("Morning entry deleted."); };
+  const deleteMorningEntry = async (id: string) => { const { error } = await supabase.from('morning_entries').delete().eq('id', id).eq('bunk_id', bId); if (error) return showAlert("Delete Failed: " + error.message); setMorningEntries(morningEntries.filter(m => m.id !== id)); showAlert("Morning entry deleted."); };
 
   const addExpense = async (e: any) => {
     const row: any = { bunk_id: bId, date: e.date, category: e.category, amount: e.amount };
@@ -573,8 +578,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     if (data && data.length > 0) setExpenses([{ ...e, id: data[0].id }, ...expenses]);
     showAlert("Expense recorded.");
   };
-  const updateExpense = async (id: string, updates: any) => { const { error } = await supabase.from('expenses').update({ date: updates.date, category: updates.category, amount: updates.amount, description: updates.description, vendor: updates.vendor }).eq('id', id); if (error) return showAlert("Update Failed: " + error.message); setExpenses(expenses.map(e => e.id === id ? { ...e, ...updates } : e)); showAlert("Expense updated."); };
-  const deleteExpense = async (id: string) => { const { error } = await supabase.from('expenses').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setExpenses(expenses.filter(e => e.id !== id)); showAlert("Expense deleted."); };
+  const updateExpense = async (id: string, updates: any) => { const { error } = await supabase.from('expenses').update({ date: updates.date, category: updates.category, amount: updates.amount, description: updates.description, vendor: updates.vendor }).eq('id', id).eq('bunk_id', bId); if (error) return showAlert("Update Failed: " + error.message); setExpenses(expenses.map(e => e.id === id ? { ...e, ...updates } : e)); showAlert("Expense updated."); };
+  const deleteExpense = async (id: string) => { const { error } = await supabase.from('expenses').delete().eq('id', id).eq('bunk_id', bId); if (error) return showAlert("Delete Failed: " + error.message); setExpenses(expenses.filter(e => e.id !== id)); showAlert("Expense deleted."); };
 
   const addFuelPurchase = async (purchases: any[]) => {
     const rows = purchases.map(f => {
@@ -603,12 +608,12 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       litres: updates.litres, rate: updates.rate, amount: updates.amount,
       supplier: updates.supplier || '', invoice: updates.invoice || '',
       payment_mode: updates.mode || 'Bank Transfer'
-    }).eq('id', id);
+    }).eq('id', id).eq('bunk_id', bId);
     if (error) return showAlert('Update Failed: ' + error.message);
     setFuelPurchases(fuelPurchases.map(f => f.id === id ? { ...f, ...updates } : f));
     showAlert('Fuel receipt updated.');
   };
-  const deleteFuelPurchase = async (id: string) => { const { error } = await supabase.from('fuel_purchases').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setFuelPurchases(fuelPurchases.filter(f => f.id !== id)); showAlert("Fuel record deleted."); };
+  const deleteFuelPurchase = async (id: string) => { const { error } = await supabase.from('fuel_purchases').delete().eq('id', id).eq('bunk_id', bId); if (error) return showAlert("Delete Failed: " + error.message); setFuelPurchases(fuelPurchases.filter(f => f.id !== id)); showAlert("Fuel record deleted."); };
 
   const addUser = async (u: any) => {
     const cleanEmail = u.email.trim().toLowerCase();
@@ -707,7 +712,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 ? (existing.vehicle_numbers.includes(vehicleNumbers) ? existing.vehicle_numbers : `${existing.vehicle_numbers}, ${vehicleNumbers}`)
                 : vehicleNumbers;
             }
-            if (Object.keys(updates).length > 0) { await supabase.from('customers').update(updates).eq('id', existing.id); updateCount++; }
+            if (Object.keys(updates).length > 0) { await supabase.from('customers').update(updates).eq('id', existing.id).eq('bunk_id', bId); updateCount++; }
           } else {
             const pin = Math.floor(1000 + Math.random() * 9000).toString();
             const newCustId = generateId();
@@ -1754,21 +1759,12 @@ const CreditLedger = () => {
     else { setTab('payment'); setAmount(t.amount.toString()); setPayMode(t.mode || 'Cash'); }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selCust) return;
-    if (tab === 'sale' && !amount && !advanceAmount) return showAlert("Please enter a sale amount or an advance amount.");
-    if (tab === 'payment' && !amount) return showAlert("Please enter a payment amount.");
-    const amtNum = Number(amount) || 0; const advNum = Number(advanceAmount) || 0; const qtyNum = Number(qty) || 0;
-    if (!validateInputs([amtNum, advNum], [qtyNum])) return;
+  const submitTransaction = async (amtNum: number, advNum: number, qtyNum: number) => {
     setIsSubmitting(true);
-
-    // ONE combined row: advance embedded in remarks as "advance:{amount}|{note}"
     const buildRemarks = (): string | undefined => {
       if (advNum > 0 && amtNum > 0) return `advance:${advNum}` + (advanceRemarks ? `|${advanceRemarks}` : '|');
       return advanceRemarks || undefined;
     };
-
     if (editId) {
       const existing = transactions.find(t => t.id === editId);
       if (!existing) { setIsSubmitting(false); return; }
@@ -1800,6 +1796,28 @@ const CreditLedger = () => {
       resetForm(tab === 'payment');
     }
     setIsSubmitting(false);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selCust) return;
+    if (tab === 'sale' && !amount && !advanceAmount) return showAlert("Please enter a sale amount or an advance amount.");
+    if (tab === 'payment' && !amount) return showAlert("Please enter a payment amount.");
+    const amtNum = Number(amount) || 0; const advNum = Number(advanceAmount) || 0; const qtyNum = Number(qty) || 0;
+    if (!validateInputs([amtNum, advNum], [qtyNum])) return;
+    // Credit limit check — warn if this sale would exceed the limit
+    if (tab === 'sale' && !editId && amtNum > 0 && (selectedCustomerData?.creditLimit || 0) > 0) {
+      const currentBal = getCustomerBalance(selCust);
+      const newBal = currentBal + amtNum + advNum;
+      if (newBal > (selectedCustomerData?.creditLimit || 0)) {
+        showConfirm(
+          `⚠️ Credit limit exceeded for ${selectedCustomerData?.companyName}.\n\nBalance: ₹${currentBal.toLocaleString('en-IN')} → ₹${newBal.toLocaleString('en-IN')} (Limit: ₹${(selectedCustomerData?.creditLimit || 0).toLocaleString('en-IN')})\n\nProceed anyway?`,
+          () => submitTransaction(amtNum, advNum, qtyNum)
+        );
+        return;
+      }
+    }
+    submitTransaction(amtNum, advNum, qtyNum);
   };
 
   const getRate = (prod: string) => (prod === 'Petrol' ? settings?.petrolRate || 0 : prod === 'Diesel' ? settings?.dieselRate || 0 : 0);
@@ -2051,7 +2069,7 @@ const MorningEntryForm = () => {
       const payload = { p1_reading: p1, p2_reading: p2, d1_reading: d1, d2_reading: d2, entered_via: 'webapp' };
       const { data: existing } = await supabase.from('nozzle_readings').select('id').eq('bunk_id', user?.bunkId).eq('date', targetDate).maybeSingle();
       const { error: nozzleErr } = existing
-        ? await supabase.from('nozzle_readings').update(payload).eq('id', existing.id)
+        ? await supabase.from('nozzle_readings').update(payload).eq('id', existing.id).eq('bunk_id', user?.bunkId)
         : await supabase.from('nozzle_readings').insert({ bunk_id: user?.bunkId, date: targetDate, ...payload });
       setIsSubmitting(false);
       if (nozzleErr) {
@@ -2264,8 +2282,8 @@ const MorningEntryForm = () => {
               <div className="space-y-3 mt-6">
                 <div className={`p-6 rounded-xl border flex justify-between items-center shadow-sm ${variance < 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
                   <div>
-                    <h4 className={`font-black text-lg ${variance < 0 ? 'text-red-800' : 'text-green-800'}`}>Collection Variance</h4>
-                    <p className="text-sm opacity-80 mt-1">Total Accounted minus {useNozzleBased ? 'Nozzle-Based' : 'Dip-Based'} Sales. Cash/credit vs theoretical.</p>
+                    <h4 className={`font-black text-lg ${variance < 0 ? 'text-red-800' : 'text-green-800'}`}>Collection Variance {variance < 0 ? '⚠️ Short' : variance === 0 ? '✅ Balanced' : '✅ Surplus'}</h4>
+                    <p className="text-sm opacity-80 mt-1">{variance < 0 ? 'Short collection — cash/credit collected less than fuel dispensed.' : variance > 0 ? 'Surplus — more collected than fuel dispensed (over-collected).' : 'Perfect balance.'}</p>
                   </div>
                   <span className={`text-2xl md:text-3xl font-black whitespace-nowrap ml-4 ${variance < 0 ? 'text-red-600' : 'text-green-600'}`}>{variance < 0 ? '-' : '+'}{formatRs(Math.abs(variance))}</span>
                 </div>
@@ -2323,7 +2341,7 @@ const MorningEntryForm = () => {
               {paginatedEntries.length === 0 ? (<tr><td colSpan={6} className="p-10 flex flex-col items-center justify-center text-gray-400"><SearchX size={32} className="mb-2 opacity-50" />No past entries.</td></tr>) : paginatedEntries.map((e, idx) => (
                 <tr key={e.id || `entry-${idx}`} className={`hover:bg-gray-50 transition ${editId === e.id ? 'bg-blue-50/50' : ''}`}>
                   <td className="p-4 whitespace-nowrap font-medium">{formatISTDate(e.date)}</td>
-                  <td className="p-4 whitespace-nowrap">{formatRs(e.petrolSold * (settings.petrolRate || 0) + e.dieselSold * (settings.dieselRate || 0))}</td>
+                  <td className="p-4 whitespace-nowrap">{formatRs(e.petrolSold * (e.petrolRateAtEntry || settings.petrolRate || 0) + e.dieselSold * (e.dieselRateAtEntry || settings.dieselRate || 0))}</td>
                   <td className="p-4 whitespace-nowrap text-gray-600">{formatRs(((e.collectionsCash || 0) - (e.openingBalance || 0)) + (e.collectionsBank || 0) + (e.collectionsDigital || 0) + (e.collectionDtp || 0) + (e.collectionsCard || 0))}</td>
                   <td className="p-4 whitespace-nowrap text-orange-600 font-medium">{(() => {
                     // Compute credit extended for this entry's date range dynamically
@@ -2621,7 +2639,7 @@ const MonthlyReports = () => {
   const monthExp = expenses.filter(e => e.date?.startsWith(selectedMonth));
   const monthFuel = fuelPurchases.filter(f => f.date?.startsWith(selectedMonth));
 
-  const grossSalesRs = monthEntries.reduce((s, e) => s + (e.petrolSold || 0) * (settings?.petrolRate || 0) + (e.dieselSold || 0) * (settings?.dieselRate || 0), 0);
+  const grossSalesRs = monthEntries.reduce((s, e) => s + (e.petrolSold || 0) * (e.petrolRateAtEntry || settings?.petrolRate || 0) + (e.dieselSold || 0) * (e.dieselRateAtEntry || settings?.dieselRate || 0), 0);
   const creditSales = monthTx.filter(t => t.type === 'credit_sale').reduce((s, t) => s + (t.amount || 0), 0);
   const paymentsRec = monthTx.filter(t => t.type === 'payment').reduce((s, t) => s + (t.amount || 0), 0);
   const totalExpenses = monthExp.reduce((s, e) => s + (e.amount || 0), 0);
@@ -2702,7 +2720,7 @@ const MonthlyReports = () => {
                   <td className="p-3 font-medium">{formatISTDate(e.date)}</td>
                   <td className="p-3 text-right">{(e.petrolSold || 0).toFixed(0)}</td>
                   <td className="p-3 text-right">{(e.dieselSold || 0).toFixed(0)}</td>
-                  <td className="p-3 text-right font-bold">{formatRs((e.petrolSold || 0) * (settings?.petrolRate || 0) + (e.dieselSold || 0) * (settings?.dieselRate || 0))}</td>
+                  <td className="p-3 text-right font-bold">{formatRs((e.petrolSold || 0) * (e.petrolRateAtEntry || settings?.petrolRate || 0) + (e.dieselSold || 0) * (e.dieselRateAtEntry || settings?.dieselRate || 0))}</td>
                   <td className={`p-3 text-right font-bold ${(e.variance || 0) < 0 ? 'text-red-600' : 'text-green-600'}`}>{(e.variance || 0) < 0 ? '-' : '+'}{formatRs(Math.abs(e.variance || 0))}</td>
                 </tr>
               ))}
