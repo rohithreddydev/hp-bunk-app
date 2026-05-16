@@ -419,10 +419,12 @@ function KiSales({ bunkId, products, customers, onRefresh, showToast }: { bunkId
       await supabase.from('ki_products').update({ current_stock: i.product.current_stock - i.quantity }).eq('id', i.product.id);
     }
     if (paymentMode === 'credit' && customerId) {
-      await supabase.from('ki_customers').update({ outstanding_amount: (selectedCustomer?.outstanding_amount || 0) + total }).eq('id', customerId);
+      const { data: freshCust } = await supabase.from('ki_customers').select('outstanding_amount').eq('id', customerId).eq('bunk_id', bunkId).maybeSingle();
+      const base = freshCust ? Number(freshCust.outstanding_amount) : (Number(selectedCustomer?.outstanding_amount) || 0);
+      await supabase.from('ki_customers').update({ outstanding_amount: base + total }).eq('id', customerId).eq('bunk_id', bunkId);
     }
     showToast('Sale recorded!');
-    setCart([]); setCustomerId(''); setNotes('');
+    setCart([]); setCustomerId(''); setNotes(''); setSaleDate(getTodayIST());
     setSaving(false); onRefresh();
   }
 
@@ -536,10 +538,11 @@ function KiCustomers({ bunkId, customers, sales, onRefresh, showToast }: { bunkI
     const amount = parseFloat(payAmount);
     if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
     setPayingId(c.id);
-    const newOutstanding = Math.max(0, c.outstanding_amount - amount);
-    const { error } = await supabase.from('ki_customers').update({ outstanding_amount: newOutstanding }).eq('id', c.id);
+    await supabase.from('ki_payments').insert({ bunk_id: bunkId, customer_id: c.id, customer_name: c.name, amount, payment_mode: payMode, payment_date: getTodayIST() });
+    const { data: freshC } = await supabase.from('ki_customers').select('outstanding_amount').eq('id', c.id).eq('bunk_id', bunkId).maybeSingle();
+    const base = freshC ? Number(freshC.outstanding_amount) : Number(c.outstanding_amount);
+    const { error } = await supabase.from('ki_customers').update({ outstanding_amount: Math.max(0, base - amount) }).eq('id', c.id).eq('bunk_id', bunkId);
     if (error) { showToast(error.message, 'error'); setPayingId(''); return; }
-    await supabase.from('ki_payments').insert({ bunk_id: bunkId, customer_id: c.id, amount, payment_mode: payMode, payment_date: getTodayIST() });
     showToast(`Payment of ${inr(amount)} recorded`);
     setSelectedCust(null); setPayAmount(''); setPayingId(''); onRefresh();
   }

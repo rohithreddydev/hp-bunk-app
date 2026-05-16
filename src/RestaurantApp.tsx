@@ -367,10 +367,12 @@ function RstOrders({ bunkId, menuItems, customers, onRefresh, showToast }: { bun
       item_name: ci.item.name, quantity: ci.quantity, unit_price: ci.item.price, total_price: ci.item.price * ci.quantity,
     })));
     if (paymentMode === 'credit' && cust) {
-      await supabase.from('rst_customers').update({ outstanding_amount: Number(cust.outstanding_amount) + total }).eq('id', cust.id);
+      const { data: freshCust } = await supabase.from('rst_customers').select('outstanding_amount').eq('id', cust.id).eq('bunk_id', bunkId).maybeSingle();
+      const base = freshCust ? Number(freshCust.outstanding_amount) : Number(cust.outstanding_amount || 0);
+      await supabase.from('rst_customers').update({ outstanding_amount: base + total }).eq('id', cust.id).eq('bunk_id', bunkId);
     }
     showToast('Order placed!');
-    setCart([]); setTableNumber(''); setNotes('');
+    setCart([]); setTableNumber(''); setNotes(''); setSaleDate(getTodayIST());
     setSaving(false); onRefresh();
   }
 
@@ -471,9 +473,14 @@ function RstCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: str
     if (!payModal) return;
     const amt = parseFloat(payAmount);
     if (!amt || amt <= 0) { showToast('Enter a valid amount', 'error'); return; }
-    if (amt > payModal.outstanding_amount) { showToast('Amount exceeds outstanding balance', 'error'); return; }
     setPayingSaving(true);
-    const { error } = await supabase.from('rst_customers').update({ outstanding_amount: Number(payModal.outstanding_amount) - amt }).eq('id', payModal.id);
+    await supabase.from('rst_payments').insert({
+      bunk_id: bunkId, customer_id: payModal.id, customer_name: payModal.name,
+      amount: amt, payment_mode: payMode, payment_date: getTodayIST(),
+    });
+    const { data: freshC } = await supabase.from('rst_customers').select('outstanding_amount').eq('id', payModal.id).eq('bunk_id', bunkId).maybeSingle();
+    const base = freshC ? Number(freshC.outstanding_amount) : Number(payModal.outstanding_amount);
+    const { error } = await supabase.from('rst_customers').update({ outstanding_amount: Math.max(0, base - amt) }).eq('id', payModal.id).eq('bunk_id', bunkId);
     setPayingSaving(false);
     if (error) { showToast(error.message, 'error'); return; }
     showToast('Payment collected'); setPayModal(null); setPayAmount(''); onRefresh();

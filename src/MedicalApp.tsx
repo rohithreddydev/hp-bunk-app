@@ -330,7 +330,9 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
     }
 
     if (billingMode === 'credit' && selectedCustomer) {
-      await supabase.from('med_customers').update({ outstanding_amount: Number(selectedCustomer.outstanding_amount) + billFinal }).eq('id', selectedCustomer.id);
+      const { data: freshCust } = await supabase.from('med_customers').select('outstanding_amount').eq('id', selectedCustomer.id).eq('bunk_id', bunkId).maybeSingle();
+      const base = freshCust ? Number(freshCust.outstanding_amount) : Number(selectedCustomer.outstanding_amount);
+      await supabase.from('med_customers').update({ outstanding_amount: base + billFinal }).eq('id', selectedCustomer.id).eq('bunk_id', bunkId);
     }
 
     setSavingBill(false);
@@ -359,8 +361,13 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
     if (!showPaymentModal) return;
     const amt = parseFloat(paymentAmount);
     if (!amt || amt <= 0) return flash('error', 'Enter valid amount');
-    const newOutstanding = Math.max(0, Number(showPaymentModal.outstanding_amount) - amt);
-    const { error } = await supabase.from('med_customers').update({ outstanding_amount: newOutstanding }).eq('id', showPaymentModal.id);
+    await supabase.from('med_payments').insert({
+      bunk_id: bunkId, customer_id: showPaymentModal.id, customer_name: showPaymentModal.name,
+      amount: amt, payment_mode: paymentMode, payment_date: todayDate(),
+    });
+    const { data: freshC } = await supabase.from('med_customers').select('outstanding_amount').eq('id', showPaymentModal.id).eq('bunk_id', bunkId).maybeSingle();
+    const base = freshC ? Number(freshC.outstanding_amount) : Number(showPaymentModal.outstanding_amount);
+    const { error } = await supabase.from('med_customers').update({ outstanding_amount: Math.max(0, base - amt) }).eq('id', showPaymentModal.id).eq('bunk_id', bunkId);
     if (error) return flash('error', error.message);
     flash('success', `Payment of ₹${amt} recorded`);
     setShowPaymentModal(null); setPaymentAmount(''); setPaymentMode('cash');

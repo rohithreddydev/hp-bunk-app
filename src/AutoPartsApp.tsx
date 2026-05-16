@@ -388,13 +388,12 @@ function ApSales({ bunkId, products, customers, onRefresh, showToast }: { bunkId
       }
     }
     if (paymentMode === 'credit' && customerId) {
-      const cust = customers.find(c => c.id === customerId);
-      if (cust) {
-        await supabase.from('ap_customers').update({ outstanding_amount: Number(cust.outstanding_amount) + total }).eq('id', customerId);
-      }
+      const { data: freshCust } = await supabase.from('ap_customers').select('outstanding_amount').eq('id', customerId).eq('bunk_id', bunkId).maybeSingle();
+      const base = freshCust ? Number(freshCust.outstanding_amount) : (Number(customers.find(c => c.id === customerId)?.outstanding_amount) || 0);
+      await supabase.from('ap_customers').update({ outstanding_amount: base + total }).eq('id', customerId).eq('bunk_id', bunkId);
     }
     showToast('Sale recorded!');
-    setCart([]); setCustomerId(''); setVehicleNumber(''); setLabourCharges(0); setNotes('');
+    setCart([]); setCustomerId(''); setVehicleNumber(''); setLabourCharges(0); setNotes(''); setSaleDate(getTodayIST());
     setSaving(false); onRefresh();
   }
 
@@ -500,9 +499,14 @@ function ApCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: stri
     if (!payModal) return;
     const amt = parseFloat(payAmount);
     if (!amt || amt <= 0) { showToast('Enter a valid amount', 'error'); return; }
-    if (amt > payModal.outstanding_amount) { showToast('Amount exceeds outstanding balance', 'error'); return; }
     setPayingSaving(true);
-    const { error } = await supabase.from('ap_customers').update({ outstanding_amount: Number(payModal.outstanding_amount) - amt }).eq('id', payModal.id);
+    await supabase.from('ap_payments').insert({
+      bunk_id: bunkId, customer_id: payModal.id, customer_name: payModal.name,
+      amount: amt, payment_mode: payMode, payment_date: getTodayIST(),
+    });
+    const { data: freshC } = await supabase.from('ap_customers').select('outstanding_amount').eq('id', payModal.id).eq('bunk_id', bunkId).maybeSingle();
+    const base = freshC ? Number(freshC.outstanding_amount) : Number(payModal.outstanding_amount);
+    const { error } = await supabase.from('ap_customers').update({ outstanding_amount: Math.max(0, base - amt) }).eq('id', payModal.id).eq('bunk_id', bunkId);
     setPayingSaving(false);
     if (error) { showToast(error.message, 'error'); return; }
     showToast(`Payment of ${inr(amt)} collected from ${payModal.name}`);
