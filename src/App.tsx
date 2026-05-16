@@ -42,6 +42,7 @@ import { StationeryApp } from './StationeryApp';
 import { KiranaApp } from './KiranaApp';
 import { MedicalApp } from './MedicalApp';
 import { LPGApp } from './LPGApp';
+import { ElectricalApp } from './ElectricalApp';
 import { IntelligenceTab } from './IntelligenceTab';
 const rawUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
 const rawKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
@@ -3321,7 +3322,7 @@ const AppContent = () => {
   if (!user) return <LandingScreen onPrivacy={() => setCurrentRoute('privacy')} />;
   if (user.role === 'customer') return <CustomerPortalView />;
   // Fix #21: validate bizType against whitelist to prevent XSS-injected localStorage values routing to wrong module
-  const VALID_BIZ_TYPES = ['fuel','cement','hardware','restaurant','auto_parts','agriculture','textile','stationery','kirana','medical','general','lpg_gas_agency'];
+  const VALID_BIZ_TYPES = ['fuel','cement','hardware','restaurant','auto_parts','agriculture','textile','stationery','kirana','medical','general','lpg_gas_agency','electrical'];
   const _rawBizType = localStorage.getItem('app_biz_type') || '';
   const bizType = VALID_BIZ_TYPES.includes(_rawBizType) ? _rawBizType : 'fuel';
   const _moduleUser = { name: user.name, email: user.email, role: user.role };
@@ -3335,6 +3336,7 @@ const AppContent = () => {
   if (bizType === 'kirana') return <KiranaApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
   if (bizType === 'medical') return <MedicalApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
   if (bizType === 'lpg_gas_agency') return <LPGApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'electrical') return <ElectricalApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
   if (bizType === 'general') return <OtherApp bunkId={user.bunkId || ''} bizType={bizType} onLogout={logout} user={_moduleUser} />;
 
   const userRole = String(user.role || 'supervisor').toLowerCase();
