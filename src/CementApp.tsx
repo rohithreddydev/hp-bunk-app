@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Package, ShoppingCart, Users, Truck, BarChart3, Receipt, Settings,
-  Plus, Search, AlertTriangle, TrendingUp, TrendingDown, RefreshCw,
-  CheckCircle2, Clock, MapPin, Phone, X, ChevronRight, Building2,
-  ArrowUpRight, ArrowDownRight, Loader2, Layers, DollarSign, LogOut,
+  Plus, Search, AlertTriangle, TrendingUp, RefreshCw,
+  CheckCircle2, MapPin, Phone, X, ChevronRight, Building2,
+  ArrowUpRight, Loader2, Layers, LogOut,
+  Zap, Trophy, Banknote, ChevronLeft,
 } from 'lucide-react';
 import { SettingsTab } from './SettingsTab';
 import { supabase } from './supabase';
@@ -40,6 +41,11 @@ interface Expense {
   id: string; category: string; description: string | null;
   amount: number; expense_date: string; payment_mode: string;
 }
+interface CementFinancials {
+  id: string; bunk_id: string; cash_in_hand: number;
+  bank_accounts: { bank_name: string; balance: number }[];
+  updated_at: string;
+}
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const PRODUCT_TYPES = [
@@ -70,9 +76,796 @@ const STEEL_WEIGHT: Record<number, number> = { 8: 0.395, 10: 0.617, 12: 0.888, 1
 const inr = (n: number) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 const today = getTodayIST();
 
+// ── Onboarding Wizard ────────────────────────────────────────────────────────
+interface WizardRow {
+  id: string;
+  included: boolean;
+  name: string;
+  brand: string;
+  stock: string;
+  unit: string;
+  cp: string;
+  sp: string;
+  product_type: string;
+  grade?: string;
+  diameter_mm?: number | null;
+}
+interface BankAccount { bank_name: string; balance: string; }
+
+function makeRow(overrides: Partial<WizardRow>): WizardRow {
+  return {
+    id: Math.random().toString(36).slice(2),
+    included: true,
+    name: '',
+    brand: '',
+    stock: '',
+    unit: 'bag',
+    cp: '',
+    sp: '',
+    product_type: 'other',
+    grade: '',
+    diameter_mm: null,
+    ...overrides,
+  };
+}
+
+const WIZARD_STEPS = [
+  { label: 'Welcome', icon: '👋' },
+  { label: 'Cement', icon: '🧱' },
+  { label: 'Steel & Wire', icon: '🔩' },
+  { label: 'Sand & Masonry', icon: '🏗️' },
+  { label: 'Other Materials', icon: '📦' },
+  { label: 'Bank & Cash', icon: '💰' },
+  { label: 'Summary', icon: '✅' },
+];
+
+const DEFAULT_CEMENT_ROWS: WizardRow[] = [
+  makeRow({ name: 'OPC 43 Cement', brand: 'Ultratech', unit: 'bag', product_type: 'cement', grade: 'OPC43' }),
+  makeRow({ name: 'OPC 53 Cement', brand: 'Ultratech', unit: 'bag', product_type: 'cement', grade: 'OPC53' }),
+  makeRow({ name: 'PPC Cement', brand: 'ACC', unit: 'bag', product_type: 'cement', grade: 'PPC' }),
+  makeRow({ name: 'White Cement', brand: 'JK White', unit: 'bag', product_type: 'cement' }),
+  makeRow({ name: 'PSC / Slag Cement', brand: '', unit: 'bag', product_type: 'cement', grade: 'PSC' }),
+];
+
+const DEFAULT_STEEL_ROWS: WizardRow[] = [
+  makeRow({ name: 'TMT 8mm', brand: 'TATA Tiscon', unit: 'kg', product_type: 'steel_tmt', grade: 'Fe500', diameter_mm: 8 }),
+  makeRow({ name: 'TMT 10mm', brand: 'TATA Tiscon', unit: 'kg', product_type: 'steel_tmt', grade: 'Fe500', diameter_mm: 10 }),
+  makeRow({ name: 'TMT 12mm', brand: 'TATA Tiscon', unit: 'kg', product_type: 'steel_tmt', grade: 'Fe500', diameter_mm: 12 }),
+  makeRow({ name: 'TMT 16mm', brand: 'TATA Tiscon', unit: 'kg', product_type: 'steel_tmt', grade: 'Fe500', diameter_mm: 16 }),
+  makeRow({ name: 'TMT 20mm', brand: 'TATA Tiscon', unit: 'kg', product_type: 'steel_tmt', grade: 'Fe500', diameter_mm: 20 }),
+  makeRow({ name: 'TMT 25mm', brand: 'TATA Tiscon', unit: 'kg', product_type: 'steel_tmt', grade: 'Fe500', diameter_mm: 25 }),
+  makeRow({ name: 'Binding Wire', brand: '', unit: 'kg', product_type: 'binding_wire' }),
+];
+
+const DEFAULT_AGGREGATE_ROWS: WizardRow[] = [
+  makeRow({ name: '20mm Jelly / Aggregate', brand: '', unit: 'brass', product_type: 'aggregate' }),
+  makeRow({ name: '12mm Chips', brand: '', unit: 'brass', product_type: 'aggregate' }),
+  makeRow({ name: 'M-Sand', brand: '', unit: 'brass', product_type: 'sand' }),
+  makeRow({ name: 'River Sand', brand: '', unit: 'brass', product_type: 'sand' }),
+  makeRow({ name: 'Plaster Sand', brand: '', unit: 'brass', product_type: 'sand' }),
+  makeRow({ name: 'Red Bricks', brand: '', unit: 'thousand', product_type: 'brick' }),
+  makeRow({ name: 'AAC Blocks 600×200×200', brand: '', unit: 'piece', product_type: 'block' }),
+  makeRow({ name: 'Hollow Blocks 400×200×200', brand: '', unit: 'piece', product_type: 'block' }),
+  makeRow({ name: 'Fly Ash Bricks', brand: '', unit: 'piece', product_type: 'brick' }),
+];
+
+const DEFAULT_OTHER_ROWS: WizardRow[] = [
+  makeRow({ name: 'Tiles', brand: '', unit: 'sqft', product_type: 'tile' }),
+  makeRow({ name: 'Plywood 18mm', brand: '', unit: 'sheet', product_type: 'other' }),
+  makeRow({ name: 'Shuttering Ply', brand: '', unit: 'sheet', product_type: 'other' }),
+  makeRow({ name: 'Waterproofing Compound', brand: '', unit: 'kg', product_type: 'waterproofing' }),
+  makeRow({ name: 'Admixture / Plasticizer', brand: '', unit: 'ltr', product_type: 'admixture' }),
+  makeRow({ name: 'Primer / Putty', brand: '', unit: 'kg', product_type: 'other' }),
+];
+
+function WizardInventoryTable({ rows, onChange }: { rows: WizardRow[]; onChange: (rows: WizardRow[]) => void }) {
+  const update = (id: string, key: keyof WizardRow, value: any) => {
+    onChange(rows.map(r => r.id === id ? { ...r, [key]: value } : r));
+  };
+  const toggle = (id: string) => {
+    onChange(rows.map(r => r.id === id ? { ...r, included: !r.included } : r));
+  };
+  const addCustom = () => {
+    onChange([...rows, makeRow({ included: true })]);
+  };
+  const removeRow = (id: string) => {
+    onChange(rows.filter(r => r.id !== id));
+  };
+
+  const stockValue = rows.filter(r => r.included).reduce((sum, r) => sum + (Number(r.stock || 0) * Number(r.cp || 0)), 0);
+
+  return (
+    <div className="space-y-2">
+      <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <table className="w-full text-sm min-w-[640px]">
+          <thead>
+            <tr className="bg-orange-50 text-xs text-gray-500">
+              <th className="w-10 px-3 py-2 text-center">✓</th>
+              <th className="px-2 py-2 text-left font-medium">Name</th>
+              <th className="px-2 py-2 text-left font-medium w-28">Brand</th>
+              <th className="px-2 py-2 text-left font-medium w-20">Stock</th>
+              <th className="px-2 py-2 text-left font-medium w-16">Unit</th>
+              <th className="px-2 py-2 text-left font-medium w-24">CP ₹</th>
+              <th className="px-2 py-2 text-left font-medium w-24">SP ₹</th>
+              <th className="w-8 px-2 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(row => {
+              const dim = !row.included;
+              return (
+                <tr
+                  key={row.id}
+                  className={`border-t transition-colors ${dim ? 'bg-gray-50 opacity-50' : 'bg-white hover:bg-orange-50/30'}`}
+                >
+                  <td className="px-3 py-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => toggle(row.id)}
+                      className={`w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-colors ${
+                        row.included ? 'border-orange-500 bg-orange-500 text-white' : 'border-gray-300 bg-white text-gray-300'
+                      }`}
+                    >
+                      {row.included ? '✓' : '○'}
+                    </button>
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      disabled={dim}
+                      value={row.name}
+                      onChange={e => update(row.id, 'name', e.target.value)}
+                      className="w-full border border-transparent rounded px-1.5 py-1 focus:border-orange-300 focus:outline-none text-xs bg-transparent disabled:cursor-not-allowed"
+                      placeholder="Product name"
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      disabled={dim}
+                      value={row.brand}
+                      onChange={e => update(row.id, 'brand', e.target.value)}
+                      className="w-full border border-transparent rounded px-1.5 py-1 focus:border-orange-300 focus:outline-none text-xs bg-transparent disabled:cursor-not-allowed"
+                      placeholder="Brand"
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      disabled={dim}
+                      type="number"
+                      value={row.stock}
+                      onChange={e => update(row.id, 'stock', e.target.value)}
+                      className="w-full border border-transparent rounded px-1.5 py-1 focus:border-orange-300 focus:outline-none text-xs bg-transparent disabled:cursor-not-allowed"
+                      placeholder="0"
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      disabled={dim}
+                      value={row.unit}
+                      onChange={e => update(row.id, 'unit', e.target.value)}
+                      className="w-full border border-transparent rounded px-1.5 py-1 focus:border-orange-300 focus:outline-none text-xs bg-transparent disabled:cursor-not-allowed"
+                      placeholder="unit"
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      disabled={dim}
+                      type="number"
+                      value={row.cp}
+                      onChange={e => update(row.id, 'cp', e.target.value)}
+                      className="w-full border border-transparent rounded px-1.5 py-1 focus:border-orange-300 focus:outline-none text-xs bg-transparent disabled:cursor-not-allowed"
+                      placeholder="₹0"
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <input
+                      disabled={dim}
+                      type="number"
+                      value={row.sp}
+                      onChange={e => update(row.id, 'sp', e.target.value)}
+                      className="w-full border border-transparent rounded px-1.5 py-1 focus:border-orange-300 focus:outline-none text-xs bg-transparent disabled:cursor-not-allowed"
+                      placeholder="₹0"
+                    />
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <button
+                      type="button"
+                      onClick={() => removeRow(row.id)}
+                      className="text-gray-300 hover:text-red-400 transition-colors"
+                    >
+                      <X size={12} />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={addCustom}
+          className="flex items-center gap-1.5 text-orange-600 text-sm font-medium hover:text-orange-700"
+        >
+          <Plus size={14} /> Add custom item
+        </button>
+        {stockValue > 0 && (
+          <div className="text-sm text-gray-600 bg-orange-50 px-3 py-1 rounded-lg">
+            Stock value: <strong className="text-orange-700">{inr(stockValue)}</strong>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CementOnboarding({ bunkId, onComplete }: { bunkId: string; onComplete: () => void }) {
+  const [step, setStep] = useState(0);
+  const [cementRows, setCementRows] = useState<WizardRow[]>(DEFAULT_CEMENT_ROWS.map(r => ({ ...r, id: Math.random().toString(36).slice(2) })));
+  const [steelRows, setSteelRows] = useState<WizardRow[]>(DEFAULT_STEEL_ROWS.map(r => ({ ...r, id: Math.random().toString(36).slice(2) })));
+  const [aggregateRows, setAggregateRows] = useState<WizardRow[]>(DEFAULT_AGGREGATE_ROWS.map(r => ({ ...r, id: Math.random().toString(36).slice(2) })));
+  const [otherRows, setOtherRows] = useState<WizardRow[]>(DEFAULT_OTHER_ROWS.map(r => ({ ...r, id: Math.random().toString(36).slice(2) })));
+  const [cashInHand, setCashInHand] = useState('');
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([{ bank_name: '', balance: '' }]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const totalSteps = WIZARD_STEPS.length - 1; // 0-indexed last step = 6
+
+  const addBank = () => {
+    if (bankAccounts.length < 5) setBankAccounts(b => [...b, { bank_name: '', balance: '' }]);
+  };
+  const updateBank = (idx: number, key: keyof BankAccount, val: string) => {
+    setBankAccounts(b => b.map((a, i) => i === idx ? { ...a, [key]: val } : a));
+  };
+  const removeBank = (idx: number) => setBankAccounts(b => b.filter((_, i) => i !== idx));
+
+  const totalBankBalance = bankAccounts.reduce((s, a) => s + Number(a.balance || 0), 0);
+  const totalFinancials = Number(cashInHand || 0) + totalBankBalance;
+
+  const allRows = [...cementRows, ...steelRows, ...aggregateRows, ...otherRows];
+  const includedRows = allRows.filter(r => r.included && r.name.trim());
+
+  const summaryByCategory = [
+    { label: '🧱 Cement', rows: cementRows.filter(r => r.included && r.name.trim()) },
+    { label: '🔩 Steel & Wire', rows: steelRows.filter(r => r.included && r.name.trim()) },
+    { label: '🏗️ Sand & Masonry', rows: aggregateRows.filter(r => r.included && r.name.trim()) },
+    { label: '📦 Other Materials', rows: otherRows.filter(r => r.included && r.name.trim()) },
+  ];
+
+  const totalInventoryValue = includedRows.reduce((s, r) => s + Number(r.stock || 0) * Number(r.cp || 0), 0);
+  const netWorth = totalInventoryValue + totalFinancials;
+
+  const handleLaunch = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      if (includedRows.length > 0) {
+        const productsPayload = includedRows.map(r => ({
+          bunk_id: bunkId,
+          name: r.name.trim(),
+          brand: r.brand || null,
+          product_type: r.product_type,
+          grade: r.grade || null,
+          diameter_mm: r.diameter_mm || null,
+          unit: r.unit || 'piece',
+          gst_percent: 18,
+          mrp: Number(r.sp || 0),
+          selling_price: Number(r.sp || 0),
+          wholesale_price: Math.round(Number(r.sp || 0) * 0.95 * 100) / 100,
+          purchase_price: Number(r.cp || 0),
+          current_stock: Number(r.stock || 0),
+          reorder_level: 10,
+          is_active: true,
+          hsn_code: null,
+          weight_per_unit: r.diameter_mm ? (STEEL_WEIGHT[r.diameter_mm] || null) : null,
+        }));
+        const { error: prodError } = await supabase.from('cement_products').insert(productsPayload);
+        if (prodError) throw new Error(prodError.message);
+      }
+
+      const validBanks = bankAccounts.filter(a => a.bank_name.trim());
+      await supabase.from('cement_financials').upsert({
+        bunk_id: bunkId,
+        cash_in_hand: Number(cashInHand || 0),
+        bank_accounts: validBanks.map(a => ({ bank_name: a.bank_name, balance: Number(a.balance || 0) })),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'bunk_id' });
+
+      localStorage.setItem(`cement_onboarded_${bunkId}`, '1');
+      onComplete();
+    } catch (e: any) {
+      setError(e.message || 'Something went wrong. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const progressPct = step === 0 ? 0 : Math.round((step / (WIZARD_STEPS.length - 1)) * 100);
+
+  return (
+    <div className="fixed inset-0 bg-gradient-to-br from-orange-50 to-amber-50 z-50 overflow-y-auto">
+      <div className="min-h-screen flex flex-col">
+        {/* Header */}
+        <div className="bg-orange-600 text-white px-4 py-3 flex items-center gap-3">
+          <Layers size={22} />
+          <div>
+            <div className="font-bold text-lg leading-tight">CementDesk AI</div>
+            <div className="text-orange-100 text-xs">Store Setup</div>
+          </div>
+          <div className="ml-auto text-right">
+            <div className="text-xs text-orange-200">Step {step + 1} of {WIZARD_STEPS.length}</div>
+            <div className="text-xs font-semibold">{WIZARD_STEPS[step].icon} {WIZARD_STEPS[step].label}</div>
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        {step > 0 && (
+          <div className="bg-white px-4 py-2 border-b">
+            <div className="flex items-center gap-1 mb-1.5">
+              {WIZARD_STEPS.slice(1).map((s, i) => (
+                <div
+                  key={i}
+                  className={`h-1.5 flex-1 rounded-full transition-colors ${i + 1 <= step ? 'bg-orange-500' : 'bg-gray-200'}`}
+                />
+              ))}
+            </div>
+            <div className="text-xs text-gray-400 text-right">{progressPct}% complete</div>
+          </div>
+        )}
+
+        {/* Content */}
+        <div className="flex-1 px-4 py-6 max-w-3xl mx-auto w-full">
+
+          {/* Step 0 — Welcome */}
+          {step === 0 && (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center space-y-6">
+              <div className="text-6xl">🏗️</div>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-800 mb-2">Welcome to CementDesk!</h1>
+                <p className="text-gray-500 text-base max-w-sm mx-auto">Let's set up your store. Takes about 5 minutes to get started.</p>
+              </div>
+              <div className="grid grid-cols-3 gap-4 text-sm text-gray-600 max-w-xs">
+                {[
+                  { icon: '🧱', label: 'Add your inventory' },
+                  { icon: '💰', label: 'Set up financials' },
+                  { icon: '🚀', label: 'Launch your store' },
+                ].map(item => (
+                  <div key={item.label} className="flex flex-col items-center gap-2 bg-white rounded-xl p-3 shadow-sm border border-orange-100">
+                    <span className="text-2xl">{item.icon}</span>
+                    <span className="text-xs text-center leading-tight">{item.label}</span>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={() => setStep(1)}
+                className="bg-orange-600 text-white px-8 py-3.5 rounded-xl font-bold text-base hover:bg-orange-700 transition shadow-md flex items-center gap-2"
+              >
+                Let's Get Started <ChevronRight size={20} />
+              </button>
+            </div>
+          )}
+
+          {/* Step 1 — Cement */}
+          {step === 1 && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">🧱 Cement Stock</h2>
+                <p className="text-sm text-gray-500 mt-1">Toggle on the products you carry. Fill in current stock and prices.</p>
+              </div>
+              <WizardInventoryTable rows={cementRows} onChange={setCementRows} />
+            </div>
+          )}
+
+          {/* Step 2 — Steel */}
+          {step === 2 && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">🔩 Steel / TMT + Binding Wire</h2>
+                <p className="text-sm text-gray-500 mt-1">Toggle on the steel items you carry.</p>
+              </div>
+              <WizardInventoryTable rows={steelRows} onChange={setSteelRows} />
+            </div>
+          )}
+
+          {/* Step 3 — Sand, Aggregate & Masonry */}
+          {step === 3 && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">🏗️ Sand, Aggregate & Masonry</h2>
+                <p className="text-sm text-gray-500 mt-1">Select the materials you stock.</p>
+              </div>
+              <WizardInventoryTable rows={aggregateRows} onChange={setAggregateRows} />
+            </div>
+          )}
+
+          {/* Step 4 — Other Materials */}
+          {step === 4 && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">📦 Other Materials</h2>
+                <p className="text-sm text-gray-500 mt-1">Add tiles, plywoods, waterproofing or any other items you sell.</p>
+              </div>
+              <WizardInventoryTable rows={otherRows} onChange={setOtherRows} />
+            </div>
+          )}
+
+          {/* Step 5 — Bank & Cash */}
+          {step === 5 && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">💰 Bank & Cash Details</h2>
+                <p className="text-sm text-gray-500 mt-1">These are used to calculate your total business net worth.</p>
+              </div>
+
+              <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+                <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <Banknote size={16} className="text-orange-500" /> Cash in Hand
+                </label>
+                <input
+                  type="number"
+                  value={cashInHand}
+                  onChange={e => setCashInHand(e.target.value)}
+                  placeholder="₹0"
+                  className="w-full border rounded-xl px-4 py-3 text-lg font-semibold focus:ring-2 focus:ring-orange-300 focus:outline-none"
+                />
+              </div>
+
+              <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                    <Building2 size={16} className="text-orange-500" /> Bank Accounts
+                  </label>
+                  {bankAccounts.length < 5 && (
+                    <button onClick={addBank} className="text-xs text-orange-600 font-medium flex items-center gap-1 hover:text-orange-700">
+                      <Plus size={12} /> Add Bank
+                    </button>
+                  )}
+                </div>
+
+                {bankAccounts.map((acc, idx) => (
+                  <div key={idx} className="flex gap-2 items-center">
+                    <input
+                      value={acc.bank_name}
+                      onChange={e => updateBank(idx, 'bank_name', e.target.value)}
+                      placeholder="Bank name (e.g. SBI)"
+                      className="flex-1 border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-orange-200 focus:outline-none"
+                    />
+                    <input
+                      type="number"
+                      value={acc.balance}
+                      onChange={e => updateBank(idx, 'balance', e.target.value)}
+                      placeholder="₹0"
+                      className="w-32 border rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-orange-200 focus:outline-none"
+                    />
+                    {bankAccounts.length > 1 && (
+                      <button onClick={() => removeBank(idx)} className="text-gray-400 hover:text-red-400">
+                        <X size={16} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+
+                {totalFinancials > 0 && (
+                  <div className="bg-orange-50 rounded-lg px-4 py-3 mt-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Cash in hand</span>
+                      <span className="font-medium">{inr(Number(cashInHand || 0))}</span>
+                    </div>
+                    {bankAccounts.filter(a => a.bank_name.trim()).map((a, i) => (
+                      <div key={i} className="flex justify-between text-sm mt-1">
+                        <span className="text-gray-600">{a.bank_name}</span>
+                        <span className="font-medium">{inr(Number(a.balance || 0))}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between text-sm font-bold text-orange-700 border-t border-orange-200 pt-2 mt-2">
+                      <span>Total Financial Assets</span>
+                      <span>{inr(totalFinancials)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Step 6 — Summary */}
+          {step === 6 && (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-xl font-bold text-gray-800">✅ Summary & Launch</h2>
+                <p className="text-sm text-gray-500 mt-1">Review your store setup before launching.</p>
+              </div>
+
+              {/* Inventory breakdown */}
+              <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+                <h3 className="font-semibold text-gray-700 text-sm">Inventory Summary</h3>
+                {summaryByCategory.map(cat => (
+                  cat.rows.length > 0 && (
+                    <div key={cat.label} className="flex justify-between py-1.5 border-b last:border-0 text-sm">
+                      <span className="text-gray-600">{cat.label} <span className="text-gray-400">({cat.rows.length} items)</span></span>
+                      <span className="font-semibold text-gray-800">{inr(cat.rows.reduce((s, r) => s + Number(r.stock || 0) * Number(r.cp || 0), 0))}</span>
+                    </div>
+                  )
+                ))}
+                {includedRows.length === 0 && (
+                  <p className="text-sm text-gray-400">No inventory items added yet.</p>
+                )}
+                <div className="flex justify-between text-sm font-bold text-gray-800 pt-1">
+                  <span>Total Inventory Value</span>
+                  <span>{inr(totalInventoryValue)}</span>
+                </div>
+              </div>
+
+              {/* Financial assets */}
+              <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-2">
+                <h3 className="font-semibold text-gray-700 text-sm">Financial Assets</h3>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Cash in hand</span>
+                  <span className="font-medium">{inr(Number(cashInHand || 0))}</span>
+                </div>
+                {bankAccounts.filter(a => a.bank_name.trim()).map((a, i) => (
+                  <div key={i} className="flex justify-between text-sm">
+                    <span className="text-gray-600">{a.bank_name}</span>
+                    <span className="font-medium">{inr(Number(a.balance || 0))}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between text-sm font-bold text-gray-800 border-t pt-2">
+                  <span>Total Financial Assets</span>
+                  <span>{inr(totalFinancials)}</span>
+                </div>
+              </div>
+
+              {/* Net Worth */}
+              <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-5 text-white shadow-lg">
+                <div className="flex items-center gap-2 mb-1">
+                  <Trophy size={20} />
+                  <span className="font-semibold">Business Net Worth</span>
+                </div>
+                <div className="text-3xl font-bold">{inr(netWorth)}</div>
+                <div className="text-orange-100 text-xs mt-1">Inventory ({inr(totalInventoryValue)}) + Financial Assets ({inr(totalFinancials)})</div>
+              </div>
+
+              {/* Tip */}
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex gap-3">
+                <span className="text-yellow-500 text-lg">⚠️</span>
+                <p className="text-sm text-yellow-800">Rates change often — update prices whenever you get a new batch to keep your net worth accurate.</p>
+              </div>
+
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">
+                  {error}
+                </div>
+              )}
+
+              <button
+                onClick={handleLaunch}
+                disabled={saving}
+                className="w-full bg-orange-600 text-white py-4 rounded-xl font-bold text-lg hover:bg-orange-700 disabled:opacity-50 flex items-center justify-center gap-2 shadow-md"
+              >
+                {saving ? <Loader2 size={20} className="animate-spin" /> : '🚀'}
+                {saving ? 'Setting up your store…' : 'Launch Dashboard'}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Navigation */}
+        {step > 0 && (
+          <div className="sticky bottom-0 bg-white border-t px-4 py-3 flex items-center justify-between gap-3">
+            <button
+              onClick={() => setStep(s => Math.max(0, s - 1))}
+              className="flex items-center gap-1.5 text-gray-600 hover:text-gray-800 font-medium text-sm px-4 py-2.5 rounded-xl border border-gray-200 hover:border-gray-300 transition"
+            >
+              <ChevronLeft size={16} /> Back
+            </button>
+
+            <button
+              onClick={() => setStep(s => Math.max(0, s - 1))}
+              className="text-gray-400 text-xs hover:text-gray-600 underline"
+              style={{ display: step < 6 ? 'block' : 'none' }}
+            >
+              {/* handled below */}
+            </button>
+
+            {step < 6 ? (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setStep(s => s + 1)}
+                  className="text-gray-400 text-xs hover:text-gray-600 underline"
+                >
+                  Skip this category
+                </button>
+                <button
+                  onClick={() => setStep(s => s + 1)}
+                  className="flex items-center gap-1.5 bg-orange-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-orange-700 transition"
+                >
+                  Next <ChevronRight size={16} />
+                </button>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Rate Update Banner ────────────────────────────────────────────────────────
+function RateUpdateBanner({ bunkId, productsCount }: { bunkId: string; productsCount: number }) {
+  const storageKey = `cement_rates_updated_${bunkId}`;
+  const [visible, setVisible] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [edits, setEdits] = useState<Record<string, { sp: string; cp: string }>>({});
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState('');
+
+  useEffect(() => {
+    if (productsCount === 0) return;
+    const stored = localStorage.getItem(storageKey);
+    if (!stored) { setVisible(true); return; }
+    const diff = Date.now() - new Date(stored).getTime();
+    if (diff > 7 * 24 * 60 * 60 * 1000) setVisible(true);
+  }, [storageKey, productsCount]);
+
+  const openModal = async () => {
+    const { data } = await supabase.from('cement_products').select('*').eq('bunk_id', bunkId).eq('is_active', true).order('product_type').order('name');
+    const prods = data || [];
+    setProducts(prods);
+    const initEdits: Record<string, { sp: string; cp: string }> = {};
+    prods.forEach(p => { initEdits[p.id] = { sp: String(p.selling_price), cp: String(p.purchase_price) }; });
+    setEdits(initEdits);
+    setShowModal(true);
+  };
+
+  const saveRates = async () => {
+    setSaving(true);
+    const updates = products.map(p => {
+      const e = edits[p.id] || {};
+      const sp = Number(e.sp || p.selling_price);
+      const cp = Number(e.cp || p.purchase_price);
+      return supabase.from('cement_products').update({ selling_price: sp, purchase_price: cp, mrp: sp, wholesale_price: Math.round(sp * 0.95 * 100) / 100 }).eq('id', p.id);
+    });
+    await Promise.all(updates);
+    localStorage.setItem(storageKey, new Date().toISOString());
+    setSaving(false);
+    setShowModal(false);
+    setVisible(false);
+    setToast('Rates updated successfully!');
+    setTimeout(() => setToast(''), 3000);
+  };
+
+  if (!visible) return toast ? (
+    <div className="fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium z-50 flex items-center gap-2">
+      <CheckCircle2 size={16} /> {toast}
+    </div>
+  ) : null;
+
+  return (
+    <>
+      {toast && (
+        <div className="fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm font-medium z-50 flex items-center gap-2">
+          <CheckCircle2 size={16} /> {toast}
+        </div>
+      )}
+      <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 flex items-center gap-3 mb-4">
+        <Zap size={18} className="text-amber-600 shrink-0" />
+        <div className="flex-1 text-sm text-amber-800">
+          <span className="font-semibold">Market rates may have changed.</span> Tap to update prices.
+        </div>
+        <button
+          onClick={openModal}
+          className="bg-amber-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-amber-600 transition shrink-0"
+        >
+          Update Rates
+        </button>
+        <button onClick={() => setVisible(false)} className="text-amber-500 hover:text-amber-700 shrink-0">
+          <X size={16} />
+        </button>
+      </div>
+
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex justify-between items-center p-5 border-b">
+              <div>
+                <h3 className="font-bold text-gray-800">Update Product Rates</h3>
+                <p className="text-xs text-gray-400 mt-0.5">{products.length} products</p>
+              </div>
+              <button onClick={() => setShowModal(false)}><X size={20} className="text-gray-400" /></button>
+            </div>
+
+            <div className="overflow-y-auto flex-1">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">Product</th>
+                    <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 w-28">Selling Price (SP)</th>
+                    <th className="text-left px-3 py-2.5 text-xs font-medium text-gray-500 w-28">Purchase Price (CP)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {products.map(p => (
+                    <tr key={p.id} className="border-t hover:bg-orange-50/40">
+                      <td className="px-4 py-2.5">
+                        <div className="font-medium text-gray-800 text-sm">{p.name}</div>
+                        <div className="text-xs text-gray-400">{p.brand || ''} · {p.unit}</div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <input
+                          type="number"
+                          value={edits[p.id]?.sp ?? p.selling_price}
+                          onChange={e => setEdits(prev => ({ ...prev, [p.id]: { ...prev[p.id], sp: e.target.value } }))}
+                          className="w-full border rounded-lg px-2.5 py-1.5 text-sm focus:ring-2 focus:ring-orange-300 focus:outline-none"
+                        />
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <input
+                          type="number"
+                          value={edits[p.id]?.cp ?? p.purchase_price}
+                          onChange={e => setEdits(prev => ({ ...prev, [p.id]: { ...prev[p.id], cp: e.target.value } }))}
+                          className="w-full border rounded-lg px-2.5 py-1.5 text-sm focus:ring-2 focus:ring-orange-300 focus:outline-none"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="p-5 border-t">
+              <button
+                onClick={saveRates}
+                disabled={saving}
+                className="w-full bg-orange-600 text-white py-3 rounded-xl font-semibold hover:bg-orange-700 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {saving && <Loader2 size={16} className="animate-spin" />}
+                Save All Rates
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ── Main Component ───────────────────────────────────────────────────────────
 export function CementApp({ bunkId, onLogout, user }: { bunkId: string; onLogout: () => void; user: { name: string; email: string; role: string } }) {
   const [tab, setTab] = useState<'dashboard' | 'inventory' | 'sales' | 'customers' | 'deliveries' | 'purchases' | 'expenses' | 'reports' | 'suppliers' | 'settings'>('dashboard');
+  const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
+  const [productsCount, setProductsCount] = useState(0);
+
+  useEffect(() => {
+    const onboardedKey = `cement_onboarded_${bunkId}`;
+    const alreadyOnboarded = localStorage.getItem(onboardedKey);
+    if (alreadyOnboarded) {
+      setShowOnboarding(false);
+      return;
+    }
+    supabase.from('cement_products').select('id', { count: 'exact', head: true }).eq('bunk_id', bunkId).then(({ count }) => {
+      if ((count || 0) === 0) {
+        setShowOnboarding(true);
+      } else {
+        localStorage.setItem(onboardedKey, '1');
+        setProductsCount(count || 0);
+        setShowOnboarding(false);
+      }
+    });
+  }, [bunkId]);
+
+  useEffect(() => {
+    if (showOnboarding === false) {
+      supabase.from('cement_products').select('id', { count: 'exact', head: true }).eq('bunk_id', bunkId).then(({ count }) => {
+        setProductsCount(count || 0);
+      });
+    }
+  }, [showOnboarding, bunkId]);
+
+  const handleOnboardingComplete = () => {
+    setShowOnboarding(false);
+  };
 
   const tabs = [
     { id: 'dashboard',  label: 'Dashboard',   icon: BarChart3 },
@@ -86,6 +879,19 @@ export function CementApp({ bunkId, onLogout, user }: { bunkId: string; onLogout
     { id: 'suppliers',  label: 'Suppliers',   icon: Building2 },
     { id: 'settings',   label: 'Settings',    icon: Settings },
   ] as const;
+
+  // Waiting for first-run check
+  if (showOnboarding === null) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 className="animate-spin text-orange-500" size={36} />
+      </div>
+    );
+  }
+
+  if (showOnboarding) {
+    return <CementOnboarding bunkId={bunkId} onComplete={handleOnboardingComplete} />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -121,6 +927,7 @@ export function CementApp({ bunkId, onLogout, user }: { bunkId: string; onLogout
 
       {/* Content */}
       <div className="p-4 max-w-6xl mx-auto">
+        <RateUpdateBanner bunkId={bunkId} productsCount={productsCount} />
         {tab === 'dashboard'  && <DashboardTab bunkId={bunkId} />}
         {tab === 'inventory'  && <InventoryTab bunkId={bunkId} />}
         {tab === 'sales'      && <SalesTab bunkId={bunkId} />}
@@ -142,15 +949,18 @@ function DashboardTab({ bunkId }: { bunkId: string }) {
   const [lowStock, setLowStock] = useState<Product[]>([]);
   const [pendingDels, setPendingDels] = useState<Delivery[]>([]);
   const [loading, setLoading] = useState(true);
+  const [financials, setFinancials] = useState<CementFinancials | null>(null);
+  const [inventoryValue, setInventoryValue] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [salesRes, expRes, delRes, prodRes, custRes] = await Promise.all([
+    const [salesRes, expRes, delRes, prodRes, custRes, finRes] = await Promise.all([
       supabase.from('cement_sales').select('total_amount').eq('bunk_id', bunkId).eq('sale_date', today),
       supabase.from('cement_expenses').select('amount').eq('bunk_id', bunkId).eq('expense_date', today),
       supabase.from('cement_deliveries').select('*').eq('bunk_id', bunkId).neq('status', 'delivered').order('delivery_date', { ascending: true }),
       supabase.from('cement_products').select('*').eq('bunk_id', bunkId).eq('is_active', true),
       supabase.from('cement_customers').select('outstanding_amount').eq('bunk_id', bunkId).eq('is_active', true),
+      supabase.from('cement_financials').select('*').eq('bunk_id', bunkId).maybeSingle(),
     ]);
     const todaySales = (salesRes.data || []).reduce((s, r) => s + Number(r.total_amount || 0), 0);
     const todayExpenses = (expRes.data || []).reduce((s, r) => s + Number(r.amount || 0), 0);
@@ -158,13 +968,21 @@ function DashboardTab({ bunkId }: { bunkId: string }) {
     const products = prodRes.data || [];
     const lowStockItems = products.filter(p => Number(p.current_stock) <= Number(p.reorder_level));
     const outstandingTotal = (custRes.data || []).reduce((s, r) => s + Number(r.outstanding_amount || 0), 0);
+    const stockVal = products.reduce((s, p) => s + Number(p.current_stock || 0) * Number(p.purchase_price || 0), 0);
     setStats({ todaySales, todayExpenses, pendingDeliveries, lowStockCount: lowStockItems.length, outstandingTotal });
     setLowStock(lowStockItems.slice(0, 5));
     setPendingDels((delRes.data || []).slice(0, 5) as Delivery[]);
+    setInventoryValue(stockVal);
+    if (finRes.data) setFinancials(finRes.data as CementFinancials);
     setLoading(false);
   }, [bunkId]);
 
   useEffect(() => { load(); }, [load]);
+
+  const cashInHand = Number(financials?.cash_in_hand || 0);
+  const bankTotal = (financials?.bank_accounts || []).reduce((s, a) => s + Number(a.balance || 0), 0);
+  const financialAssets = cashInHand + bankTotal;
+  const netWorth = inventoryValue + financialAssets;
 
   if (loading) return <div className="flex justify-center py-16"><Loader2 className="animate-spin text-orange-500" size={32} /></div>;
 
@@ -189,6 +1007,39 @@ function DashboardTab({ bunkId }: { bunkId: string }) {
             <div className={`text-xl font-bold ${c.color}`}>{c.value}</div>
           </div>
         ))}
+      </div>
+
+      {/* Net Worth Card */}
+      <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-5 text-white shadow">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Trophy size={18} />
+              <span className="font-semibold text-sm">Business Net Worth</span>
+            </div>
+            <div className="text-3xl font-bold">{inr(netWorth)}</div>
+          </div>
+          <div className="text-right text-sm space-y-1">
+            <div className="text-orange-100">
+              <span className="opacity-80">Inventory</span>
+              <div className="font-semibold text-white">{inr(inventoryValue)}</div>
+            </div>
+            <div className="text-orange-100">
+              <span className="opacity-80">Financial Assets</span>
+              <div className="font-semibold text-white">{inr(financialAssets)}</div>
+            </div>
+          </div>
+        </div>
+        {financials && (financials.cash_in_hand > 0 || (financials.bank_accounts || []).length > 0) && (
+          <div className="mt-3 pt-3 border-t border-orange-400/40 flex flex-wrap gap-3 text-xs text-orange-100">
+            {financials.cash_in_hand > 0 && (
+              <span>Cash: <strong className="text-white">{inr(cashInHand)}</strong></span>
+            )}
+            {(financials.bank_accounts || []).filter(a => a.bank_name).map((a, i) => (
+              <span key={i}>{a.bank_name}: <strong className="text-white">{inr(Number(a.balance || 0))}</strong></span>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid md:grid-cols-2 gap-5">

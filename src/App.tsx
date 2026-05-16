@@ -11,7 +11,8 @@
 =============================================================================
 */
 
-import React, { useState, createContext, useContext, useEffect, useMemo, useCallback, Component, type ReactNode } from 'react';
+import React, { useState, createContext, useContext, useEffect, useMemo, useCallback, Component, Suspense, lazy, type ReactNode } from 'react';
+import { ToastProvider } from './components/Toast';
 import {
   Users, BookOpen, Sun, Receipt, Fuel, Search, ChevronLeft,
   BarChart3, Settings, LogOut, Plus, AlertCircle, CheckCircle2,
@@ -31,18 +32,20 @@ const CATEGORIES = ['Fleet', 'Milk Tanker', 'School', 'Hospital', 'Individual', 
 
 // --- SUPABASE SETUP ---
 import { supabase } from './supabase';
-import { CementApp } from './CementApp';
-import { OtherApp } from './OtherApp';
-import { HardwareApp } from './HardwareApp';
-import { RestaurantApp } from './RestaurantApp';
-import { AutoPartsApp } from './AutoPartsApp';
-import { AgricultureApp } from './AgricultureApp';
-import { TextileApp } from './TextileApp';
-import { StationeryApp } from './StationeryApp';
-import { KiranaApp } from './KiranaApp';
-import { MedicalApp } from './MedicalApp';
-import { LPGApp } from './LPGApp';
-import { ElectricalApp } from './ElectricalApp';
+// ── Store modules: lazy-loaded so each is its own JS chunk ──────────────
+// This cuts the initial bundle from ~1.2MB down to ~300KB.
+const CementApp      = lazy(() => import('./CementApp').then(m => ({ default: m.CementApp })));
+const OtherApp       = lazy(() => import('./OtherApp').then(m => ({ default: m.OtherApp })));
+const HardwareApp    = lazy(() => import('./HardwareApp').then(m => ({ default: m.HardwareApp })));
+const RestaurantApp  = lazy(() => import('./RestaurantApp').then(m => ({ default: m.RestaurantApp })));
+const AutoPartsApp   = lazy(() => import('./AutoPartsApp').then(m => ({ default: m.AutoPartsApp })));
+const AgricultureApp = lazy(() => import('./AgricultureApp').then(m => ({ default: m.AgricultureApp })));
+const TextileApp     = lazy(() => import('./TextileApp').then(m => ({ default: m.TextileApp })));
+const StationeryApp  = lazy(() => import('./StationeryApp').then(m => ({ default: m.StationeryApp })));
+const KiranaApp      = lazy(() => import('./KiranaApp').then(m => ({ default: m.KiranaApp })));
+const MedicalApp     = lazy(() => import('./MedicalApp').then(m => ({ default: m.MedicalApp })));
+const LPGApp         = lazy(() => import('./LPGApp').then(m => ({ default: m.LPGApp })));
+const ElectricalApp  = lazy(() => import('./ElectricalApp').then(m => ({ default: m.ElectricalApp })));
 import { IntelligenceTab } from './IntelligenceTab';
 const rawUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
 const rawKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
@@ -3321,23 +3324,34 @@ const AppContent = () => {
   if (currentRoute === 'privacy') return <PrivacyPolicyPage />;
   if (!user) return <LandingScreen onPrivacy={() => setCurrentRoute('privacy')} />;
   if (user.role === 'customer') return <CustomerPortalView />;
-  // Fix #21: validate bizType against whitelist to prevent XSS-injected localStorage values routing to wrong module
+  // Validate bizType against whitelist to prevent XSS-injected localStorage values routing to wrong module
   const VALID_BIZ_TYPES = ['fuel','cement','hardware','restaurant','auto_parts','agriculture','textile','stationery','kirana','medical','general','lpg_gas_agency','electrical'];
   const _rawBizType = localStorage.getItem('app_biz_type') || '';
   const bizType = VALID_BIZ_TYPES.includes(_rawBizType) ? _rawBizType : 'fuel';
   const _moduleUser = { name: user.name, email: user.email, role: user.role };
-  if (bizType === 'cement') return <CementApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
-  if (bizType === 'hardware') return <HardwareApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
-  if (bizType === 'restaurant') return <RestaurantApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
-  if (bizType === 'auto_parts') return <AutoPartsApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
-  if (bizType === 'agriculture') return <AgricultureApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
-  if (bizType === 'textile') return <TextileApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
-  if (bizType === 'stationery') return <StationeryApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
-  if (bizType === 'kirana') return <KiranaApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
-  if (bizType === 'medical') return <MedicalApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
-  if (bizType === 'lpg_gas_agency') return <LPGApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
-  if (bizType === 'electrical') return <ElectricalApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
-  if (bizType === 'general') return <OtherApp bunkId={user.bunkId || ''} bizType={bizType} onLogout={logout} user={_moduleUser} />;
+
+  // Store-app fallback UI shown while the lazy chunk loads
+  const StoreFallback = (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center">
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+        <p className="text-gray-500 text-sm">Loading your workspace…</p>
+      </div>
+    </div>
+  );
+
+  if (bizType === 'cement')      return <Suspense fallback={StoreFallback}><CementApp      bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} /></Suspense>;
+  if (bizType === 'hardware')    return <Suspense fallback={StoreFallback}><HardwareApp    bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} /></Suspense>;
+  if (bizType === 'restaurant')  return <Suspense fallback={StoreFallback}><RestaurantApp  bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} /></Suspense>;
+  if (bizType === 'auto_parts')  return <Suspense fallback={StoreFallback}><AutoPartsApp   bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} /></Suspense>;
+  if (bizType === 'agriculture') return <Suspense fallback={StoreFallback}><AgricultureApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} /></Suspense>;
+  if (bizType === 'textile')     return <Suspense fallback={StoreFallback}><TextileApp     bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} /></Suspense>;
+  if (bizType === 'stationery')  return <Suspense fallback={StoreFallback}><StationeryApp  bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} /></Suspense>;
+  if (bizType === 'kirana')      return <Suspense fallback={StoreFallback}><KiranaApp      bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} /></Suspense>;
+  if (bizType === 'medical')     return <Suspense fallback={StoreFallback}><MedicalApp     bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} /></Suspense>;
+  if (bizType === 'lpg_gas_agency') return <Suspense fallback={StoreFallback}><LPGApp     bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} /></Suspense>;
+  if (bizType === 'electrical')  return <Suspense fallback={StoreFallback}><ElectricalApp  bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} /></Suspense>;
+  if (bizType === 'general')     return <Suspense fallback={StoreFallback}><OtherApp       bunkId={user.bunkId || ''} bizType={bizType} onLogout={logout} user={_moduleUser} /></Suspense>;
 
   const userRole = String(user.role || 'supervisor').toLowerCase();
 
@@ -3419,9 +3433,11 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <AppProvider>
-        <AppContent />
-      </AppProvider>
+      <ToastProvider>
+        <AppProvider>
+          <AppContent />
+        </AppProvider>
+      </ToastProvider>
     </ErrorBoundary>
   );
 }

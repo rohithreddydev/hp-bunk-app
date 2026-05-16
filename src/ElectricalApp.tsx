@@ -7,10 +7,11 @@ import {
   Receipt, BarChart3, Plus, X, Search, AlertTriangle,
   ChevronDown, ChevronRight, Loader2, CheckCircle2,
   TrendingUp, TrendingDown, DollarSign, Edit2, Home,
-  AlertCircle, Filter
+  AlertCircle, Filter, Settings, LogOut
 } from 'lucide-react';
 import { supabase } from './supabase';
-import { getTodayIST } from './App';
+import { getTodayIST } from './utils';
+import { SettingsTab } from './SettingsTab';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface ElecProduct {
@@ -982,10 +983,19 @@ const TABS = [
   { id: 'purchases', label: 'Purchases', icon: Truck },
   { id: 'expenses', label: 'Expenses', icon: Receipt },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
+  { id: 'settings', label: 'Settings', icon: Settings },
   { id: 'suppliers', label: 'Suppliers', icon: Package },
 ];
 
-export function ElectricalApp({ bunkId }: { bunkId: string }) {
+export function ElectricalApp({
+  bunkId,
+  onLogout,
+  user,
+}: {
+  bunkId: string;
+  onLogout?: () => void;
+  user?: { name?: string; email?: string; role?: string };
+}) {
   const [tab, setTab] = useState('dashboard');
   return (
     <div className="min-h-screen bg-gray-50">
@@ -993,10 +1003,19 @@ export function ElectricalApp({ bunkId }: { bunkId: string }) {
         <div className="w-9 h-9 bg-yellow-500 rounded-xl flex items-center justify-center">
           <Zap size={18} className="text-white" />
         </div>
-        <div>
+        <div className="flex-1">
           <h1 className="font-bold text-gray-900 text-lg">ElectricalDesk AI</h1>
           <p className="text-xs text-gray-400">Electrical Store Assistant</p>
         </div>
+        {onLogout && (
+          <button
+            onClick={onLogout}
+            className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
+            title="Sign Out"
+          >
+            <LogOut size={18} />
+          </button>
+        )}
       </div>
       <div className="bg-white border-b overflow-x-auto">
         <div className="flex min-w-max px-2">
@@ -1012,15 +1031,18 @@ export function ElectricalApp({ bunkId }: { bunkId: string }) {
         </div>
       </div>
       <div className="p-4 max-w-6xl mx-auto">
-        {tab === 'dashboard' && <DashboardTab bunkId={bunkId} />}
-        {tab === 'inventory' && <InventoryTab bunkId={bunkId} />}
-        {tab === 'sales' && <SalesTab bunkId={bunkId} />}
-        {tab === 'customers' && <CustomersTab bunkId={bunkId} />}
-        {tab === 'projects' && <ProjectsTab bunkId={bunkId} />}
-        {tab === 'purchases' && <PurchasesTab bunkId={bunkId} />}
-        {tab === 'expenses' && <ExpensesTab bunkId={bunkId} />}
-        {tab === 'reports' && <ReportsTab bunkId={bunkId} />}
-        {tab === 'suppliers' && <SuppliersTab bunkId={bunkId} />}
+        {tab === 'dashboard'  && <DashboardTab bunkId={bunkId} />}
+        {tab === 'inventory'  && <InventoryTab bunkId={bunkId} />}
+        {tab === 'sales'      && <SalesTab bunkId={bunkId} />}
+        {tab === 'customers'  && <CustomersTab bunkId={bunkId} />}
+        {tab === 'projects'   && <ProjectsTab bunkId={bunkId} />}
+        {tab === 'purchases'  && <PurchasesTab bunkId={bunkId} />}
+        {tab === 'expenses'   && <ExpensesTab bunkId={bunkId} />}
+        {tab === 'reports'    && <ReportsTab bunkId={bunkId} />}
+        {tab === 'suppliers'  && <SuppliersTab bunkId={bunkId} />}
+        {tab === 'settings'   && (
+          <SettingsTab bunkId={bunkId} user={user ?? {}} onLogout={onLogout ?? (() => {})} />
+        )}
       </div>
     </div>
   );

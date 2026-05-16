@@ -1,11 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import { LogOut, Plus, Trash2, Search, RefreshCw, AlertTriangle, TrendingUp, Package, Users, ShoppingCart, FileText, BarChart2, Settings } from 'lucide-react';
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+import { supabase } from './supabase';
+import { getTodayIST } from './utils';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface AgProduct { id: string; bunk_id: string; name: string; category: string; unit: string; purchase_rate: number; selling_rate: number; stock_qty: number; low_stock_at: number; hsn_code: string; created_at: string; }
@@ -16,7 +12,6 @@ interface AgPurchase { id: string; bunk_id: string; date: string; supplier_name:
 interface AgExpense { id: string; bunk_id: string; date: string; category: string; amount: number; description: string; payment_mode: string; created_at: string; }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
-function getTodayIST() { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); }
 function inr(n: number) { return `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`; }
 function getCurrentSeason() {
   const m = new Date().getMonth() + 1;
