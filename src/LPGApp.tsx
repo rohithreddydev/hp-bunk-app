@@ -278,7 +278,7 @@ function LPGStock({ bunkId, stock, allocations, onRefresh, showToast }: {
         filled_count: existing.filled_count + filled,
         empty_count: Math.max(0, existing.empty_count - empties),
         updated_at: new Date().toISOString(),
-      }).eq('id', existing.id);
+      }).eq('id', existing.id).eq('bunk_id', bunkId);
     } else {
       await supabase.from('lpg_stock').insert({ bunk_id: bunkId, cylinder_type: form.cylinder_type, filled_count: filled, empty_count: 0, damaged_count: 0 });
     }
@@ -622,8 +622,10 @@ function LPGCommercial({ bunkId, customers, sales, payments, onRefresh, showToas
       notes: saleForm.notes || null,
     });
     if (!error && saleForm.customer_id && saleForm.payment_status === 'credit') {
-      const cust = customers.find(c => c.id === saleForm.customer_id);
-      if (cust) await supabase.from('lpg_commercial_customers').update({ outstanding_amount: (cust.outstanding_amount || 0) + total }).eq('id', cust.id);
+      // Fresh read to avoid stale outstanding from component state
+      const { data: freshSaleCust } = await supabase.from('lpg_commercial_customers').select('outstanding_amount').eq('id', saleForm.customer_id).eq('bunk_id', bunkId).maybeSingle();
+      const baseAmt = freshSaleCust ? (freshSaleCust.outstanding_amount || 0) : (customers.find(c => c.id === saleForm.customer_id)?.outstanding_amount || 0);
+      await supabase.from('lpg_commercial_customers').update({ outstanding_amount: baseAmt + total }).eq('id', saleForm.customer_id).eq('bunk_id', bunkId);
     }
     setSaving(false);
     if (error) { showToast(error.message, 'error'); return; }
@@ -645,8 +647,10 @@ function LPGCommercial({ bunkId, customers, sales, payments, onRefresh, showToas
       amount, payment_mode: payForm.payment_mode, payment_date: today, notes: payForm.notes || null,
     });
     if (!error && payForm.customer_id) {
-      const cust = customers.find(c => c.id === payForm.customer_id);
-      if (cust) await supabase.from('lpg_commercial_customers').update({ outstanding_amount: Math.max(0, (cust.outstanding_amount || 0) - amount), last_payment_date: today }).eq('id', cust.id);
+      // Fresh read to avoid stale outstanding from component state
+      const { data: freshPayCust } = await supabase.from('lpg_commercial_customers').select('outstanding_amount').eq('id', payForm.customer_id).eq('bunk_id', bunkId).maybeSingle();
+      const baseAmt = freshPayCust ? (freshPayCust.outstanding_amount || 0) : (customers.find(c => c.id === payForm.customer_id)?.outstanding_amount || 0);
+      await supabase.from('lpg_commercial_customers').update({ outstanding_amount: Math.max(0, baseAmt - amount), last_payment_date: today }).eq('id', payForm.customer_id).eq('bunk_id', bunkId);
     }
     setSaving(false);
     if (error) { showToast(error.message, 'error'); return; }

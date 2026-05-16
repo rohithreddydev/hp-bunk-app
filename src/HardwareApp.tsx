@@ -396,11 +396,11 @@ function HwInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
               <div><label className="text-xs text-gray-500 mb-1 block">Brand</label><input value={form.brand} onChange={e => setF('brand', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
               <div><label className="text-xs text-gray-500 mb-1 block">Category</label><select value={form.category} onChange={e => setF('category', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></div>
               <div><label className="text-xs text-gray-500 mb-1 block">Unit</label><select value={form.unit} onChange={e => setF('unit', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">{UNITS.map(u => <option key={u}>{u}</option>)}</select></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">MRP (₹)</label><input type="number" value={form.mrp} onChange={e => setF('mrp', parseFloat(e.target.value) || 0)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Purchase Price (₹)</label><input type="number" value={form.purchase_price} onChange={e => setF('purchase_price', parseFloat(e.target.value) || 0)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Selling Price (₹)</label><input type="number" value={form.selling_price} onChange={e => setF('selling_price', parseFloat(e.target.value) || 0)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Current Stock</label><input type="number" value={form.current_stock} onChange={e => setF('current_stock', parseFloat(e.target.value) || 0)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Reorder Level</label><input type="number" value={form.reorder_level} onChange={e => setF('reorder_level', parseFloat(e.target.value) || 0)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
+              <div><label className="text-xs text-gray-500 mb-1 block">MRP (₹)</label><input type="number" min="0" value={form.mrp} onChange={e => setF('mrp', parseFloat(e.target.value) || 0)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
+              <div><label className="text-xs text-gray-500 mb-1 block">Purchase Price (₹)</label><input type="number" min="0" value={form.purchase_price} onChange={e => setF('purchase_price', parseFloat(e.target.value) || 0)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
+              <div><label className="text-xs text-gray-500 mb-1 block">Selling Price (₹)</label><input type="number" min="0" value={form.selling_price} onChange={e => setF('selling_price', parseFloat(e.target.value) || 0)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
+              <div><label className="text-xs text-gray-500 mb-1 block">Current Stock</label><input type="number" min="0" value={form.current_stock} onChange={e => setF('current_stock', parseFloat(e.target.value) || 0)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
+              <div><label className="text-xs text-gray-500 mb-1 block">Reorder Level</label><input type="number" min="0" value={form.reorder_level} onChange={e => setF('reorder_level', parseFloat(e.target.value) || 0)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" /></div>
             </div>
             <div className="flex gap-3 p-5 border-t">
               <button onClick={() => setShowModal(false)} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">Cancel</button>
@@ -535,17 +535,17 @@ function HwSales({ bunkId, products, customers, sales, onRefresh, showToast }: {
     }
 
     if (paymentMode === 'credit' && customerId) {
-      const cust = customers.find(c => c.id === customerId);
-      if (cust) {
-        const { error: custErr } = await supabase.from('hw_customers').update({ outstanding_amount: Number(cust.outstanding_amount) + total }).eq('id', customerId).eq('bunk_id', bunkId);
-        if (custErr) showToast('Sale recorded but credit outstanding not updated — refresh the page.', 'error');
-      }
+      // Fresh DB read to avoid stale-state race condition on concurrent credit sales
+      const { data: freshCust } = await supabase.from('hw_customers').select('outstanding_amount').eq('id', customerId).eq('bunk_id', bunkId).maybeSingle();
+      const baseOutstanding = freshCust ? Number(freshCust.outstanding_amount) : (Number(customers.find(c => c.id === customerId)?.outstanding_amount) || 0);
+      const { error: custErr } = await supabase.from('hw_customers').update({ outstanding_amount: baseOutstanding + total }).eq('id', customerId).eq('bunk_id', bunkId);
+      if (custErr) showToast('Sale recorded but credit outstanding not updated — refresh the page.', 'error');
     }
 
     showToast('Sale recorded!');
     setCart([]); setCustomerName('Walk-in'); setCustomerId(''); setNotes('');
     setSiteDelivery(false); setDeliveryAddress(''); setLabourCharges(0); setTransportCharges(0); setDiscount(0);
-    setPaymentMode('cash');
+    setPaymentMode('cash'); setSaleDate(getTodayIST());
     setSaving(false); onRefresh();
   }
 
@@ -777,7 +777,10 @@ function HwCustomers({ bunkId, customers, payments, onRefresh, showToast }: {
     const { error: pErr } = await supabase.from('hw_payments').insert(payRecord);
     if (pErr) { showToast(pErr.message, 'error'); setPayingSaving(false); return; }
 
-    const newOutstanding = Math.max(0, Number(payModal.outstanding_amount) - amt);
+    // Fresh read to avoid stale outstanding from modal state
+    const { data: freshPayCust } = await supabase.from('hw_customers').select('outstanding_amount').eq('id', payModal.id).eq('bunk_id', bunkId).maybeSingle();
+    const baseOutstanding = freshPayCust ? Number(freshPayCust.outstanding_amount) : Number(payModal.outstanding_amount);
+    const newOutstanding = Math.max(0, baseOutstanding - amt);
     await supabase.from('hw_customers').update({ outstanding_amount: newOutstanding, last_payment_date: today }).eq('id', payModal.id).eq('bunk_id', bunkId);
 
     setPayingSaving(false);
@@ -793,8 +796,10 @@ function HwCustomers({ bunkId, customers, payments, onRefresh, showToast }: {
       if (pmt?.customer_id) {
         const cust = customers.find(c => c.id === pmt.customer_id);
         if (cust) {
+          const { data: freshBounceCust } = await supabase.from('hw_customers').select('outstanding_amount').eq('id', cust.id).eq('bunk_id', bunkId).maybeSingle();
+          const baseAmt = freshBounceCust ? Number(freshBounceCust.outstanding_amount) : Number(cust.outstanding_amount);
           const { error: custErr } = await supabase.from('hw_customers')
-            .update({ outstanding_amount: Number(cust.outstanding_amount) + pmt.amount })
+            .update({ outstanding_amount: baseAmt + pmt.amount })
             .eq('id', cust.id).eq('bunk_id', bunkId);
           if (custErr) {
             showToast(`Cheque marked bounced but outstanding restore failed: ${custErr.message}`, 'error');
