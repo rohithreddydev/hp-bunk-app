@@ -15,7 +15,7 @@ import React, { useState, createContext, useContext, useEffect, useMemo, useCall
 import {
   Users, BookOpen, Sun, Receipt, Fuel, Search, ChevronLeft,
   BarChart3, Settings, LogOut, Plus, AlertCircle, CheckCircle2,
-  Download, X, Truck, Trash2, Edit2, Menu, Filter, ChevronDown, ChevronRight, Loader2, UploadCloud, MessageCircle, Calendar, TrendingUp, TrendingDown, Wallet, Activity, SearchX, Briefcase, Bell
+  Download, X, Truck, Trash2, Edit2, Menu, Filter, ChevronDown, ChevronRight, Loader2, UploadCloud, MessageCircle, Calendar, TrendingUp, TrendingDown, Wallet, Activity, SearchX, Briefcase, Bell, Brain
 } from 'lucide-react';
 
 // --- TIMEZONE UTILS (IST STRICT) ---
@@ -39,6 +39,7 @@ import { TextileApp } from './TextileApp';
 import { StationeryApp } from './StationeryApp';
 import { KiranaApp } from './KiranaApp';
 import { MedicalApp } from './MedicalApp';
+import { IntelligenceTab } from './IntelligenceTab';
 const rawUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
 const rawKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
 export const hasValidKeys = Boolean(rawUrl && rawKey && rawUrl !== 'undefined' && rawKey !== 'undefined');
@@ -3220,6 +3221,7 @@ const AppContent = () => {
     { id: 'morning', label: 'Morning Entry', icon: Sun, roles: ['owner', 'supervisor'] },
     { id: 'expenses', label: 'Expenses', icon: Receipt, roles: ['owner', 'supervisor'] },
     { id: 'reports', label: 'Reports', icon: TrendingUp, roles: ['owner'] },
+    { id: 'intelligence', label: 'AI Intelligence', icon: Brain, roles: ['owner'] },
     { id: 'settings', label: 'Settings', icon: Settings, roles: ['owner'] },
   ];
 
@@ -3256,6 +3258,7 @@ const AppContent = () => {
             {currentRoute === 'morning' && <MorningEntryForm />}
             {currentRoute === 'expenses' && <ExpenseModule />}
             {currentRoute === 'reports' && <MonthlyReports />}
+            {currentRoute === 'intelligence' && <IntelligenceTab bunkId={user.bunkId || ''} />}
             {currentRoute === 'settings' && <SettingsModule />}
           </div>
         </div>
