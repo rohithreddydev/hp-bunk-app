@@ -11,7 +11,9 @@ import {
   BarChart3, Store, Plus, Edit2, Trash2, X, Search, AlertTriangle,
   CheckCircle2, ChevronDown, Loader2, TrendingUp, TrendingDown,
   Wallet, DollarSign, Calendar, Filter,
+  Settings as SettingsIcon, LogOut,
 } from 'lucide-react';
+import { SettingsTab } from './SettingsTab';
 import { supabase } from './supabase';
 import { getTodayIST, formatISTDate } from './utils';
 
@@ -190,14 +192,14 @@ interface Expense {
   created_at: string;
 }
 
-type Tab = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'purchases' | 'expenses' | 'reports' | 'suppliers';
+type Tab = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'purchases' | 'expenses' | 'reports' | 'suppliers' | 'settings';
 
 const GST_OPTIONS = [0, 5, 12, 18, 28];
 const PAYMENT_MODES = ['cash', 'upi', 'card', 'bank_transfer', 'credit'];
 const EXPENSE_CATEGORIES = ['Rent', 'Electricity', 'Staff Salary', 'Transport', 'Repairs', 'Marketing', 'Taxes', 'Other'];
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export function OtherApp({ bunkId, bizType }: { bunkId: string; bizType: string }) {
+export function OtherApp({ bunkId, bizType, onLogout, user }: { bunkId: string; bizType: string; onLogout: () => void; user: { name: string; email: string; role: string } }) {
   const config = BIZ_CONFIG[bizType] ?? BIZ_CONFIG['general'];
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
 
@@ -255,6 +257,7 @@ export function OtherApp({ bunkId, bizType }: { bunkId: string; bizType: string 
     { id: 'expenses', label: 'Expenses', icon: <Receipt size={16} /> },
     { id: 'reports', label: 'Reports', icon: <BarChart3 size={16} /> },
     { id: 'suppliers', label: 'Suppliers', icon: <Store size={16} /> },
+    { id: 'settings', label: 'Settings', icon: <SettingsIcon size={16} /> },
   ];
 
   return (
@@ -266,6 +269,9 @@ export function OtherApp({ bunkId, bizType }: { bunkId: string; bizType: string 
           <h1 className="font-bold text-lg leading-tight">{config.name}</h1>
           <p className="text-indigo-200 text-xs">FuelDesk AI</p>
         </div>
+        <button onClick={onLogout} className="ml-auto p-2 rounded-lg hover:bg-white/20 transition" title="Sign Out">
+          <LogOut size={20} />
+        </button>
       </header>
 
       {/* Toast */}
@@ -375,6 +381,7 @@ export function OtherApp({ bunkId, bizType }: { bunkId: string; bizType: string 
                 showToast={showToast}
               />
             )}
+            {activeTab === 'settings' && <SettingsTab bunkId={bunkId} user={user} onLogout={onLogout} />}
           </>
         )}
       </main>

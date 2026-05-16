@@ -15,7 +15,7 @@ import React, { useState, createContext, useContext, useEffect, useMemo, useCall
 import {
   Users, BookOpen, Sun, Receipt, Fuel, Search, ChevronLeft,
   BarChart3, Settings, LogOut, Plus, AlertCircle, CheckCircle2,
-  Download, X, Truck, Trash2, Edit2, Menu, Filter, ChevronDown, ChevronRight, Loader2, UploadCloud, MessageCircle, Calendar, TrendingUp, TrendingDown, Wallet, Activity, SearchX, Briefcase, Bell
+  Download, X, Truck, Trash2, Edit2, Menu, Filter, ChevronDown, ChevronRight, Loader2, UploadCloud, MessageCircle, Calendar, TrendingUp, TrendingDown, Wallet, Activity, SearchX, Briefcase, Bell, Brain
 } from 'lucide-react';
 
 // --- TIMEZONE UTILS (IST STRICT) ---
@@ -39,6 +39,10 @@ import { AutoPartsApp } from './AutoPartsApp';
 import { AgricultureApp } from './AgricultureApp';
 import { TextileApp } from './TextileApp';
 import { StationeryApp } from './StationeryApp';
+import { KiranaApp } from './KiranaApp';
+import { MedicalApp } from './MedicalApp';
+import { LPGApp } from './LPGApp';
+import { IntelligenceTab } from './IntelligenceTab';
 const rawUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
 const rawKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
 export const hasValidKeys = Boolean(rawUrl && rawKey && rawUrl !== 'undefined' && rawKey !== 'undefined');
@@ -48,14 +52,14 @@ type Role = 'owner' | 'supervisor' | 'customer';
 interface User { id: string; name: string; email: string; role: Role; phone?: string; bunkId?: string; }
 interface Customer { id: string; category: string; companyName: string; ownerName?: string; phone: string; address?: string; paymentTerms?: string; driverName?: string; driverPhone?: string; vehicleNumbers?: string; creditLimit: number; status: 'Active' | 'Suspended' | 'Blocked'; pin: string; portalAccess: boolean; notifyOnCredit: boolean | null; }
 interface Transaction { id: string; customerId: string; type: 'credit_sale' | 'payment' | 'opening_balance' | 'advance'; date: string; product?: string; quantity?: number; rate?: number; amount: number; mode?: string; vehicleNumber?: string; remarks?: string; reference?: string; }
-interface MorningEntry { id: string; date: string; petrolDip: number; dieselDip: number; petrolSold: number; dieselSold: number; netProfit: number; variance: number; submitted: boolean; netValue: number; collectionsCash: number; balanceCash: number; collectionsBank: number; collectionsDigital: number; collectionDtp: number; collectionsCard: number; collectionsCredit: number; periodExpenses: number; balanceBank: number; balanceDigital: number; balanceOd: number; openingBalance?: number; }
+interface MorningEntry { id: string; date: string; petrolDip: number; dieselDip: number; petrolSold: number; dieselSold: number; netProfit: number; variance: number; submitted: boolean; netValue: number; collectionsCash: number; balanceCash: number; collectionsBank: number; collectionsDigital: number; collectionDtp: number; collectionsCard: number; collectionsCredit: number; periodExpenses: number; balanceBank: number; balanceDigital: number; balanceOd: number; openingBalance?: number; petrolRateAtEntry?: number; dieselRateAtEntry?: number; }
 interface Expense { id: string; date: string; category: string; amount: number; description: string; vendor: string; mode: string; }
 interface FuelPurchase { id: string; date: string; product: string; litres: number; rate: number; amount: number; supplier: string; invoice: string; mode: string; }
 
 interface AppContextType {
   user: User | null; dataLoading: boolean; unsavedForm: boolean; setUnsavedForm: (v: boolean) => void;
   login: (email: string, pass: string) => Promise<boolean>; loginCustomer: (phone: string, pin: string) => void;
-  signup: (data: { name: string, phone: string, bunkName: string, email: string, pass: string, fuelCompany: string }) => Promise<void>;
+  signup: (data: { name: string, phone: string, bunkName: string, email: string, pass: string, fuelCompany: string, bizType: string, drugLicense?: string, season?: string, cashInHand?: number, cashInBank?: number, stockValue?: number, customerReceivables?: number, supplierPayables?: number }) => Promise<void>;
   logout: () => void; currentRoute: string; setCurrentRoute: (r: string) => void; customerFilter: string; setCustomerFilter: (f: string) => void;
   customers: Customer[]; transactions: Transaction[]; morningEntries: MorningEntry[]; expenses: Expense[]; fuelPurchases: FuelPurchase[]; users: User[]; settings: any;
   addCustomer: (c: any) => Promise<string | null>; updateCustomer: (id: string, updates: any) => Promise<void>; deleteCustomer: (id: string) => Promise<void>;
@@ -236,6 +240,11 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           const b = bunkData[0];
           const cloudSettings = { bunkName: b.name || '', fuelCompany: b.fuel_company || '', petrolRate: Number(b.petrol_rate) || 0, dieselRate: Number(b.diesel_rate) || 0, monthlyBudget: Number(b.monthly_budget) || 0, odLimit: Number(b.od_limit) || 3000000, currentOdBalance: Number(b.current_od_balance) || 0, currentHpBalance: Number(b.current_hp_balance) || 0, initialPetrolDip: Number(settings?.initialPetrolDip) || 0, initialDieselDip: Number(settings?.initialDieselDip) || 0 };
           setSettings(cloudSettings); localStorage.setItem('app_settings', JSON.stringify(cloudSettings));
+          // Auto-sync biz_type from bunk record so module routing survives localStorage clears
+          if (b.biz_type && b.biz_type !== 'unknown') {
+            const existing = localStorage.getItem('app_biz_type');
+            if (!existing) localStorage.setItem('app_biz_type', b.biz_type);
+          }
         }
 
         if (custData) setCustomers(custData.map((d: any) => ({ id: String(d.id || ''), category: String(d.category || 'Other'), companyName: String(d.company_name || 'Unknown'), ownerName: String(d.owner_name || ''), address: String(d.address || ''), paymentTerms: String(d.payment_terms || 'Monthly'), phone: String(d.phone || ''), driverName: String(d.driver_name || ''), driverPhone: String(d.driver_phone || ''), vehicleNumbers: String(d.vehicle_numbers || ''), creditLimit: Number(d.credit_limit) || 0, status: String(d.status || 'Active'), pin: String(d.portal_pin || ''), portalAccess: Boolean(d.portal_access), notifyOnCredit: Boolean(d.notify_on_credit) })));
@@ -261,14 +270,15 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       collectionsBank: Number(d.collections_sbi) || 0, collectionsDigital: Number(d.collections_hppay) || 0,
       collectionDtp: Number(d.collections_dtp) || 0, collectionsCard: Number(d.collections_paytm) || 0,
       collectionsCredit: Number(d.collections_credit) || 0, periodExpenses: Number(d.period_expenses) || 0,
-      balanceBank: Number(d.balance_sbi) || 0, balanceDigital: Number(d.balance_hp) || 0, balanceOd: Number(d.balance_od) || 0
+      balanceBank: Number(d.balance_sbi) || 0, balanceDigital: Number(d.balance_hp) || 0, balanceOd: Number(d.balance_od) || 0,
+      petrolRateAtEntry: Number(d.petrol_rate_at_entry) || 0, dieselRateAtEntry: Number(d.diesel_rate_at_entry) || 0
     });
     const channel = supabase
       .channel(`bunk-realtime-${targetBunk}`)
       // Transactions
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'transactions', filter: `bunk_id=eq.${targetBunk}` }, (payload) => { const newTx = mapTx(payload.new); setTransactions(prev => { if (prev.some(t => t.id === newTx.id)) return prev; return [newTx, ...prev]; }); })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'transactions', filter: `bunk_id=eq.${targetBunk}` }, (payload) => { const updated = mapTx(payload.new); setTransactions(prev => prev.map(t => t.id === updated.id ? updated : t)); })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'transactions' }, (payload) => { setTransactions(prev => prev.filter(t => t.id !== String((payload.old as any).id))); })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'transactions', filter: `bunk_id=eq.${targetBunk}` }, (payload) => { setTransactions(prev => prev.filter(t => t.id !== String((payload.old as any).id))); })
       // Expenses
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'expenses', filter: `bunk_id=eq.${targetBunk}` }, (payload) => { const d = payload.new as any; const newExp = { id: String(d.id), date: String(d.date || getTodayIST()), category: d.category || 'Other', amount: Number(d.amount) || 0, description: d.description || '', vendor: d.vendor || '', mode: d.payment_mode || '' }; setExpenses(prev => { if (prev.some(e => e.id === newExp.id)) return prev; return [newExp, ...prev]; }); })
       // Morning Entries — bot saves dip/sold/collections via WhatsApp
@@ -282,7 +292,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'morning_entries', filter: `bunk_id=eq.${targetBunk}` }, (payload) => { const um = mapMorningEntry(payload.new); setMorningEntries(prev => prev.map(m => m.id === um.id ? um : m)); })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'morning_entries' }, (payload) => { setMorningEntries(prev => prev.filter(m => m.id !== String((payload.old as any).id))); })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'morning_entries', filter: `bunk_id=eq.${targetBunk}` }, (payload) => { setMorningEntries(prev => prev.filter(m => m.id !== String((payload.old as any).id))); })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [user?.id, user?.bunkId]);
@@ -299,7 +309,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return true;
   };
 
-  const signup = async (formData: { name: string, phone: string, bunkName: string, email: string, pass: string, fuelCompany: string }) => {
+  const signup = async (formData: { name: string, phone: string, bunkName: string, email: string, pass: string, fuelCompany: string, bizType: string, drugLicense?: string, season?: string, cashInHand?: number, cashInBank?: number, stockValue?: number, customerReceivables?: number, supplierPayables?: number }) => {
     const cleanEmail = formData.email.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return showAlert("Please enter a valid email address.");
     if (formData.pass.length < 6) return showAlert("Password must be at least 6 characters.");
@@ -313,12 +323,26 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
     const newBunkId = generateId();
     const trialEndsAt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+    const netWorth = (formData.cashInHand || 0) + (formData.cashInBank || 0) + (formData.stockValue || 0) + (formData.customerReceivables || 0) - (formData.supplierPayables || 0);
+    const defaultBizName: Record<string, string> = { fuel: 'My Fuel Station', kirana: 'My Kirana Store', medical: 'My Medical Shop', cement: 'My Cement Depot', hardware: 'My Hardware Shop', restaurant: 'My Restaurant', textile: 'My Textile Shop', auto_parts: 'My Auto Parts', agriculture: 'My Agro Shop', stationery: 'My Stationery', general: 'My Business' };
 
     await Promise.all([
       supabase.from('bunks').insert([{
-        id: newBunkId, name: formData.bunkName || 'My Fuel Station',
+        id: newBunkId,
+        name: formData.bunkName || defaultBizName[formData.bizType] || 'My Business',
         owner_name: formData.name, owner_phone: normalizedPhone,
-        fuel_company: formData.fuelCompany,
+        fuel_company: formData.bizType === 'fuel' ? formData.fuelCompany : null,
+        biz_type: formData.bizType || 'fuel',
+        opening_cash: formData.cashInHand || 0,
+        opening_bank: formData.cashInBank || 0,
+        opening_stock: formData.stockValue || 0,
+        opening_receivables: formData.customerReceivables || 0,
+        opening_payables: formData.supplierPayables || 0,
+        opening_net_worth: netWorth,
+        biz_metadata: {
+          drug_license: formData.drugLicense || null,
+          agriculture_season: formData.season || null,
+        },
         current_od_balance: 0, current_hp_balance: 0, od_limit: 3000000,
         subscription_plan: 'trial', trial_ends_at: trialEndsAt, is_active: true
       }]),
@@ -332,6 +356,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         webapp_user_id: authData.user.id
       }]),
     ]);
+
+    localStorage.setItem('app_biz_type', formData.bizType || 'fuel');
 
     if (!authData.session) {
       showAlert('Success! Please check your email inbox and click the verification link to log in.');
@@ -397,14 +423,14 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { error } = await supabase.from('customers').update({
       company_name: updates.companyName, owner_name: updates.ownerName, category: updates.category, phone: updates.phone, address: updates.address, payment_terms: updates.paymentTerms,
       credit_limit: updates.creditLimit, driver_name: updates.driverName, driver_phone: updates.driverPhone, vehicle_numbers: updates.vehicleNumbers
-    }).eq('id', id);
+    }).eq('id', id).eq('bunk_id', bId);
     if (error) return showAlert("Update Failed: " + error.message);
     setCustomers(customers.map(c => c.id === id ? { ...c, ...updates } : c)); showAlert("Customer details updated.");
   };
 
   const deleteCustomer = (id: string) => {
     showConfirm('Permanently delete this customer and all their transactions?', async () => {
-      const { error } = await supabase.from('customers').delete().eq('id', id);
+      const { error } = await supabase.from('customers').delete().eq('id', id).eq('bunk_id', bId);
       if (error) return showAlert("Delete Failed: " + error.message);
       setCustomers(customers.filter(c => c.id !== id));
       showAlert("Customer permanently removed.");
@@ -435,8 +461,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return true;
   };
 
-  const updateTransaction = async (id: string, updates: any) => { const { error } = await supabase.from('transactions').update({ customer_id: updates.customerId, type: updates.type, date: updates.date, product: updates.product, quantity: updates.quantity, amount: updates.amount, payment_mode: updates.mode, vehicle_number: updates.vehicleNumber, remarks: updates.remarks }).eq('id', id); if (error) return showAlert("Update Failed: " + error.message); setTransactions(transactions.map(t => t.id === id ? { ...t, ...updates } : t)); showAlert("Transaction updated."); };
-  const deleteTransaction = async (id: string) => { const { error } = await supabase.from('transactions').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setTransactions(transactions.filter(t => t.id !== id)); showAlert("Record deleted."); };
+  const updateTransaction = async (id: string, updates: any) => { const { error } = await supabase.from('transactions').update({ customer_id: updates.customerId, type: updates.type, date: updates.date, product: updates.product, quantity: updates.quantity, amount: updates.amount, payment_mode: updates.mode, vehicle_number: updates.vehicleNumber, remarks: updates.remarks }).eq('id', id).eq('bunk_id', bId); if (error) return showAlert("Update Failed: " + error.message); setTransactions(transactions.map(t => t.id === id ? { ...t, ...updates } : t)); showAlert("Transaction updated."); };
+  const deleteTransaction = async (id: string) => { const { error } = await supabase.from('transactions').delete().eq('id', id).eq('bunk_id', bId); if (error) return showAlert("Delete Failed: " + error.message); setTransactions(transactions.filter(t => t.id !== id)); showAlert("Record deleted."); };
 
   const addMorningEntry = async (e: any) => {
     // Guard against double-submission for the same date
@@ -470,6 +496,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       balance_od: e.balanceOd,
       balance_cash: e.balanceCash,
       bunk_net_value: e.netValue,
+      petrol_rate_at_entry: settings?.petrolRate || 0,
+      diesel_rate_at_entry: settings?.dieselRate || 0,
     };
     try {
       const resp = await fetch(`${supabaseUrl}/rest/v1/morning_entries`, {
@@ -527,10 +555,12 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       balance_od: updates.balanceOd,
       balance_cash: updates.balanceCash,
       bunk_net_value: updates.netValue,
+      petrol_rate_at_entry: settings?.petrolRate || 0,
+      diesel_rate_at_entry: settings?.dieselRate || 0,
     };
     try {
-      // PATCH to /morning_entries?id=eq.<id> — updates exactly that one row, never inserts.
-      const resp = await fetch(`${supabaseUrl}/rest/v1/morning_entries?id=eq.${id}`, {
+      // PATCH to /morning_entries?id=eq.<id>&bunk_id=eq.<bId> — scoped to this bunk (defense-in-depth beyond RLS).
+      const resp = await fetch(`${supabaseUrl}/rest/v1/morning_entries?id=eq.${id}&bunk_id=eq.${bId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -559,7 +589,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       showAlert('Update Failed (network): ' + err.message);
     }
   };
-  const deleteMorningEntry = async (id: string) => { const { error } = await supabase.from('morning_entries').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setMorningEntries(morningEntries.filter(m => m.id !== id)); showAlert("Morning entry deleted."); };
+  const deleteMorningEntry = async (id: string) => { const { error } = await supabase.from('morning_entries').delete().eq('id', id).eq('bunk_id', bId); if (error) return showAlert("Delete Failed: " + error.message); setMorningEntries(morningEntries.filter(m => m.id !== id)); showAlert("Morning entry deleted."); };
 
   const addExpense = async (e: any) => {
     const row: any = { bunk_id: bId, date: e.date, category: e.category, amount: e.amount };
@@ -571,8 +601,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     if (data && data.length > 0) setExpenses([{ ...e, id: data[0].id }, ...expenses]);
     showAlert("Expense recorded.");
   };
-  const updateExpense = async (id: string, updates: any) => { const { error } = await supabase.from('expenses').update({ date: updates.date, category: updates.category, amount: updates.amount, description: updates.description, vendor: updates.vendor }).eq('id', id); if (error) return showAlert("Update Failed: " + error.message); setExpenses(expenses.map(e => e.id === id ? { ...e, ...updates } : e)); showAlert("Expense updated."); };
-  const deleteExpense = async (id: string) => { const { error } = await supabase.from('expenses').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setExpenses(expenses.filter(e => e.id !== id)); showAlert("Expense deleted."); };
+  const updateExpense = async (id: string, updates: any) => { const { error } = await supabase.from('expenses').update({ date: updates.date, category: updates.category, amount: updates.amount, description: updates.description, vendor: updates.vendor }).eq('id', id).eq('bunk_id', bId); if (error) return showAlert("Update Failed: " + error.message); setExpenses(expenses.map(e => e.id === id ? { ...e, ...updates } : e)); showAlert("Expense updated."); };
+  const deleteExpense = async (id: string) => { const { error } = await supabase.from('expenses').delete().eq('id', id).eq('bunk_id', bId); if (error) return showAlert("Delete Failed: " + error.message); setExpenses(expenses.filter(e => e.id !== id)); showAlert("Expense deleted."); };
 
   const addFuelPurchase = async (purchases: any[]) => {
     const rows = purchases.map(f => {
@@ -601,12 +631,12 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       litres: updates.litres, rate: updates.rate, amount: updates.amount,
       supplier: updates.supplier || '', invoice: updates.invoice || '',
       payment_mode: updates.mode || 'Bank Transfer'
-    }).eq('id', id);
+    }).eq('id', id).eq('bunk_id', bId);
     if (error) return showAlert('Update Failed: ' + error.message);
     setFuelPurchases(fuelPurchases.map(f => f.id === id ? { ...f, ...updates } : f));
     showAlert('Fuel receipt updated.');
   };
-  const deleteFuelPurchase = async (id: string) => { const { error } = await supabase.from('fuel_purchases').delete().eq('id', id); if (error) return showAlert("Delete Failed: " + error.message); setFuelPurchases(fuelPurchases.filter(f => f.id !== id)); showAlert("Fuel record deleted."); };
+  const deleteFuelPurchase = async (id: string) => { const { error } = await supabase.from('fuel_purchases').delete().eq('id', id).eq('bunk_id', bId); if (error) return showAlert("Delete Failed: " + error.message); setFuelPurchases(fuelPurchases.filter(f => f.id !== id)); showAlert("Fuel record deleted."); };
 
   const addUser = async (u: any) => {
     const cleanEmail = u.email.trim().toLowerCase();
@@ -705,7 +735,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 ? (existing.vehicle_numbers.includes(vehicleNumbers) ? existing.vehicle_numbers : `${existing.vehicle_numbers}, ${vehicleNumbers}`)
                 : vehicleNumbers;
             }
-            if (Object.keys(updates).length > 0) { await supabase.from('customers').update(updates).eq('id', existing.id); updateCount++; }
+            if (Object.keys(updates).length > 0) { await supabase.from('customers').update(updates).eq('id', existing.id).eq('bunk_id', bId); updateCount++; }
           } else {
             const pin = Math.floor(1000 + Math.random() * 9000).toString();
             const newCustId = generateId();
@@ -796,12 +826,15 @@ const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
 
   const [tab, setTab] = useState<'staff' | 'customer'>('staff');
   const [view, setView] = useState<'login' | 'signup'>('login');
+  const [signupStep, setSignupStep] = useState<'basic' | 'networth'>('basic');
   const [loginEmail, setLoginEmail] = useState(''); const [loginPass, setLoginPass] = useState('');
   const [regName, setRegName] = useState(''); const [regPhone, setRegPhone] = useState(''); const [regBunk, setRegBunk] = useState(''); const [regFuelCompany, setRegFuelCompany] = useState('Generic'); const [regEmail, setRegEmail] = useState(''); const [regPass, setRegPass] = useState('');
+  const [regDrugLicense, setRegDrugLicense] = useState(''); const [regSeason, setRegSeason] = useState('Kharif');
+  const [regCash, setRegCash] = useState(''); const [regBank, setRegBank] = useState(''); const [regStock, setRegStock] = useState(''); const [regReceivables, setRegReceivables] = useState(''); const [regPayables, setRegPayables] = useState('');
   const [custPhone, setCustPhone] = useState(''); const [custPin, setCustPin] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const switchView = (newView: 'login' | 'signup') => { setLoginEmail(''); setLoginPass(''); setRegName(''); setRegPhone(''); setRegBunk(''); setRegEmail(''); setRegPass(''); setView(newView); };
+  const switchView = (newView: 'login' | 'signup') => { setLoginEmail(''); setLoginPass(''); setRegName(''); setRegPhone(''); setRegBunk(''); setRegEmail(''); setRegPass(''); setRegDrugLicense(''); setRegSeason('Kharif'); setRegCash(''); setRegBank(''); setRegStock(''); setRegReceivables(''); setRegPayables(''); setSignupStep('basic'); setView(newView); };
 
   const waNumber = (import.meta as any).env?.VITE_WHATSAPP_NUMBER || '917093578438';
   const selectLang = (l: string) => { localStorage.setItem('app_lang', l); setStep('biz'); };
@@ -908,18 +941,44 @@ const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
                   <div className="flex flex-col items-center mt-4 space-y-3 text-sm"><button type="button" onClick={() => showAlert("Please contact your station owner to reset your password.")} className="text-indigo-600 font-medium hover:underline">Forgot Password?</button><button type="button" onClick={() => switchView('signup')} className="text-gray-500 hover:text-gray-800 hover:underline">First time setup? Create Owner Account</button></div>
                 </form>
               )}
-              {tab === 'staff' && view === 'signup' && (
-                <form onSubmit={async (e) => { e.preventDefault(); setIsSubmitting(true); await signup({ name: regName, phone: regPhone, bunkName: regBunk, fuelCompany: regFuelCompany, email: regEmail, pass: regPass }); setIsSubmitting(false); }} className="space-y-4 animate-in fade-in slide-in-from-right-4 max-h-[60vh] overflow-y-auto pr-1" autoComplete="off">
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Owner Full Name</label><input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label><input type="tel" value={regPhone} onChange={e => setRegPhone(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Fuel Station Name</label><input type="text" value={regBunk} onChange={e => setRegBunk(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" placeholder="e.g., Highway Fuels" required /></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Fuel Brand / Company</label><select className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-base" value={regFuelCompany} onChange={e => setRegFuelCompany(e.target.value)}><option value="Generic">Independent / Generic</option><option>HPCL</option><option>IOCL</option><option>BPCL</option><option>Reliance</option><option>Nayara</option><option>Shell</option></select></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label><input type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Password (Min 6 chars)</label><input type="password" value={regPass} onChange={e => setRegPass(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required minLength={6} /></div>
-                  <button type="submit" disabled={isSubmitting} className="w-full bg-indigo-700 text-white p-3 rounded-lg font-bold hover:bg-indigo-800 transition mt-2 disabled:opacity-50">{isSubmitting ? 'Registering...' : 'Register & Setup'}</button>
-                  <div className="text-center mt-4"><button type="button" onClick={() => switchView('login')} className="text-sm text-gray-500 hover:text-gray-800 hover:underline">Already have an account? Login here</button></div>
-                </form>
-              )}
+              {tab === 'staff' && view === 'signup' && (() => {
+                const selBiz = localStorage.getItem('app_biz_type') || 'fuel';
+                const bizNameLabel: Record<string,string> = { fuel:'Fuel Station Name', kirana:'Store Name', medical:'Medical Shop Name', cement:'Shop / Depot Name', hardware:'Hardware Shop Name', restaurant:'Restaurant / Hotel Name', textile:'Shop Name', auto_parts:'Shop Name', agriculture:'Agro Shop Name', stationery:'Shop Name', general:'Business Name' };
+                const bizNamePlaceholder: Record<string,string> = { fuel:'e.g., Highway Fuels', kirana:'e.g., Sri Rama Kirana', medical:'e.g., Sri Medicals', cement:'e.g., Ravi Cement Depot', hardware:'e.g., Kumar Hardware', restaurant:'e.g., Hotel Srinivas', textile:'e.g., Sri Sai Textiles', auto_parts:'e.g., Auto World', agriculture:'e.g., Kissan Agro', stationery:'e.g., Sri Stationery', general:'e.g., My Business' };
+                const netWorthCalc = (Number(regCash)||0)+(Number(regBank)||0)+(Number(regStock)||0)+(Number(regReceivables)||0)-(Number(regPayables)||0);
+                const fmtNW = (n: number) => new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(n);
+                if (signupStep === 'basic') return (
+                  <form onSubmit={(e) => { e.preventDefault(); setSignupStep('networth'); }} className="space-y-4 animate-in fade-in slide-in-from-right-4 max-h-[60vh] overflow-y-auto pr-1" autoComplete="off">
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Owner Full Name</label><input type="text" value={regName} onChange={e => setRegName(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label><input type="tel" value={regPhone} onChange={e => setRegPhone(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">{bizNameLabel[selBiz] || 'Business Name'}</label><input type="text" value={regBunk} onChange={e => setRegBunk(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" placeholder={bizNamePlaceholder[selBiz] || 'e.g., My Business'} required /></div>
+                    {selBiz === 'fuel' && <div><label className="block text-sm font-medium text-gray-700 mb-1">Fuel Brand / Company</label><select className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-base" value={regFuelCompany} onChange={e => setRegFuelCompany(e.target.value)}><option value="Generic">Independent / Generic</option><option>HPCL</option><option>IOCL</option><option>BPCL</option><option>Reliance</option><option>Nayara</option><option>Shell</option></select></div>}
+                    {selBiz === 'medical' && <div><label className="block text-sm font-medium text-gray-700 mb-1">Drug License Number <span className="text-gray-400 text-xs">(optional)</span></label><input type="text" value={regDrugLicense} onChange={e => setRegDrugLicense(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" placeholder="e.g., DL/TG/2024/12345" /></div>}
+                    {selBiz === 'agriculture' && <div><label className="block text-sm font-medium text-gray-700 mb-1">Main Crop Season</label><select className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-base" value={regSeason} onChange={e => setRegSeason(e.target.value)}><option>Kharif</option><option>Rabi</option><option>Both</option><option>Year Round</option></select></div>}
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label><input type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required /></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Password (Min 6 chars)</label><input type="password" value={regPass} onChange={e => setRegPass(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" required minLength={6} /></div>
+                    <button type="submit" className="w-full bg-indigo-700 text-white p-3 rounded-lg font-bold hover:bg-indigo-800 transition mt-2">Continue → Net Worth Setup</button>
+                    <div className="text-center mt-4"><button type="button" onClick={() => switchView('login')} className="text-sm text-gray-500 hover:text-gray-800 hover:underline">Already have an account? Login here</button></div>
+                  </form>
+                );
+                return (
+                  <form onSubmit={async (e) => { e.preventDefault(); setIsSubmitting(true); await signup({ name: regName, phone: regPhone, bunkName: regBunk, fuelCompany: regFuelCompany, email: regEmail, pass: regPass, bizType: selBiz, drugLicense: regDrugLicense, season: regSeason, cashInHand: Number(regCash)||0, cashInBank: Number(regBank)||0, stockValue: Number(regStock)||0, customerReceivables: Number(regReceivables)||0, supplierPayables: Number(regPayables)||0 }); setIsSubmitting(false); }} className="space-y-3 animate-in fade-in slide-in-from-right-4 max-h-[62vh] overflow-y-auto pr-1" autoComplete="off">
+                    <p className="text-xs text-gray-500 text-center pb-1 border-b">Opening Balance — helps calculate your net worth. <span className="text-indigo-600 font-medium">You can skip all fields.</span></p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div><label className="block text-xs font-medium text-gray-600 mb-1">Cash in Hand (₹)</label><input type="number" min="0" value={regCash} onChange={e => setRegCash(e.target.value)} className="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm" placeholder="0" /></div>
+                      <div><label className="block text-xs font-medium text-gray-600 mb-1">Cash in Bank (₹)</label><input type="number" min="0" value={regBank} onChange={e => setRegBank(e.target.value)} className="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm" placeholder="0" /></div>
+                      <div><label className="block text-xs font-medium text-gray-600 mb-1">Stock Value (₹)</label><input type="number" min="0" value={regStock} onChange={e => setRegStock(e.target.value)} className="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm" placeholder="0" /></div>
+                      <div><label className="block text-xs font-medium text-gray-600 mb-1">Customer Dues (₹)</label><input type="number" min="0" value={regReceivables} onChange={e => setRegReceivables(e.target.value)} className="w-full p-2.5 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-sm" placeholder="0" /></div>
+                      <div className="col-span-2"><label className="block text-xs font-medium text-red-600 mb-1">Supplier Payables (₹) <span className="text-gray-400 font-normal">— subtracted</span></label><input type="number" min="0" value={regPayables} onChange={e => setRegPayables(e.target.value)} className="w-full p-2.5 border border-red-200 rounded-lg focus:ring-2 focus:ring-red-400 outline-none text-sm" placeholder="0" /></div>
+                    </div>
+                    <div className={`p-3 rounded-xl text-center font-bold text-lg border-2 ${netWorthCalc >= 0 ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                      Net Worth: {fmtNW(netWorthCalc)}
+                    </div>
+                    <button type="submit" disabled={isSubmitting} className="w-full bg-indigo-700 text-white p-3 rounded-lg font-bold hover:bg-indigo-800 transition disabled:opacity-50">{isSubmitting ? 'Registering...' : 'Complete Registration'}</button>
+                    <button type="button" onClick={() => setSignupStep('basic')} className="w-full text-sm text-gray-500 hover:text-gray-700 py-1">← Back to Basic Info</button>
+                  </form>
+                );
+              })()}
               {tab === 'customer' && (
                 <form onSubmit={(e) => { e.preventDefault(); if (!/^\d{10}$/.test(custPhone)) { showAlert('Registered Mobile Number must be exactly 10 digits.'); return; } loginCustomer(custPhone, custPin); }} className="space-y-4 animate-in fade-in">
                   <div><label className="block text-sm font-medium text-gray-700 mb-1">Registered Mobile Number</label><input type="tel" value={custPhone} onChange={e => setCustPhone(e.target.value)} className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none text-base" placeholder="10-digit number" required /></div>
@@ -1773,21 +1832,12 @@ const CreditLedger = () => {
     else { setTab('payment'); setAmount(t.amount.toString()); setPayMode(t.mode || 'Cash'); }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selCust) return;
-    if (tab === 'sale' && !amount && !advanceAmount) return showAlert("Please enter a sale amount or an advance amount.");
-    if (tab === 'payment' && !amount) return showAlert("Please enter a payment amount.");
-    const amtNum = Number(amount) || 0; const advNum = Number(advanceAmount) || 0; const qtyNum = Number(qty) || 0;
-    if (!validateInputs([amtNum, advNum], [qtyNum])) return;
+  const submitTransaction = async (amtNum: number, advNum: number, qtyNum: number) => {
     setIsSubmitting(true);
-
-    // ONE combined row: advance embedded in remarks as "advance:{amount}|{note}"
     const buildRemarks = (): string | undefined => {
       if (advNum > 0 && amtNum > 0) return `advance:${advNum}` + (advanceRemarks ? `|${advanceRemarks}` : '|');
       return advanceRemarks || undefined;
     };
-
     if (editId) {
       const existing = transactions.find(t => t.id === editId);
       if (!existing) { setIsSubmitting(false); return; }
@@ -1819,6 +1869,28 @@ const CreditLedger = () => {
       resetForm(tab === 'payment');
     }
     setIsSubmitting(false);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selCust) return;
+    if (tab === 'sale' && !amount && !advanceAmount) return showAlert("Please enter a sale amount or an advance amount.");
+    if (tab === 'payment' && !amount) return showAlert("Please enter a payment amount.");
+    const amtNum = Number(amount) || 0; const advNum = Number(advanceAmount) || 0; const qtyNum = Number(qty) || 0;
+    if (!validateInputs([amtNum, advNum], [qtyNum])) return;
+    // Credit limit check — warn if this sale would exceed the limit
+    if (tab === 'sale' && !editId && amtNum > 0 && (selectedCustomerData?.creditLimit || 0) > 0) {
+      const currentBal = getCustomerBalance(selCust);
+      const newBal = currentBal + amtNum + advNum;
+      if (newBal > (selectedCustomerData?.creditLimit || 0)) {
+        showConfirm(
+          `⚠️ Credit limit exceeded for ${selectedCustomerData?.companyName}.\n\nBalance: ₹${currentBal.toLocaleString('en-IN')} → ₹${newBal.toLocaleString('en-IN')} (Limit: ₹${(selectedCustomerData?.creditLimit || 0).toLocaleString('en-IN')})\n\nProceed anyway?`,
+          () => submitTransaction(amtNum, advNum, qtyNum)
+        );
+        return;
+      }
+    }
+    submitTransaction(amtNum, advNum, qtyNum);
   };
 
   const getRate = (prod: string) => (prod === 'Petrol' ? settings?.petrolRate || 0 : prod === 'Diesel' ? settings?.dieselRate || 0 : 0);
@@ -1978,7 +2050,7 @@ const CreditLedger = () => {
 
 // Morning Entry Module
 const MorningEntryForm = () => {
-  const { user, settings, expenses, addMorningEntry, updateMorningEntry, deleteMorningEntry, morningEntries, transactions, fuelPurchases, updateSettings, showConfirm, validateInputs, dataLoading, setUnsavedForm, customers, getCustomerBalanceAsOf } = useAppContext();
+  const { user, settings, expenses, addMorningEntry, updateMorningEntry, deleteMorningEntry, morningEntries, transactions, fuelPurchases, updateSettings, showAlert, showConfirm, validateInputs, dataLoading, setUnsavedForm, customers, getCustomerBalanceAsOf } = useAppContext();
   const [step, setStep] = useState(0); const [submitted, setSubmitted] = useState(false); const [editId, setEditId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -2026,9 +2098,9 @@ const MorningEntryForm = () => {
   useEffect(() => {
     if (step === 0 && !editId) {
       supabase.from('nozzle_readings').select('*').eq('bunk_id', user?.bunkId).eq('date', targetDate).single().then(({ data }: any) => {
-        if (data && data.entered_via === 'bot') {
+        if (data) {
           setNozzleForm({ p1: data.p1_reading?.toString() || '', p2: data.p2_reading?.toString() || '', d1: data.d1_reading?.toString() || '', d2: data.d2_reading?.toString() || '' });
-          setNozzleSynced(true);
+          setNozzleSynced(data.entered_via === 'bot');
         } else { setNozzleSynced(false); setNozzleForm({ p1: '', p2: '', d1: '', d2: '' }); }
       });
     }
@@ -2066,11 +2138,12 @@ const MorningEntryForm = () => {
     const p1 = Number(nozzleForm.p1) || 0; const p2 = Number(nozzleForm.p2) || 0; const d1 = Number(nozzleForm.d1) || 0; const d2 = Number(nozzleForm.d2) || 0;
     if (p1 > 0 || p2 > 0 || d1 > 0 || d2 > 0) {
       setIsSubmitting(true);
-      // Fix #20: check for upsert error and warn user so nozzle data loss is visible
-      const { error: nozzleErr } = await supabase.from('nozzle_readings').upsert(
-        { bunk_id: user?.bunkId, date: targetDate, p1_reading: p1, p2_reading: p2, d1_reading: d1, d2_reading: d2, entered_via: 'webapp' },
-        { onConflict: 'bunk_id,date' }
-      );
+      // Try update first; if no row exists, insert. This avoids needing a DB unique constraint.
+      const payload = { p1_reading: p1, p2_reading: p2, d1_reading: d1, d2_reading: d2, entered_via: 'webapp' };
+      const { data: existing } = await supabase.from('nozzle_readings').select('id').eq('bunk_id', user?.bunkId).eq('date', targetDate).maybeSingle();
+      const { error: nozzleErr } = existing
+        ? await supabase.from('nozzle_readings').update(payload).eq('id', existing.id).eq('bunk_id', user?.bunkId)
+        : await supabase.from('nozzle_readings').insert({ bunk_id: user?.bunkId, date: targetDate, ...payload });
       setIsSubmitting(false);
       if (nozzleErr) {
         showAlert(`⚠️ Nozzle readings could not be saved (${nozzleErr.message}). You can still proceed — dip-based calculation will be used.`);
@@ -2099,6 +2172,12 @@ const MorningEntryForm = () => {
     : Math.max(0, yesterdayDiesel - dDip);
 
   const petrolSalesVal = petrolSold * (settings?.petrolRate || 0); const dieselSalesVal = dieselSold * (settings?.dieselRate || 0); const totalSalesVal = petrolSalesVal + dieselSalesVal;
+
+  // Dip-based sales always computed (for nozzle vs dip comparison)
+  const dipPetrolSold = Math.max(0, yesterdayPetrol - pDip);
+  const dipDieselSold = Math.max(0, yesterdayDiesel - dDip);
+  const dipSalesVal = dipPetrolSold * (settings?.petrolRate || 0) + dipDieselSold * (settings?.dieselRate || 0);
+  const nozzleVsDipVariance = useNozzleBased ? totalSalesVal - dipSalesVal : null;
 
   const openingBal = Number(form.openingBalance) || 0;
   const totalCollected = (Number(form.cashRaw) || 0) + (Number(form.bankRaw) || 0) + (Number(form.digitalRaw) || 0) + (Number(form.dtpRaw) || 0) + (Number(form.cardRaw) || 0);
@@ -2273,7 +2352,24 @@ const MorningEntryForm = () => {
                 </div>
               </div>
 
-              <div className={`p-6 rounded-xl border flex justify-between items-center mt-6 shadow-sm ${variance < 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}><div><h4 className={`font-black text-lg ${variance < 0 ? 'text-red-800' : 'text-green-800'}`}>Reconciliation Status</h4><p className="text-sm opacity-80 mt-1">Total Accounted minus Theoretical Sales.</p></div><span className={`text-2xl md:text-3xl font-black whitespace-nowrap ml-4 ${variance < 0 ? 'text-red-600' : 'text-green-600'}`}>{variance < 0 ? '-' : '+'}{formatRs(Math.abs(variance))}</span></div>
+              <div className="space-y-3 mt-6">
+                <div className={`p-6 rounded-xl border flex justify-between items-center shadow-sm ${variance < 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
+                  <div>
+                    <h4 className={`font-black text-lg ${variance < 0 ? 'text-red-800' : 'text-green-800'}`}>Collection Variance {variance < 0 ? '⚠️ Short' : variance === 0 ? '✅ Balanced' : '✅ Surplus'}</h4>
+                    <p className="text-sm opacity-80 mt-1">{variance < 0 ? 'Short collection — cash/credit collected less than fuel dispensed.' : variance > 0 ? 'Surplus — more collected than fuel dispensed (over-collected).' : 'Perfect balance.'}</p>
+                  </div>
+                  <span className={`text-2xl md:text-3xl font-black whitespace-nowrap ml-4 ${variance < 0 ? 'text-red-600' : 'text-green-600'}`}>{variance < 0 ? '-' : '+'}{formatRs(Math.abs(variance))}</span>
+                </div>
+                {nozzleVsDipVariance !== null && (
+                  <div className={`p-6 rounded-xl border flex justify-between items-center shadow-sm ${Math.abs(nozzleVsDipVariance) > 500 ? 'bg-amber-50 border-amber-200' : 'bg-blue-50 border-blue-200'}`}>
+                    <div>
+                      <h4 className={`font-black text-lg ${Math.abs(nozzleVsDipVariance) > 500 ? 'text-amber-800' : 'text-blue-800'}`}>Nozzle vs Dip Variance</h4>
+                      <p className="text-sm opacity-80 mt-1">Nozzle-dispensed ({(petrolSold + dieselSold).toFixed(1)}L) vs Dip-measured ({(dipPetrolSold + dipDieselSold).toFixed(1)}L) stock difference.</p>
+                    </div>
+                    <span className={`text-2xl md:text-3xl font-black whitespace-nowrap ml-4 ${Math.abs(nozzleVsDipVariance) > 500 ? 'text-amber-600' : 'text-blue-600'}`}>{nozzleVsDipVariance < 0 ? '-' : '+'}{formatRs(Math.abs(nozzleVsDipVariance))}</span>
+                  </div>
+                )}
+              </div>
 
               {/* EXPLICIT NET WORTH PREVIEW (OWNER ONLY) */}
               {userRole === 'owner' && (
@@ -2313,12 +2409,12 @@ const MorningEntryForm = () => {
         <div className="p-5 border-b bg-gray-50"><h3 className="font-bold text-gray-800">Ledger History</h3></div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-white border-b"><tr><th className="p-4 text-gray-500 whitespace-nowrap">Date</th><th className="p-4 text-gray-500 whitespace-nowrap">Gross Sales</th><th className="p-4 text-gray-500 whitespace-nowrap">Remitted</th><th className="p-4 text-gray-500 whitespace-nowrap">Credit Extended</th><th className="p-4 text-gray-500 whitespace-nowrap">Status</th>{userRole === 'owner' && <th className="p-4 text-gray-500 text-center whitespace-nowrap">Actions</th>}</tr></thead>
+            <thead className="bg-white border-b"><tr><th className="p-4 text-gray-500 whitespace-nowrap">Date</th><th className="p-4 text-gray-500 whitespace-nowrap">Gross Sales</th><th className="p-4 text-gray-500 whitespace-nowrap">Remitted</th><th className="p-4 text-gray-500 whitespace-nowrap">Credit Extended</th><th className="p-4 text-gray-500 whitespace-nowrap">Collection Variance</th>{userRole === 'owner' && <th className="p-4 text-gray-500 text-center whitespace-nowrap">Actions</th>}</tr></thead>
             <tbody className="divide-y divide-gray-100">
               {paginatedEntries.length === 0 ? (<tr><td colSpan={6} className="p-10 flex flex-col items-center justify-center text-gray-400"><SearchX size={32} className="mb-2 opacity-50" />No past entries.</td></tr>) : paginatedEntries.map((e, idx) => (
                 <tr key={e.id || `entry-${idx}`} className={`hover:bg-gray-50 transition ${editId === e.id ? 'bg-blue-50/50' : ''}`}>
                   <td className="p-4 whitespace-nowrap font-medium">{formatISTDate(e.date)}</td>
-                  <td className="p-4 whitespace-nowrap">{formatRs(e.petrolSold * (settings.petrolRate || 0) + e.dieselSold * (settings.dieselRate || 0))}</td>
+                  <td className="p-4 whitespace-nowrap">{formatRs(e.petrolSold * (e.petrolRateAtEntry || settings.petrolRate || 0) + e.dieselSold * (e.dieselRateAtEntry || settings.dieselRate || 0))}</td>
                   <td className="p-4 whitespace-nowrap text-gray-600">{formatRs(((e.collectionsCash || 0) - (e.openingBalance || 0)) + (e.collectionsBank || 0) + (e.collectionsDigital || 0) + (e.collectionDtp || 0) + (e.collectionsCard || 0))}</td>
                   <td className="p-4 whitespace-nowrap text-orange-600 font-medium">{(() => {
                     // Compute credit extended for this entry's date range dynamically
@@ -2616,7 +2712,7 @@ const MonthlyReports = () => {
   const monthExp = expenses.filter(e => e.date?.startsWith(selectedMonth));
   const monthFuel = fuelPurchases.filter(f => f.date?.startsWith(selectedMonth));
 
-  const grossSalesRs = monthEntries.reduce((s, e) => s + (e.petrolSold || 0) * (settings?.petrolRate || 0) + (e.dieselSold || 0) * (settings?.dieselRate || 0), 0);
+  const grossSalesRs = monthEntries.reduce((s, e) => s + (e.petrolSold || 0) * (e.petrolRateAtEntry || settings?.petrolRate || 0) + (e.dieselSold || 0) * (e.dieselRateAtEntry || settings?.dieselRate || 0), 0);
   const creditSales = monthTx.filter(t => t.type === 'credit_sale').reduce((s, t) => s + (t.amount || 0), 0);
   const paymentsRec = monthTx.filter(t => t.type === 'payment').reduce((s, t) => s + (t.amount || 0), 0);
   const totalExpenses = monthExp.reduce((s, e) => s + (e.amount || 0), 0);
@@ -2697,7 +2793,7 @@ const MonthlyReports = () => {
                   <td className="p-3 font-medium">{formatISTDate(e.date)}</td>
                   <td className="p-3 text-right">{(e.petrolSold || 0).toFixed(0)}</td>
                   <td className="p-3 text-right">{(e.dieselSold || 0).toFixed(0)}</td>
-                  <td className="p-3 text-right font-bold">{formatRs((e.petrolSold || 0) * (settings?.petrolRate || 0) + (e.dieselSold || 0) * (settings?.dieselRate || 0))}</td>
+                  <td className="p-3 text-right font-bold">{formatRs((e.petrolSold || 0) * (e.petrolRateAtEntry || settings?.petrolRate || 0) + (e.dieselSold || 0) * (e.dieselRateAtEntry || settings?.dieselRate || 0))}</td>
                   <td className={`p-3 text-right font-bold ${(e.variance || 0) < 0 ? 'text-red-600' : 'text-green-600'}`}>{(e.variance || 0) < 0 ? '-' : '+'}{formatRs(Math.abs(e.variance || 0))}</td>
                 </tr>
               ))}
@@ -3225,19 +3321,21 @@ const AppContent = () => {
   if (!user) return <LandingScreen onPrivacy={() => setCurrentRoute('privacy')} />;
   if (user.role === 'customer') return <CustomerPortalView />;
   // Fix #21: validate bizType against whitelist to prevent XSS-injected localStorage values routing to wrong module
-  const VALID_BIZ_TYPES = ['fuel','cement','hardware','restaurant','auto_parts','agriculture','textile','stationery','kirana','medical','general'];
+  const VALID_BIZ_TYPES = ['fuel','cement','hardware','restaurant','auto_parts','agriculture','textile','stationery','kirana','medical','general','lpg_gas_agency'];
   const _rawBizType = localStorage.getItem('app_biz_type') || '';
   const bizType = VALID_BIZ_TYPES.includes(_rawBizType) ? _rawBizType : 'fuel';
-  if (bizType === 'cement') return <CementApp bunkId={user.bunkId || ''} />;
-  if (bizType === 'hardware') return <HardwareApp bunkId={user.bunkId || ''} />;
-  if (bizType === 'restaurant') return <RestaurantApp bunkId={user.bunkId || ''} />;
-  if (bizType === 'auto_parts') return <AutoPartsApp bunkId={user.bunkId || ''} />;
-  if (bizType === 'agriculture') return <AgricultureApp bunkId={user.bunkId || ''} />;
-  if (bizType === 'textile') return <TextileApp bunkId={user.bunkId || ''} />;
-  if (bizType === 'stationery') return <StationeryApp bunkId={user.bunkId || ''} />;
-  // kirana, medical, general → generic OtherApp
-  const OTHER_BIZ_TYPES = ['kirana', 'medical', 'general'];
-  if (OTHER_BIZ_TYPES.includes(bizType)) return <OtherApp bunkId={user.bunkId || ''} bizType={bizType} />;
+  const _moduleUser = { name: user.name, email: user.email, role: user.role };
+  if (bizType === 'cement') return <CementApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'hardware') return <HardwareApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'restaurant') return <RestaurantApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'auto_parts') return <AutoPartsApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'agriculture') return <AgricultureApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'textile') return <TextileApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'stationery') return <StationeryApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'kirana') return <KiranaApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'medical') return <MedicalApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'lpg_gas_agency') return <LPGApp bunkId={user.bunkId || ''} onLogout={logout} user={_moduleUser} />;
+  if (bizType === 'general') return <OtherApp bunkId={user.bunkId || ''} bizType={bizType} onLogout={logout} user={_moduleUser} />;
 
   const userRole = String(user.role || 'supervisor').toLowerCase();
 
@@ -3249,6 +3347,7 @@ const AppContent = () => {
     { id: 'morning', label: 'Morning Entry', icon: Sun, roles: ['owner', 'supervisor'] },
     { id: 'expenses', label: 'Expenses', icon: Receipt, roles: ['owner', 'supervisor'] },
     { id: 'reports', label: 'Reports', icon: TrendingUp, roles: ['owner'] },
+    { id: 'intelligence', label: 'AI Intelligence', icon: Brain, roles: ['owner'] },
     { id: 'settings', label: 'Settings', icon: Settings, roles: ['owner'] },
   ];
 
@@ -3285,6 +3384,7 @@ const AppContent = () => {
             {currentRoute === 'morning' && <MorningEntryForm />}
             {currentRoute === 'expenses' && <ExpenseModule />}
             {currentRoute === 'reports' && <MonthlyReports />}
+            {currentRoute === 'intelligence' && <IntelligenceTab bunkId={user.bunkId || ''} />}
             {currentRoute === 'settings' && <SettingsModule />}
           </div>
         </div>

@@ -2,6 +2,8 @@
   "name": "smartbizai",
   "private": true,
   "version": "1.0.0",
+  "description": "SmartBiz AI — All-in-one AI business manager for retail, hardware, fuel, kirana, and more",
+  "homepage": "https://app.smartbizai.in",
   "type": "module",
   "scripts": {
     "dev": "vite",

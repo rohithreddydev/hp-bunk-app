@@ -7,8 +7,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   LayoutDashboard, Package, ShoppingCart, Users, Truck, Receipt,
   Plus, Edit2, X, Search, AlertTriangle, CheckCircle2, Loader2,
-  TrendingUp, TrendingDown,
+  TrendingUp, TrendingDown, Wallet,
+  Settings as SettingsIcon, LogOut,
 } from 'lucide-react';
+import { SettingsTab } from './SettingsTab';
 import { supabase } from './supabase';
 import { getTodayIST, formatISTDate } from './utils';
 
@@ -27,7 +29,7 @@ interface MenuItem {
 }
 interface Customer {
   id: string; bunk_id: string; name: string; phone: string;
-  outstanding_amount: number; is_active: boolean; created_at: string;
+  credit_limit: number; outstanding_amount: number; is_active: boolean; created_at: string;
 }
 interface RstOrder {
   id: string; bunk_id: string; customer_id: string | null; customer_name: string;
@@ -45,10 +47,10 @@ interface Expense {
 }
 interface CartItem { item: MenuItem; quantity: number; }
 
-type Tab = 'dashboard' | 'menu' | 'orders' | 'customers' | 'purchases' | 'expenses';
+type Tab = 'dashboard' | 'menu' | 'orders' | 'customers' | 'purchases' | 'expenses' | 'settings';
 
 // ─── Main Component ────────────────────────────────────────────────────────────
-export function RestaurantApp({ bunkId }: { bunkId: string }) {
+export function RestaurantApp({ bunkId, onLogout, user }: { bunkId: string; onLogout: () => void; user: { name: string; email: string; role: string } }) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -89,6 +91,7 @@ export function RestaurantApp({ bunkId }: { bunkId: string }) {
   const dineInCount = todayOrders.filter(o => o.order_type === 'Dine In').length;
   const takeawayCount = todayOrders.filter(o => o.order_type === 'Takeaway').length;
   const deliveryCount = todayOrders.filter(o => o.order_type === 'Delivery').length;
+  const totalCreditOutstanding = customers.reduce((a, c) => a + (Number(c.outstanding_amount) || 0), 0);
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
@@ -97,6 +100,7 @@ export function RestaurantApp({ bunkId }: { bunkId: string }) {
     { id: 'customers', label: 'Customers', icon: <Users size={16} /> },
     { id: 'purchases', label: 'Purchases', icon: <Truck size={16} /> },
     { id: 'expenses', label: 'Expenses', icon: <Receipt size={16} /> },
+    { id: 'settings', label: 'Settings', icon: <SettingsIcon size={16} /> },
   ];
 
   return (
@@ -107,6 +111,9 @@ export function RestaurantApp({ bunkId }: { bunkId: string }) {
           <h1 className="font-bold text-lg leading-tight">Restaurant</h1>
           <p className="text-red-200 text-xs">FuelDesk AI</p>
         </div>
+        <button onClick={onLogout} className="ml-auto p-2 rounded-lg hover:bg-white/20 transition" title="Sign Out">
+          <LogOut size={20} />
+        </button>
       </header>
 
       {toast && (
@@ -132,12 +139,13 @@ export function RestaurantApp({ bunkId }: { bunkId: string }) {
           <div className="flex justify-center items-center h-64"><Loader2 className="animate-spin text-red-600" size={32} /></div>
         ) : (
           <>
-            {activeTab === 'dashboard' && <RstDashboard todayRevenue={todayRevenue} todayOrdersCount={todayOrders.length} todayExpTotal={todayExpTotal} dineInCount={dineInCount} takeawayCount={takeawayCount} deliveryCount={deliveryCount} recentOrders={orders.slice(0, 8)} />}
+            {activeTab === 'dashboard' && <RstDashboard todayRevenue={todayRevenue} todayOrdersCount={todayOrders.length} todayExpTotal={todayExpTotal} dineInCount={dineInCount} takeawayCount={takeawayCount} deliveryCount={deliveryCount} recentOrders={orders.slice(0, 8)} totalCreditOutstanding={totalCreditOutstanding} />}
             {activeTab === 'menu' && <RstMenu bunkId={bunkId} menuItems={menuItems} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'orders' && <RstOrders bunkId={bunkId} menuItems={menuItems} customers={customers} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'customers' && <RstCustomers bunkId={bunkId} customers={customers} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'purchases' && <RstPurchases bunkId={bunkId} purchases={purchases} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'expenses' && <RstExpenses bunkId={bunkId} expenses={expenses} onRefresh={fetchAll} showToast={showToast} />}
+            {activeTab === 'settings' && <SettingsTab bunkId={bunkId} user={user} onLogout={onLogout} />}
           </>
         )}
       </main>
@@ -146,19 +154,20 @@ export function RestaurantApp({ bunkId }: { bunkId: string }) {
 }
 
 // ─── Dashboard ─────────────────────────────────────────────────────────────────
-function RstDashboard({ todayRevenue, todayOrdersCount, todayExpTotal, dineInCount, takeawayCount, deliveryCount, recentOrders }: {
+function RstDashboard({ todayRevenue, todayOrdersCount, todayExpTotal, dineInCount, takeawayCount, deliveryCount, recentOrders, totalCreditOutstanding }: {
   todayRevenue: number; todayOrdersCount: number; todayExpTotal: number;
-  dineInCount: number; takeawayCount: number; deliveryCount: number; recentOrders: RstOrder[];
+  dineInCount: number; takeawayCount: number; deliveryCount: number; recentOrders: RstOrder[]; totalCreditOutstanding: number;
 }) {
   const kpis = [
     { label: "Today's Revenue", value: inr(todayRevenue), icon: <TrendingUp size={20} />, color: 'bg-green-50 text-green-700 border-green-200' },
     { label: "Today's Orders", value: String(todayOrdersCount), icon: <ShoppingCart size={20} />, color: 'bg-orange-50 text-orange-700 border-orange-200' },
     { label: "Today's Expenses", value: inr(todayExpTotal), icon: <TrendingDown size={20} />, color: 'bg-red-50 text-red-700 border-red-200' },
     { label: 'Avg Order Value', value: inr(todayOrdersCount > 0 ? todayRevenue / todayOrdersCount : 0), icon: <Receipt size={20} />, color: 'bg-blue-50 text-blue-700 border-blue-200' },
+    { label: 'Credit Outstanding', value: inr(totalCreditOutstanding), icon: <Wallet size={20} />, color: 'bg-amber-50 text-amber-700 border-amber-200' },
   ];
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {kpis.map(k => (
           <div key={k.label} className={`rounded-xl border p-4 ${k.color}`}>
             <div className="flex items-center justify-between mb-2"><span className="text-sm font-medium opacity-80">{k.label}</span>{k.icon}</div>
@@ -193,6 +202,24 @@ function RstDashboard({ todayRevenue, todayOrdersCount, todayExpTotal, dineInCou
               ))}
             </div>
           )}
+        </div>
+      </div>
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <h2 className="font-semibold text-gray-700 mb-3 flex items-center gap-2"><CheckCircle2 size={16} className="text-green-600" /> Today's Checklist</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {[
+            { done: todayOrdersCount > 0, text: "Record today's orders" },
+            { done: todayExpTotal > 0, text: "Add today's expenses" },
+            { done: totalCreditOutstanding === 0, text: `Collect credit payments${totalCreditOutstanding > 0 ? ` (${inr(totalCreditOutstanding)} due)` : ''}` },
+            { done: (dineInCount + takeawayCount + deliveryCount) > 0, text: 'Check all order types covered' },
+          ].map((item, i) => (
+            <div key={i} className="flex items-center gap-2.5 p-2.5 rounded-lg bg-gray-50">
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${item.done ? 'bg-green-100' : 'bg-yellow-100'}`}>
+                {item.done ? <CheckCircle2 size={12} className="text-green-600" /> : <AlertTriangle size={12} className="text-yellow-600" />}
+              </div>
+              <span className={`text-sm leading-tight ${item.done ? 'line-through text-gray-400' : 'text-gray-700'}`}>{item.text}</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -326,7 +353,8 @@ function RstOrders({ bunkId, menuItems, customers, onRefresh, showToast }: { bun
   async function handleOrder() {
     if (cart.length === 0) { showToast('No items in order', 'error'); return; }
     setSaving(true);
-    const customerName = customerId ? customers.find(c => c.id === customerId)?.name || 'Guest' : 'Guest';
+    const cust = customerId ? customers.find(c => c.id === customerId) : null;
+    const customerName = cust?.name || 'Guest';
     const { data: order, error } = await supabase.from('rst_orders').insert({
       bunk_id: bunkId, customer_id: customerId || null, customer_name: customerName,
       order_type: orderType, table_number: tableNumber, sale_date: saleDate,
@@ -338,8 +366,13 @@ function RstOrders({ bunkId, menuItems, customers, onRefresh, showToast }: { bun
       order_id: order.id, bunk_id: bunkId, menu_item_id: ci.item.id,
       item_name: ci.item.name, quantity: ci.quantity, unit_price: ci.item.price, total_price: ci.item.price * ci.quantity,
     })));
+    if (paymentMode === 'credit' && cust) {
+      const { data: freshCust } = await supabase.from('rst_customers').select('outstanding_amount').eq('id', cust.id).eq('bunk_id', bunkId).maybeSingle();
+      const base = freshCust ? Number(freshCust.outstanding_amount) : Number(cust.outstanding_amount || 0);
+      await supabase.from('rst_customers').update({ outstanding_amount: base + total }).eq('id', cust.id).eq('bunk_id', bunkId);
+    }
     showToast('Order placed!');
-    setCart([]); setTableNumber(''); setNotes('');
+    setCart([]); setTableNumber(''); setNotes(''); setSaleDate(getTodayIST());
     setSaving(false); onRefresh();
   }
 
@@ -418,18 +451,39 @@ function RstOrders({ bunkId, menuItems, customers, onRefresh, showToast }: { bun
 function RstCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: string; customers: Customer[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; }) {
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ name: '', phone: '' });
+  const [form, setForm] = useState({ name: '', phone: '', credit_limit: 0 });
   const [saving, setSaving] = useState(false);
+  const [payModal, setPayModal] = useState<Customer | null>(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [payMode, setPayMode] = useState('cash');
+  const [payingSaving, setPayingSaving] = useState(false);
 
   const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search));
 
   async function handleSave() {
     if (!form.name.trim()) { showToast('Name required', 'error'); return; }
     setSaving(true);
-    const { error } = await supabase.from('rst_customers').insert({ ...form, bunk_id: bunkId, is_active: true });
+    const { error } = await supabase.from('rst_customers').insert({ name: form.name, phone: form.phone, credit_limit: form.credit_limit, bunk_id: bunkId, is_active: true });
     setSaving(false);
     if (error) { showToast(error.message, 'error'); return; }
-    showToast('Customer added'); setShowModal(false); setForm({ name: '', phone: '' }); onRefresh();
+    showToast('Customer added'); setShowModal(false); setForm({ name: '', phone: '', credit_limit: 0 }); onRefresh();
+  }
+
+  async function handleCollectPayment() {
+    if (!payModal) return;
+    const amt = parseFloat(payAmount);
+    if (!amt || amt <= 0) { showToast('Enter a valid amount', 'error'); return; }
+    setPayingSaving(true);
+    await supabase.from('rst_payments').insert({
+      bunk_id: bunkId, customer_id: payModal.id, customer_name: payModal.name,
+      amount: amt, payment_mode: payMode, payment_date: getTodayIST(),
+    });
+    const { data: freshC } = await supabase.from('rst_customers').select('outstanding_amount').eq('id', payModal.id).eq('bunk_id', bunkId).maybeSingle();
+    const base = freshC ? Number(freshC.outstanding_amount) : Number(payModal.outstanding_amount);
+    const { error } = await supabase.from('rst_customers').update({ outstanding_amount: Math.max(0, base - amt) }).eq('id', payModal.id).eq('bunk_id', bunkId);
+    setPayingSaving(false);
+    if (error) { showToast(error.message, 'error'); return; }
+    showToast('Payment collected'); setPayModal(null); setPayAmount(''); onRefresh();
   }
 
   return (
@@ -445,15 +499,16 @@ function RstCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: str
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
-              <tr><th className="px-4 py-3 text-left">Name</th><th className="px-4 py-3 text-left">Phone</th><th className="px-4 py-3 text-right">Outstanding</th></tr>
+              <tr><th className="px-4 py-3 text-left">Name</th><th className="px-4 py-3 text-left">Phone</th><th className="px-4 py-3 text-right">Outstanding</th><th className="px-4 py-3 text-right">Action</th></tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && <tr><td colSpan={3} className="text-center py-10 text-gray-400">No customers found.</td></tr>}
+              {filtered.length === 0 && <tr><td colSpan={4} className="text-center py-10 text-gray-400">No customers found.</td></tr>}
               {filtered.map(c => (
                 <tr key={c.id} className="border-t border-gray-100 hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-800">{c.name}</td>
                   <td className="px-4 py-3 text-gray-600">{c.phone || '—'}</td>
                   <td className="px-4 py-3 text-right"><span className={`font-semibold ${c.outstanding_amount > 0 ? 'text-orange-600' : 'text-gray-500'}`}>{inr(c.outstanding_amount)}</span></td>
+                  <td className="px-4 py-3 text-right">{c.outstanding_amount > 0 && <button onClick={() => { setPayModal(c); setPayAmount(''); setPayMode('cash'); }} className="bg-orange-500 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-orange-600 font-medium">Collect</button>}</td>
                 </tr>
               ))}
             </tbody>
@@ -467,10 +522,28 @@ function RstCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: str
             <div className="p-5 space-y-3">
               <div><label className="text-xs text-gray-500 mb-1 block">Name *</label><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400" /></div>
               <div><label className="text-xs text-gray-500 mb-1 block">Phone</label><input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+              <div><label className="text-xs text-gray-500 mb-1 block">Credit Limit (₹)</label><input type="number" min="0" value={form.credit_limit} onChange={e => setForm(f => ({ ...f, credit_limit: Number(e.target.value) }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
             </div>
             <div className="flex gap-3 p-5 border-t">
               <button onClick={() => setShowModal(false)} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">Cancel</button>
               <button onClick={handleSave} disabled={saving} className="flex-1 bg-red-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-60">{saving ? 'Saving…' : 'Save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {payModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
+            <div className="flex items-center justify-between p-5 border-b"><h2 className="text-lg font-semibold">Collect Payment</h2><button onClick={() => setPayModal(null)}><X size={20} /></button></div>
+            <div className="p-5 space-y-3">
+              <p className="text-sm text-gray-600">Customer: <span className="font-semibold">{payModal.name}</span></p>
+              <p className="text-sm text-orange-600 font-medium">Outstanding: {inr(payModal.outstanding_amount)}</p>
+              <div><label className="text-xs text-gray-500 mb-1 block">Amount Received (₹) *</label><input type="number" min="1" max={payModal.outstanding_amount} value={payAmount} onChange={e => setPayAmount(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" placeholder="Enter amount" autoFocus /></div>
+              <div><label className="text-xs text-gray-500 mb-1 block">Payment Mode</label><select value={payMode} onChange={e => setPayMode(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">{['cash','upi','card','cheque'].map(m => <option key={m}>{m}</option>)}</select></div>
+            </div>
+            <div className="flex gap-3 p-5 border-t">
+              <button onClick={() => setPayModal(null)} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">Cancel</button>
+              <button onClick={handleCollectPayment} disabled={payingSaving} className="flex-1 bg-orange-500 text-white py-2 rounded-lg text-sm font-medium hover:bg-orange-600 disabled:opacity-60">{payingSaving ? 'Saving…' : 'Confirm Payment'}</button>
             </div>
           </div>
         </div>

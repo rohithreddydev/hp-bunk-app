@@ -1,318 +1,657 @@
-// ═══════════════════════════════════════════════════════════════════════════
-// FuelDesk AI — Agriculture / Seeds Module
-// Green theme — ag_ Supabase tables
-// ═══════════════════════════════════════════════════════════════════════════
+import { useState, useEffect, useCallback } from 'react';
+import { createClient } from '@supabase/supabase-js';
+import { LogOut, Plus, Trash2, Search, RefreshCw, AlertTriangle, TrendingUp, Package, Users, ShoppingCart, FileText, BarChart2, Settings } from 'lucide-react';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  LayoutDashboard, Package, ShoppingCart, Users, Truck, Receipt,
-  Plus, Edit2, Trash2, X, Search, AlertTriangle, CheckCircle2,
-  Loader2, TrendingUp, TrendingDown, Wallet,
-} from 'lucide-react';
-import { supabase } from './supabase';
-import { getTodayIST, formatISTDate } from './utils';
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
 
-function inr(n: number | null | undefined): string {
-  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(Number(n) || 0);
+// ── Types ──────────────────────────────────────────────────────────────────
+interface AgProduct { id: string; bunk_id: string; name: string; category: string; unit: string; purchase_rate: number; selling_rate: number; stock_qty: number; low_stock_at: number; hsn_code: string; created_at: string; }
+interface AgCustomer { id: string; bunk_id: string; name: string; phone: string; village: string; land_area: string; credit_limit: number; outstanding_amount: number; is_active: boolean; last_payment_date: string | null; created_at: string; }
+interface AgSale { id: string; bunk_id: string; date: string; customer_id: string | null; customer_name: string; items: { name: string; qty: number; unit: string; rate: number; total: number }[]; subtotal: number; discount: number; total: number; payment_mode: string; notes: string; created_at: string; }
+interface AgPayment { id: string; bunk_id: string; customer_id: string | null; customer_name: string; amount: number; payment_mode: string; payment_date: string; notes: string | null; created_at: string; }
+interface AgPurchase { id: string; bunk_id: string; date: string; supplier_name: string; product_name: string; category: string; quantity: number; unit: string; rate_per_unit: number; total_amount: number; payment_mode: string; notes: string | null; created_at: string; }
+interface AgExpense { id: string; bunk_id: string; date: string; category: string; amount: number; description: string; payment_mode: string; created_at: string; }
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function getTodayIST() { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); }
+function inr(n: number) { return `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`; }
+function getCurrentSeason() {
+  const m = new Date().getMonth() + 1;
+  const yr = new Date().getFullYear();
+  if (m >= 6 && m <= 10) return { label: 'Kharif', emoji: '🌾', start: `${yr}-06-01`, end: `${yr}-10-31` };
+  if (m >= 11) return { label: 'Rabi', emoji: '🌿', start: `${yr}-11-01`, end: `${yr + 1}-03-31` };
+  if (m <= 3) return { label: 'Rabi', emoji: '🌿', start: `${yr - 1}-11-01`, end: `${yr}-03-31` };
+  return { label: 'Zaid', emoji: '☀️', start: `${yr}-04-01`, end: `${yr}-05-31` };
 }
 
-const CATEGORIES = ['Seeds', 'Fertilizers', 'Pesticides', 'Organic Products', 'Farm Tools', 'Irrigation', 'Animal Feed', 'Other'];
-const UNITS = ['kg', 'gram', 'litre', 'ml', 'pack', 'bag', 'piece', 'box'];
-const PAYMENT_MODES = ['cash', 'upi', 'card', 'bank_transfer', 'credit'];
-const EXPENSE_CATEGORIES = ['Rent', 'Electricity', 'Staff Salary', 'Transport', 'Repairs', 'Marketing', 'Other'];
+const CATEGORIES = ['Seeds', 'Fertilizer', 'Pesticide', 'Herbicide', 'Bio-product', 'Tool', 'Other'];
+const EXPENSE_CATS = ['Rent', 'Labour', 'Transport', 'Electricity', 'Packaging', 'Other'];
 
-interface Product {
-  id: string; bunk_id: string; name: string; brand: string; category: string;
-  unit: string; selling_price: number; purchase_price: number; mrp: number;
-  current_stock: number; reorder_level: number; is_active: boolean; created_at: string;
-}
-interface Customer {
-  id: string; bunk_id: string; name: string; phone: string; address: string;
-  land_area: string; outstanding_amount: number; is_active: boolean; created_at: string;
-}
-interface Sale {
-  id: string; bunk_id: string; customer_id: string | null; customer_name: string;
-  sale_date: string; total_amount: number; payment_mode: string; payment_status: string;
-  notes: string; created_at: string;
-}
-interface Purchase {
-  id: string; bunk_id: string; supplier_name: string; invoice_number: string;
-  purchase_date: string; total_amount: number; notes: string; created_at: string;
-}
-interface Expense {
-  id: string; bunk_id: string; category: string; description: string;
-  amount: number; expense_date: string; payment_mode: string; notes: string; created_at: string;
-}
-interface CartItem { product: Product; quantity: number; price: number; }
-
-type Tab = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'purchases' | 'expenses';
-
-export function AgricultureApp({ bunkId }: { bunkId: string }) {
-  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
-  const [products, setProducts] = useState<Product[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
-
-  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3500);
-  };
-
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
-    const [p, c, sa, pu, ex] = await Promise.all([
-      supabase.from('ag_products').select('*').eq('bunk_id', bunkId).eq('is_active', true).order('name'),
-      supabase.from('ag_customers').select('*').eq('bunk_id', bunkId).eq('is_active', true).order('name'),
-      supabase.from('ag_sales').select('*').eq('bunk_id', bunkId).order('sale_date', { ascending: false }).limit(200),
-      supabase.from('ag_purchases').select('*').eq('bunk_id', bunkId).order('purchase_date', { ascending: false }).limit(100),
-      supabase.from('ag_expenses').select('*').eq('bunk_id', bunkId).order('expense_date', { ascending: false }).limit(200),
-    ]);
-    if (p.data) setProducts(p.data as Product[]);
-    if (c.data) setCustomers(c.data as Customer[]);
-    if (sa.data) setSales(sa.data as Sale[]);
-    if (pu.data) setPurchases(pu.data as Purchase[]);
-    if (ex.data) setExpenses(ex.data as Expense[]);
-    setLoading(false);
-  }, [bunkId]);
-
-  useEffect(() => { fetchAll(); }, [fetchAll]);
-
-  const today = getTodayIST();
-  const todaySalesTotal = sales.filter(s => s.sale_date === today).reduce((a, s) => a + s.total_amount, 0);
-  const todayExpenses = expenses.filter(e => e.expense_date === today).reduce((a, e) => a + e.amount, 0);
-  const lowStock = products.filter(p => p.current_stock <= p.reorder_level);
-
-  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
-    { id: 'inventory', label: 'Inventory', icon: <Package size={16} /> },
-    { id: 'sales', label: 'Sales / POS', icon: <ShoppingCart size={16} /> },
-    { id: 'customers', label: 'Farmers', icon: <Users size={16} /> },
-    { id: 'purchases', label: 'Purchases', icon: <Truck size={16} /> },
-    { id: 'expenses', label: 'Expenses', icon: <Receipt size={16} /> },
-  ];
-
+// ── Toast ──────────────────────────────────────────────────────────────────
+function Toast({ msg, type }: { msg: string; type: 'success' | 'error' }) {
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-green-700 text-white px-4 py-3 flex items-center gap-3 shadow-md">
-        <span className="text-2xl">🌾</span>
+    <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-xl text-white text-sm font-medium shadow-xl ${type === 'error' ? 'bg-red-600' : 'bg-green-600'}`}>
+      {msg}
+    </div>
+  );
+}
+
+// ── Header ─────────────────────────────────────────────────────────────────
+function Header({ onLogout, user, tab, setTab }: { onLogout: () => void; user: { name?: string; phone?: string }; tab: string; setTab: (t: string) => void }) {
+  const tabs = [
+    { id: 'dashboard', icon: <BarChart2 size={14} />, label: 'Dashboard' },
+    { id: 'inventory', icon: <Package size={14} />, label: 'Inventory' },
+    { id: 'sales', icon: <ShoppingCart size={14} />, label: 'Sales' },
+    { id: 'farmers', icon: <Users size={14} />, label: 'Farmers' },
+    { id: 'purchases', icon: <TrendingUp size={14} />, label: 'Purchases' },
+    { id: 'expenses', icon: <FileText size={14} />, label: 'Expenses' },
+    { id: 'reports', icon: <BarChart2 size={14} />, label: 'Reports' },
+    { id: 'settings', icon: <Settings size={14} />, label: 'Settings' },
+  ];
+  return (
+    <div className="bg-green-700 text-white sticky top-0 z-40 shadow-lg">
+      <div className="flex items-center justify-between px-4 py-3">
         <div>
-          <h1 className="font-bold text-lg leading-tight">Agriculture / Seeds</h1>
-          <p className="text-green-200 text-xs">FuelDesk AI</p>
+          <h1 className="font-bold text-lg leading-tight">🌾 Agro Shop AI</h1>
+          <p className="text-green-200 text-xs">{user.name || user.phone}</p>
         </div>
-      </header>
-
-      {toast && (
-        <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg text-white flex items-center gap-2 ${toast.type === 'success' ? 'bg-green-600' : 'bg-red-600'}`}>
-          {toast.type === 'success' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
-          {toast.msg}
-        </div>
-      )}
-
-      <nav className="bg-white border-b border-gray-200 overflow-x-auto">
-        <div className="flex min-w-max">
+        <button onClick={onLogout} className="flex items-center gap-1 bg-green-800 hover:bg-green-900 px-3 py-1.5 rounded-lg text-xs font-medium transition">
+          <LogOut size={13} /> Logout
+        </button>
+      </div>
+      <div className="overflow-x-auto scrollbar-none">
+        <div className="flex min-w-max px-2 pb-1 gap-1">
           {tabs.map(t => (
-            <button key={t.id} onClick={() => setActiveTab(t.id)}
-              className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === t.id ? 'border-green-700 text-green-700' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}>
-              {t.icon}{t.label}
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-t-lg text-xs font-medium whitespace-nowrap transition ${tab === t.id ? 'bg-white text-green-700' : 'text-green-100 hover:bg-green-600'}`}>
+              {t.icon} {t.label}
             </button>
           ))}
         </div>
-      </nav>
-
-      <main className="p-4 max-w-7xl mx-auto">
-        {loading ? (
-          <div className="flex justify-center items-center h-64"><Loader2 className="animate-spin text-green-700" size={32} /></div>
-        ) : (
-          <>
-            {activeTab === 'dashboard' && <AgDashboard todaySalesTotal={todaySalesTotal} todayExpenses={todayExpenses} lowStock={lowStock} totalProducts={products.length} recentSales={sales.slice(0, 8)} />}
-            {activeTab === 'inventory' && <AgInventory bunkId={bunkId} products={products} onRefresh={fetchAll} showToast={showToast} />}
-            {activeTab === 'sales' && <AgSales bunkId={bunkId} products={products} customers={customers} onRefresh={fetchAll} showToast={showToast} />}
-            {activeTab === 'customers' && <AgCustomers bunkId={bunkId} customers={customers} onRefresh={fetchAll} showToast={showToast} />}
-            {activeTab === 'purchases' && <AgPurchases bunkId={bunkId} purchases={purchases} onRefresh={fetchAll} showToast={showToast} />}
-            {activeTab === 'expenses' && <AgExpenses bunkId={bunkId} expenses={expenses} onRefresh={fetchAll} showToast={showToast} />}
-          </>
-        )}
-      </main>
-    </div>
-  );
-}
-
-function AgDashboard({ todaySalesTotal, todayExpenses, lowStock, totalProducts, recentSales }: {
-  todaySalesTotal: number; todayExpenses: number; lowStock: Product[]; totalProducts: number; recentSales: Sale[];
-}) {
-  const kpis = [
-    { label: "Today's Sales", value: inr(todaySalesTotal), icon: <TrendingUp size={20} />, color: 'bg-green-50 text-green-700 border-green-200' },
-    { label: "Today's Expenses", value: inr(todayExpenses), icon: <TrendingDown size={20} />, color: 'bg-red-50 text-red-700 border-red-200' },
-    { label: 'Low Stock Alerts', value: String(lowStock.length), icon: <AlertTriangle size={20} />, color: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
-    { label: 'Total Products', value: String(totalProducts), icon: <Package size={20} />, color: 'bg-blue-50 text-blue-700 border-blue-200' },
-  ];
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpis.map(k => (
-          <div key={k.label} className={`rounded-xl border p-4 ${k.color}`}>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium opacity-80">{k.label}</span>{k.icon}
-            </div>
-            <p className="text-xl font-bold">{k.value}</p>
-          </div>
-        ))}
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <h2 className="font-semibold text-gray-700 mb-3 flex items-center gap-2"><AlertTriangle size={16} className="text-yellow-500" /> Low Stock Alert</h2>
-          {lowStock.length === 0 ? <p className="text-gray-400 text-sm">All products well-stocked.</p> : (
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {lowStock.map(p => (
-                <div key={p.id} className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0">
-                  <div><p className="text-sm font-medium text-gray-800">{p.name}</p><p className="text-xs text-gray-400">{p.category}</p></div>
-                  <span className={`text-sm font-semibold ${p.current_stock <= 0 ? 'text-red-600' : 'text-yellow-600'}`}>{p.current_stock} {p.unit}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <h2 className="font-semibold text-gray-700 mb-3 flex items-center gap-2"><ShoppingCart size={16} className="text-green-600" /> Recent Sales</h2>
-          {recentSales.length === 0 ? <p className="text-gray-400 text-sm">No sales yet.</p> : (
-            <div className="space-y-2 max-h-64 overflow-y-auto">
-              {recentSales.map(s => (
-                <div key={s.id} className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0">
-                  <div><p className="text-sm font-medium text-gray-800">{s.customer_name || 'Walk-in'}</p><p className="text-xs text-gray-400">{formatISTDate(s.sale_date)} · {s.payment_mode}</p></div>
-                  <span className={`text-sm font-semibold ${s.payment_status === 'credit' ? 'text-orange-600' : 'text-green-600'}`}>{inr(s.total_amount)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );
 }
 
-interface ProdForm {
-  name: string; brand: string; category: string; unit: string;
-  mrp: number; selling_price: number; purchase_price: number;
-  current_stock: number; reorder_level: number;
-}
-const defaultPF = (): ProdForm => ({ name: '', brand: '', category: CATEGORIES[0], unit: UNITS[0], mrp: 0, selling_price: 0, purchase_price: 0, current_stock: 0, reorder_level: 5 });
+// ── Dashboard ──────────────────────────────────────────────────────────────
+function AgDashboard({ bunkId, products, customers, onRefresh }: { bunkId: string; products: AgProduct[]; customers: AgCustomer[]; onRefresh: () => void }) {
+  const [todaySales, setTodaySales] = useState(0);
+  const [todayCash, setTodayCash] = useState(0);
+  const [todayCredit, setTodayCredit] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const season = getCurrentSeason();
 
-function AgInventory({ bunkId, products, onRefresh, showToast }: { bunkId: string; products: Product[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; }) {
-  const [search, setSearch] = useState('');
-  const [catFilter, setCatFilter] = useState('All');
-  const [showModal, setShowModal] = useState(false);
-  const [editing, setEditing] = useState<Product | null>(null);
-  const [form, setForm] = useState<ProdForm>(defaultPF());
-  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    async function load() {
+      const today = getTodayIST();
+      const { data: s } = await supabase.from('ag_sales').select('total, payment_mode').eq('bunk_id', bunkId).eq('date', today);
+      setTodaySales((s || []).reduce((a, r) => a + Number(r.total || 0), 0));
+      setTodayCash((s || []).filter(r => r.payment_mode !== 'credit').reduce((a, r) => a + Number(r.total || 0), 0));
+      setTodayCredit((s || []).filter(r => r.payment_mode === 'credit').reduce((a, r) => a + Number(r.total || 0), 0));
+      setLoading(false);
+    }
+    load();
+  }, [bunkId]);
 
-  const filtered = products.filter(p => {
-    const s = p.name.toLowerCase().includes(search.toLowerCase()) || p.brand.toLowerCase().includes(search.toLowerCase());
-    return s && (catFilter === 'All' || p.category === catFilter);
-  });
-
-  function openAdd() { setEditing(null); setForm(defaultPF()); setShowModal(true); }
-  function openEdit(p: Product) {
-    setEditing(p);
-    setForm({ name: p.name, brand: p.brand, category: p.category, unit: p.unit, mrp: p.mrp, selling_price: p.selling_price, purchase_price: p.purchase_price, current_stock: p.current_stock, reorder_level: p.reorder_level });
-    setShowModal(true);
-  }
-
-  async function handleSave() {
-    if (!form.name.trim()) { showToast('Product name required', 'error'); return; }
-    setSaving(true);
-    const payload = { ...form, bunk_id: bunkId, is_active: true };
-    const { error } = editing ? await supabase.from('ag_products').update(payload).eq('id', editing.id) : await supabase.from('ag_products').insert(payload);
-    setSaving(false);
-    if (error) { showToast(error.message, 'error'); return; }
-    showToast(editing ? 'Product updated' : 'Product added');
-    setShowModal(false); onRefresh();
-  }
-
-  async function handleDelete(p: Product) {
-    if (!confirm(`Delete "${p.name}"?`)) return;
-    const { error } = await supabase.from('ag_products').update({ is_active: false }).eq('id', p.id);
-    if (error) { showToast(error.message, 'error'); return; }
-    showToast('Product removed'); onRefresh();
-  }
-
-  const setF = (k: keyof ProdForm, v: string | number) => setForm(f => ({ ...f, [k]: v }));
+  const activeCustomers = customers.filter(c => c.is_active !== false);
+  const totalOutstanding = activeCustomers.reduce((a, c) => a + Number(c.outstanding_amount || 0), 0);
+  const lowStock = products.filter(p => Number(p.stock_qty) <= Number(p.low_stock_at || 0));
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-3 items-center justify-between">
-        <div className="flex gap-2 flex-1 min-w-0">
-          <div className="relative flex-1 max-w-xs">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search products…" className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400" />
-          </div>
-          <select value={catFilter} onChange={e => setCatFilter(e.target.value)} className="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-400">
-            <option value="All">All Categories</option>
-            {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-          </select>
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold text-gray-800">Today — {getTodayIST()}</h2>
+        <div className="flex items-center gap-2">
+          <span className="bg-green-100 text-green-700 text-xs font-medium px-2.5 py-1 rounded-full">{season.emoji} {season.label}</span>
+          <button onClick={onRefresh} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"><RefreshCw size={15} /></button>
         </div>
-        <button onClick={openAdd} className="flex items-center gap-1.5 bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-800 transition-colors">
-          <Plus size={16} /> Add Product
+      </div>
+
+      {loading ? <div className="text-center py-8 text-gray-400 text-sm">Loading…</div> : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: 'Today Sales', value: inr(todaySales), color: 'text-green-600', sub: `Cash: ${inr(todayCash)}` },
+              { label: 'Credit Today', value: inr(todayCredit), color: 'text-amber-600', sub: 'on credit' },
+              { label: 'Total Outstanding', value: inr(totalOutstanding), color: 'text-red-600', sub: `${activeCustomers.filter(c => (c.outstanding_amount || 0) > 0).length} farmers` },
+              { label: 'Products', value: String(products.length), color: 'text-blue-600', sub: `${lowStock.length} low stock` },
+            ].map(c => (
+              <div key={c.label} className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm">
+                <p className="text-xs text-gray-500">{c.label}</p>
+                <p className={`text-xl font-bold mt-0.5 ${c.color}`}>{c.value}</p>
+                <p className="text-xs text-gray-400 mt-0.5">{c.sub}</p>
+              </div>
+            ))}
+          </div>
+
+          {lowStock.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle size={15} className="text-amber-600" />
+                <span className="text-sm font-semibold text-amber-800">Low Stock — {lowStock.length} items</span>
+              </div>
+              <div className="space-y-1">
+                {lowStock.slice(0, 6).map(p => (
+                  <div key={p.id} className="flex justify-between text-xs">
+                    <span className="text-amber-700">{p.name} <span className="text-gray-400">({p.category})</span></span>
+                    <span className="font-semibold text-amber-800">{p.stock_qty} {p.unit}</span>
+                  </div>
+                ))}
+                {lowStock.length > 6 && <p className="text-xs text-amber-600">+{lowStock.length - 6} more items below reorder level</p>}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+            <p className="text-sm font-semibold text-gray-700 mb-2">Top Outstanding Farmers</p>
+            {activeCustomers.filter(c => (c.outstanding_amount || 0) > 0).sort((a, b) => b.outstanding_amount - a.outstanding_amount).slice(0, 5).map(c => (
+              <div key={c.id} className="flex justify-between items-center py-1.5 border-b border-gray-50 last:border-0">
+                <div>
+                  <p className="text-sm font-medium text-gray-800">{c.name}</p>
+                  <p className="text-xs text-gray-400">{c.village || 'No village'}{c.land_area ? ` · ${c.land_area}` : ''}</p>
+                </div>
+                <span className="text-sm font-semibold text-red-600">{inr(c.outstanding_amount)}</span>
+              </div>
+            ))}
+            {!activeCustomers.filter(c => (c.outstanding_amount || 0) > 0).length && (
+              <p className="text-sm text-gray-400 py-2">✅ No outstanding dues</p>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Inventory ──────────────────────────────────────────────────────────────
+function AgInventory({ bunkId, products, onRefresh, showToast }: { bunkId: string; products: AgProduct[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void }) {
+  const [search, setSearch] = useState('');
+  const [catFilter, setCatFilter] = useState('All');
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const blank = { name: '', category: 'Fertilizer', unit: 'bag', purchase_rate: '', selling_rate: '', stock_qty: '', low_stock_at: '5', hsn_code: '' };
+  const [form, setForm] = useState(blank);
+  const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const filtered = products.filter(p =>
+    (catFilter === 'All' || p.category === catFilter) &&
+    p.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  async function handleSave() {
+    if (!form.name.trim()) { showToast('Enter product name', 'error'); return; }
+    setSaving(true);
+    const payload = {
+      bunk_id: bunkId, name: form.name.trim(), category: form.category, unit: form.unit,
+      purchase_rate: parseFloat(form.purchase_rate) || 0,
+      selling_rate: parseFloat(form.selling_rate) || 0,
+      stock_qty: parseFloat(form.stock_qty) || 0,
+      low_stock_at: parseFloat(form.low_stock_at) || 5,
+      hsn_code: form.hsn_code || '',
+    };
+    const { error } = editId
+      ? await supabase.from('ag_products').update(payload).eq('id', editId).eq('bunk_id', bunkId)
+      : await supabase.from('ag_products').insert(payload);
+    setSaving(false);
+    if (error) { showToast(error.message, 'error'); return; }
+    showToast(editId ? 'Product updated' : 'Product added');
+    setShowForm(false); setEditId(null); setForm(blank); onRefresh();
+  }
+
+  async function handleDelete(p: AgProduct) {
+    if (!confirm(`Delete "${p.name}"?`)) return;
+    const { error } = await supabase.from('ag_products').delete().eq('id', p.id).eq('bunk_id', bunkId);
+    if (error) { showToast(error.message, 'error'); return; }
+    showToast('Deleted'); onRefresh();
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[140px]">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search product…" className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400" />
+        </div>
+        <select value={catFilter} onChange={e => setCatFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-400">
+          <option>All</option>
+          {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+        </select>
+        <button onClick={() => { setShowForm(true); setEditId(null); setForm(blank); }} className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition">
+          <Plus size={14} /> Add
         </button>
       </div>
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+
+      {showForm && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
+          <h3 className="font-semibold text-green-800">{editId ? 'Edit Product' : 'Add Product'}</h3>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2"><label className="text-xs text-gray-500 mb-1 block">Product Name *</label><input value={form.name} onChange={e => setF('name', e.target.value)} placeholder="e.g., Urea 50kg, Paddy Seeds" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
+            <div><label className="text-xs text-gray-500 mb-1 block">Category</label>
+              <select value={form.category} onChange={e => setF('category', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-400">
+                {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+              </select>
+            </div>
+            <div><label className="text-xs text-gray-500 mb-1 block">Unit</label>
+              <select value={form.unit} onChange={e => setF('unit', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-400">
+                {['bag', 'kg', 'litre', 'bottle', 'piece', 'packet'].map(u => <option key={u}>{u}</option>)}
+              </select>
+            </div>
+            <div><label className="text-xs text-gray-500 mb-1 block">Purchase Rate (₹)</label><input type="number" min="0" value={form.purchase_rate} onChange={e => setF('purchase_rate', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
+            <div><label className="text-xs text-gray-500 mb-1 block">Selling Rate (₹)</label><input type="number" min="0" value={form.selling_rate} onChange={e => setF('selling_rate', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
+            <div><label className="text-xs text-gray-500 mb-1 block">Current Stock</label><input type="number" min="0" value={form.stock_qty} onChange={e => setF('stock_qty', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
+            <div><label className="text-xs text-gray-500 mb-1 block">Reorder Alert At</label><input type="number" min="0" value={form.low_stock_at} onChange={e => setF('low_stock_at', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
+            <div className="col-span-2"><label className="text-xs text-gray-500 mb-1 block">HSN Code (optional)</label><input value={form.hsn_code} onChange={e => setF('hsn_code', e.target.value)} placeholder="e.g., 3102 for fertilizers" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleSave} disabled={saving} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 transition">{saving ? 'Saving…' : (editId ? 'Update' : 'Add Product')}</button>
+            <button onClick={() => { setShowForm(false); setEditId(null); setForm(blank); }} className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 transition">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
-              <tr>
-                <th className="px-4 py-3 text-left">Product</th>
-                <th className="px-4 py-3 text-left">Category</th>
-                <th className="px-4 py-3 text-right">Selling</th>
-                <th className="px-4 py-3 text-right">Stock</th>
-                <th className="px-4 py-3 text-center">Status</th>
-                <th className="px-4 py-3 text-center">Actions</th>
-              </tr>
+            <thead className="bg-green-50 text-gray-600 text-xs uppercase sticky top-0">
+              <tr><th className="px-4 py-2 text-left">Product</th><th className="px-4 py-2 text-center">Cat.</th><th className="px-4 py-2 text-right">Stock</th><th className="px-4 py-2 text-right">Buy ₹</th><th className="px-4 py-2 text-right">Sell ₹</th><th className="px-4 py-2"></th></tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && <tr><td colSpan={6} className="text-center py-10 text-gray-400">No products found.</td></tr>}
-              {filtered.map(p => (
-                <tr key={p.id} className="border-t border-gray-100 hover:bg-gray-50">
-                  <td className="px-4 py-3"><p className="font-medium text-gray-800">{p.name}</p><p className="text-xs text-gray-400">{p.brand} · {p.unit}</p></td>
-                  <td className="px-4 py-3 text-gray-600">{p.category}</td>
-                  <td className="px-4 py-3 text-right font-medium">{inr(p.selling_price)}</td>
-                  <td className="px-4 py-3 text-right"><span className={`font-semibold ${p.current_stock <= p.reorder_level ? 'text-red-600' : 'text-gray-800'}`}>{p.current_stock}</span></td>
-                  <td className="px-4 py-3 text-center">{p.current_stock <= p.reorder_level ? <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">Low Stock</span> : <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">OK</span>}</td>
-                  <td className="px-4 py-3 text-center">
-                    <div className="flex items-center justify-center gap-2">
-                      <button onClick={() => openEdit(p)} className="text-green-600 hover:text-green-800"><Edit2 size={14} /></button>
-                      <button onClick={() => handleDelete(p)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {filtered.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No products. Add above.</td></tr>}
+              {filtered.map(p => {
+                const low = Number(p.stock_qty) <= Number(p.low_stock_at || 0);
+                return (
+                  <tr key={p.id} className="border-t border-gray-100 hover:bg-green-50">
+                    <td className="px-4 py-2"><p className="font-medium text-gray-800">{p.name}</p>{p.hsn_code && <p className="text-xs text-gray-400">HSN: {p.hsn_code}</p>}</td>
+                    <td className="px-4 py-2 text-center"><span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full">{p.category}</span></td>
+                    <td className="px-4 py-2 text-right"><span className={low ? 'text-red-600 font-semibold' : 'text-gray-700'}>{p.stock_qty} {p.unit}</span>{low && <span className="ml-1">⚠️</span>}</td>
+                    <td className="px-4 py-2 text-right text-gray-500">{inr(p.purchase_rate)}</td>
+                    <td className="px-4 py-2 text-right font-medium">{inr(p.selling_rate)}</td>
+                    <td className="px-4 py-2 text-right whitespace-nowrap">
+                      <button onClick={() => { setEditId(p.id); setForm({ name: p.name, category: p.category, unit: p.unit, purchase_rate: String(p.purchase_rate), selling_rate: String(p.selling_rate), stock_qty: String(p.stock_qty), low_stock_at: String(p.low_stock_at), hsn_code: p.hsn_code || '' }); setShowForm(true); }} className="text-blue-500 hover:text-blue-700 p-1">✏️</button>
+                      <button onClick={() => handleDelete(p)} className="text-red-500 hover:text-red-700 p-1"><Trash2 size={13} /></button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
-            <div className="flex items-center justify-between p-5 border-b"><h2 className="text-lg font-semibold">{editing ? 'Edit Product' : 'Add Product'}</h2><button onClick={() => setShowModal(false)}><X size={20} /></button></div>
-            <div className="p-5 grid grid-cols-2 gap-4">
-              <div className="col-span-2"><label className="text-xs text-gray-500 mb-1 block">Product Name *</label><input value={form.name} onChange={e => setF('name', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Brand / Company</label><input value={form.brand} onChange={e => setF('brand', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Category</label><select value={form.category} onChange={e => setF('category', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Unit</label><select value={form.unit} onChange={e => setF('unit', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400">{UNITS.map(u => <option key={u}>{u}</option>)}</select></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">MRP (₹)</label><input type="number" value={form.mrp} onChange={e => setF('mrp', parseFloat(e.target.value) || 0)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Selling Price (₹)</label><input type="number" value={form.selling_price} onChange={e => setF('selling_price', parseFloat(e.target.value) || 0)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Purchase Price (₹)</label><input type="number" value={form.purchase_price} onChange={e => setF('purchase_price', parseFloat(e.target.value) || 0)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Current Stock</label><input type="number" value={form.current_stock} onChange={e => setF('current_stock', parseFloat(e.target.value) || 0)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Reorder Level</label><input type="number" value={form.reorder_level} onChange={e => setF('reorder_level', parseFloat(e.target.value) || 0)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
+      <p className="text-xs text-gray-400 text-right">{filtered.length} of {products.length} products</p>
+    </div>
+  );
+}
+
+// ── Sales ──────────────────────────────────────────────────────────────────
+interface CartItem { product: AgProduct; quantity: number; unit_price: number; }
+
+function AgSales({ bunkId, products, customers, onRefresh, showToast }: { bunkId: string; products: AgProduct[]; customers: AgCustomer[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void }) {
+  const [view, setView] = useState<'pos' | 'history'>('pos');
+  const [search, setSearch] = useState('');
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [customerId, setCustomerId] = useState('');
+  const [paymentMode, setPaymentMode] = useState<'cash' | 'upi' | 'credit'>('cash');
+  const [discount, setDiscount] = useState(0);
+  const [notes, setNotes] = useState('');
+  const [saleDate, setSaleDate] = useState(getTodayIST());
+  const [saving, setSaving] = useState(false);
+  const [history, setHistory] = useState<AgSale[]>([]);
+  const [histLoading, setHistLoading] = useState(false);
+
+  const filteredProducts = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
+
+  function addToCart(p: AgProduct) {
+    setCart(prev => {
+      const ex = prev.find(i => i.product.id === p.id);
+      if (ex) return prev.map(i => i.product.id === p.id ? { ...i, quantity: i.quantity + 1 } : i);
+      return [...prev, { product: p, quantity: 1, unit_price: p.selling_rate }];
+    });
+  }
+
+  const subtotal = cart.reduce((a, i) => a + i.quantity * i.unit_price, 0);
+  const total = Math.max(0, subtotal - discount);
+
+  async function handleSell() {
+    if (!cart.length) { showToast('Add items to cart', 'error'); return; }
+    if (paymentMode === 'credit' && !customerId) { showToast('Select a farmer for credit sale', 'error'); return; }
+    setSaving(true);
+
+    const items = cart.map(i => ({ name: i.product.name, qty: i.quantity, unit: i.product.unit, rate: i.unit_price, total: i.quantity * i.unit_price }));
+    const custName = customerId ? (customers.find(c => c.id === customerId)?.name || 'Unknown') : 'Walk-in';
+
+    const { error } = await supabase.from('ag_sales').insert({
+      bunk_id: bunkId, date: saleDate, customer_id: customerId || null, customer_name: custName,
+      items, subtotal, discount, total, payment_mode: paymentMode, notes: notes || null,
+    });
+    if (error) { showToast(error.message, 'error'); setSaving(false); return; }
+
+    // Update stock (fresh read to avoid race condition)
+    const { data: freshStocks } = await supabase.from('ag_products').select('id, stock_qty').in('id', cart.map(i => i.product.id)).eq('bunk_id', bunkId);
+    const stockMap: Record<string, number> = {};
+    freshStocks?.forEach(s => { stockMap[s.id] = Number(s.stock_qty); });
+    for (const item of cart) {
+      const fresh = stockMap[item.product.id] ?? Number(item.product.stock_qty);
+      await supabase.from('ag_products').update({ stock_qty: Math.max(0, fresh - item.quantity) }).eq('id', item.product.id).eq('bunk_id', bunkId);
+    }
+
+    // Update customer outstanding on credit sale (fresh read)
+    if (paymentMode === 'credit' && customerId) {
+      const { data: freshCust } = await supabase.from('ag_customers').select('outstanding_amount').eq('id', customerId).eq('bunk_id', bunkId).maybeSingle();
+      const base = freshCust ? Number(freshCust.outstanding_amount) : (Number(customers.find(c => c.id === customerId)?.outstanding_amount) || 0);
+      await supabase.from('ag_customers').update({ outstanding_amount: base + total }).eq('id', customerId).eq('bunk_id', bunkId);
+    }
+
+    showToast('Sale recorded!');
+    setCart([]); setDiscount(0); setNotes(''); setCustomerId(''); setPaymentMode('cash'); setSaleDate(getTodayIST());
+    setSaving(false); onRefresh();
+  }
+
+  useEffect(() => {
+    if (view === 'history') {
+      setHistLoading(true);
+      supabase.from('ag_sales').select('*').eq('bunk_id', bunkId).order('date', { ascending: false }).order('created_at', { ascending: false }).limit(50).then(({ data }) => { setHistory(data || []); setHistLoading(false); });
+    }
+  }, [view, bunkId]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2 border-b border-gray-200">
+        {(['pos', 'history'] as const).map(v => (
+          <button key={v} onClick={() => setView(v)} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${view === v ? 'border-green-600 text-green-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            {v === 'pos' ? '🛒 New Sale' : '📋 History'}
+          </button>
+        ))}
+      </div>
+
+      {view === 'pos' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 space-y-3">
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search seeds, fertilizer, pesticide…" className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400" />
             </div>
-            <div className="flex gap-3 p-5 border-t">
-              <button onClick={() => setShowModal(false)} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">Cancel</button>
-              <button onClick={handleSave} disabled={saving} className="flex-1 bg-green-700 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-800 disabled:opacity-60 flex items-center justify-center gap-2">
-                {saving && <Loader2 size={14} className="animate-spin" />}{saving ? 'Saving…' : 'Save'}
-              </button>
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="overflow-x-auto max-h-72 overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-green-50 text-gray-600 text-xs uppercase sticky top-0">
+                    <tr><th className="px-3 py-2 text-left">Product</th><th className="px-3 py-2 text-center">Cat.</th><th className="px-3 py-2 text-right">Stock</th><th className="px-3 py-2 text-right">Rate</th><th className="px-3 py-2"></th></tr>
+                  </thead>
+                  <tbody>
+                    {filteredProducts.length === 0 && <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-400 text-sm">No products. Add from Inventory tab.</td></tr>}
+                    {filteredProducts.map(p => (
+                      <tr key={p.id} className="border-t border-gray-100 hover:bg-green-50">
+                        <td className="px-3 py-2 font-medium text-gray-800">{p.name}</td>
+                        <td className="px-3 py-2 text-center text-xs text-gray-500">{p.category}</td>
+                        <td className="px-3 py-2 text-right text-gray-500">{p.stock_qty} {p.unit}</td>
+                        <td className="px-3 py-2 text-right">{inr(p.selling_rate)}/{p.unit}</td>
+                        <td className="px-3 py-2 text-right"><button onClick={() => addToCart(p)} disabled={p.stock_qty <= 0} className="bg-green-600 text-white px-2 py-1 rounded text-xs hover:bg-green-700 disabled:opacity-40"><Plus size={11} className="inline" /></button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+              <h3 className="font-semibold text-gray-800">Cart</h3>
+              {cart.length === 0 && <p className="text-gray-400 text-sm py-2">No items yet</p>}
+              {cart.map(item => (
+                <div key={item.product.id} className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-gray-800 truncate">{item.product.name}</p>
+                    <p className="text-xs text-gray-400">{inr(item.unit_price)}/{item.product.unit}</p>
+                  </div>
+                  <input type="number" min="0.1" step="0.1" value={item.quantity}
+                    onChange={e => setCart(prev => prev.map(i => i.product.id === item.product.id ? { ...i, quantity: parseFloat(e.target.value) || 0 } : i))}
+                    className="w-16 border border-gray-200 rounded px-2 py-1 text-xs text-right" />
+                  <span className="text-xs font-medium w-16 text-right">{inr(item.quantity * item.unit_price)}</span>
+                  <button onClick={() => setCart(prev => prev.filter(i => i.product.id !== item.product.id))} className="text-red-400 hover:text-red-600"><Trash2 size={12} /></button>
+                </div>
+              ))}
+
+              {cart.length > 0 && (
+                <>
+                  <div className="border-t pt-2 space-y-1.5">
+                    <div className="flex justify-between text-sm"><span className="text-gray-500">Subtotal</span><span>{inr(subtotal)}</span></div>
+                    <div className="flex items-center gap-2"><span className="text-sm text-gray-500 flex-1">Discount</span><input type="number" min="0" value={discount || ''} onChange={e => setDiscount(parseFloat(e.target.value) || 0)} className="w-20 border border-gray-200 rounded px-2 py-1 text-xs text-right" /></div>
+                    <div className="flex justify-between font-bold text-base"><span>Total</span><span className="text-green-600">{inr(total)}</span></div>
+                  </div>
+
+                  <div><label className="text-xs text-gray-500 mb-1 block">Date</label><input type="date" value={saleDate} onChange={e => setSaleDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+
+                  <div><label className="text-xs text-gray-500 mb-1 block">Payment Mode</label>
+                    <div className="flex gap-1">
+                      {(['cash', 'upi', 'credit'] as const).map(m => (
+                        <button key={m} onClick={() => setPaymentMode(m)} className={`flex-1 py-1.5 text-xs rounded-lg font-medium capitalize transition ${paymentMode === m ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{m}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {paymentMode === 'credit' && (
+                    <div><label className="text-xs text-gray-500 mb-1 block">Select Farmer *</label>
+                      <select value={customerId} onChange={e => setCustomerId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-400">
+                        <option value="">Select farmer…</option>
+                        {customers.filter(c => c.is_active !== false).map(c => <option key={c.id} value={c.id}>{c.name}{c.village ? ` — ${c.village}` : ''}</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  <div><label className="text-xs text-gray-500 mb-1 block">Notes</label><input value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g., for paddy crop, Kharif season" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+
+                  <button onClick={handleSell} disabled={saving} className="w-full bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-lg font-semibold text-sm transition disabled:opacity-50">
+                    {saving ? 'Saving…' : `Record Sale — ${inr(total)}`}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {view === 'history' && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          {histLoading ? <p className="text-center py-8 text-gray-400 text-sm">Loading…</p> : (
+            <div className="divide-y divide-gray-100">
+              {history.length === 0 && <p className="text-center py-8 text-gray-400 text-sm">No sales yet</p>}
+              {history.map(s => (
+                <div key={s.id} className="px-4 py-3">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">{s.customer_name}</p>
+                      <p className="text-xs text-gray-400">{s.date} · {s.items?.length || 0} item(s)</p>
+                      {s.items?.length > 0 && <p className="text-xs text-gray-500 mt-0.5">{s.items.slice(0, 3).map(i => `${i.qty} ${i.unit} ${i.name}`).join(', ')}{s.items.length > 3 ? '…' : ''}</p>}
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-bold text-gray-800">{inr(s.total)}</p>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.payment_mode === 'credit' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{s.payment_mode}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Farmers ────────────────────────────────────────────────────────────────
+function AgFarmers({ bunkId, customers, onRefresh, showToast }: { bunkId: string; customers: AgCustomer[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void }) {
+  const [view, setView] = useState<'list' | 'payments'>('list');
+  const [search, setSearch] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [payModal, setPayModal] = useState<AgCustomer | null>(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [payMode, setPayMode] = useState('cash');
+  const [payNote, setPayNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [payments, setPayments] = useState<AgPayment[]>([]);
+  const blank = { name: '', phone: '', village: '', land_area: '', credit_limit: '0' };
+  const [form, setForm] = useState(blank);
+  const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const active = customers.filter(c => c.is_active !== false);
+  const filtered = active.filter(c =>
+    c.name.toLowerCase().includes(search.toLowerCase()) ||
+    (c.village || '').toLowerCase().includes(search.toLowerCase())
+  ).sort((a, b) => (b.outstanding_amount || 0) - (a.outstanding_amount || 0));
+
+  async function handleSave() {
+    if (!form.name.trim()) { showToast('Enter farmer name', 'error'); return; }
+    setSaving(true);
+    const payload = { bunk_id: bunkId, name: form.name.trim(), phone: form.phone.trim(), village: form.village.trim(), land_area: form.land_area.trim(), credit_limit: parseFloat(form.credit_limit) || 0, is_active: true };
+    const { error } = editId
+      ? await supabase.from('ag_customers').update(payload).eq('id', editId).eq('bunk_id', bunkId)
+      : await supabase.from('ag_customers').insert(payload);
+    setSaving(false);
+    if (error) { showToast(error.message, 'error'); return; }
+    showToast(editId ? 'Farmer updated' : 'Farmer added');
+    setShowForm(false); setEditId(null); setForm(blank); onRefresh();
+  }
+
+  async function handlePayment() {
+    if (!payModal) return;
+    const amt = parseFloat(payAmount) || 0;
+    if (amt <= 0) { showToast('Enter valid amount', 'error'); return; }
+    setSaving(true);
+    const today = getTodayIST();
+    const { error } = await supabase.from('ag_payments').insert({ bunk_id: bunkId, customer_id: payModal.id, customer_name: payModal.name, amount: amt, payment_mode: payMode, payment_date: today, notes: payNote || null });
+    if (error) { showToast(error.message, 'error'); setSaving(false); return; }
+    const { data: fresh } = await supabase.from('ag_customers').select('outstanding_amount').eq('id', payModal.id).eq('bunk_id', bunkId).maybeSingle();
+    const base = fresh ? Number(fresh.outstanding_amount) : Number(payModal.outstanding_amount);
+    await supabase.from('ag_customers').update({ outstanding_amount: Math.max(0, base - amt), last_payment_date: today }).eq('id', payModal.id).eq('bunk_id', bunkId);
+    setSaving(false);
+    showToast(`Payment of ${inr(amt)} recorded`);
+    setPayModal(null); setPayAmount(''); setPayNote(''); onRefresh();
+  }
+
+  async function deactivateFarmer(c: AgCustomer) {
+    if (!confirm(`Deactivate "${c.name}"? They will be hidden from the list.`)) return;
+    await supabase.from('ag_customers').update({ is_active: false }).eq('id', c.id).eq('bunk_id', bunkId);
+    showToast('Farmer deactivated'); onRefresh();
+  }
+
+  useEffect(() => {
+    if (view === 'payments') {
+      supabase.from('ag_payments').select('*').eq('bunk_id', bunkId).order('payment_date', { ascending: false }).limit(60).then(({ data }) => setPayments(data || []));
+    }
+  }, [view, bunkId]);
+
+  const totalOutstanding = active.reduce((a, c) => a + Number(c.outstanding_amount || 0), 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2 border-b border-gray-200">
+        {(['list', 'payments'] as const).map(v => (
+          <button key={v} onClick={() => setView(v)} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${view === v ? 'border-green-600 text-green-600' : 'border-transparent text-gray-500'}`}>
+            {v === 'list' ? '👨‍🌾 Farmers' : '💳 Payments'}
+          </button>
+        ))}
+      </div>
+
+      {view === 'list' && (
+        <>
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or village…" className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400" />
+            </div>
+            <button onClick={() => { setShowForm(true); setEditId(null); setForm(blank); }} className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition">
+              <Plus size={14} /> Add
+            </button>
+          </div>
+
+          {showForm && (
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
+              <h3 className="font-semibold text-green-800">{editId ? 'Edit Farmer' : 'Add Farmer'}</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2"><label className="text-xs text-gray-500 mb-1 block">Name *</label><input value={form.name} onChange={e => setF('name', e.target.value)} placeholder="Farmer name" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+                <div><label className="text-xs text-gray-500 mb-1 block">Phone</label><input value={form.phone} onChange={e => setF('phone', e.target.value)} placeholder="+91 XXXXX XXXXX" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+                <div><label className="text-xs text-gray-500 mb-1 block">Village</label><input value={form.village} onChange={e => setF('village', e.target.value)} placeholder="Village name" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+                <div><label className="text-xs text-gray-500 mb-1 block">Land Area</label><input value={form.land_area} onChange={e => setF('land_area', e.target.value)} placeholder="e.g., 5 acres" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+                <div><label className="text-xs text-gray-500 mb-1 block">Credit Limit (₹)</label><input type="number" min="0" value={form.credit_limit} onChange={e => setF('credit_limit', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={handleSave} disabled={saving} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50">{saving ? 'Saving…' : (editId ? 'Update' : 'Add Farmer')}</button>
+                <button onClick={() => { setShowForm(false); setEditId(null); }} className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+              </div>
+            </div>
+          )}
+
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex justify-between items-center">
+            <span className="text-sm text-amber-800 font-medium">Total Outstanding</span>
+            <span className="text-base font-bold text-red-600">{inr(totalOutstanding)}</span>
+          </div>
+
+          <div className="space-y-2">
+            {filtered.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">No farmers found</div>}
+            {filtered.map(c => (
+              <div key={c.id} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-semibold text-gray-800">{c.name}</p>
+                    <p className="text-xs text-gray-500">{[c.village, c.land_area, c.phone].filter(Boolean).join(' · ')}</p>
+                    {c.last_payment_date && <p className="text-xs text-gray-400 mt-0.5">Last payment: {c.last_payment_date}</p>}
+                  </div>
+                  <div className="text-right">
+                    <p className={`font-bold text-base ${(c.outstanding_amount || 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>{inr(c.outstanding_amount || 0)}</p>
+                    {(c.credit_limit || 0) > 0 && <p className="text-xs text-gray-400">Limit: {inr(c.credit_limit)}</p>}
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-3 flex-wrap">
+                  <button onClick={() => { setEditId(c.id); setForm({ name: c.name, phone: c.phone || '', village: c.village || '', land_area: c.land_area || '', credit_limit: String(c.credit_limit || 0) }); setShowForm(true); }} className="border border-gray-200 text-gray-600 px-3 py-1 rounded-lg text-xs hover:bg-gray-50">✏️ Edit</button>
+                  {(c.outstanding_amount || 0) > 0 && <button onClick={() => { setPayModal(c); setPayAmount(''); setPayNote(''); }} className="bg-green-100 hover:bg-green-200 text-green-700 px-3 py-1 rounded-lg text-xs font-medium">💳 Collect Payment</button>}
+                  <button onClick={() => deactivateFarmer(c)} className="border border-red-200 text-red-500 px-3 py-1 rounded-lg text-xs hover:bg-red-50">Deactivate</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {payModal && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+              <div className="bg-white rounded-2xl w-full max-w-sm p-5 space-y-4">
+                <h3 className="font-bold text-gray-800">Collect Payment — {payModal.name}</h3>
+                <p className="text-sm text-red-600 font-medium">Outstanding: {inr(payModal.outstanding_amount)}</p>
+                <div><label className="text-xs text-gray-500 mb-1 block">Amount (₹) *</label><input type="number" min="0" value={payAmount} onChange={e => setPayAmount(e.target.value)} placeholder="0" autoFocus className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
+                <div><label className="text-xs text-gray-500 mb-1 block">Payment Mode</label>
+                  <div className="flex gap-1 flex-wrap">
+                    {['cash', 'upi', 'bank_transfer', 'cheque'].map(m => (
+                      <button key={m} onClick={() => setPayMode(m)} className={`px-3 py-1.5 text-xs rounded-lg font-medium transition ${payMode === m ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>{m.replace('_', ' ')}</button>
+                    ))}
+                  </div>
+                </div>
+                <div><label className="text-xs text-gray-500 mb-1 block">Note</label><input value={payNote} onChange={e => setPayNote(e.target.value)} placeholder="e.g., after harvest, advance" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+                <div className="flex gap-2">
+                  <button onClick={handlePayment} disabled={saving} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-xl font-semibold text-sm disabled:opacity-50">{saving ? 'Saving…' : 'Record Payment'}</button>
+                  <button onClick={() => setPayModal(null)} className="border border-gray-300 text-gray-600 px-4 rounded-xl text-sm hover:bg-gray-50">Cancel</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {view === 'payments' && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="divide-y divide-gray-100">
+            {payments.length === 0 && <p className="text-center py-8 text-gray-400 text-sm">No payments yet</p>}
+            {payments.map(p => (
+              <div key={p.id} className="flex justify-between items-center px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-gray-800">{p.customer_name}</p>
+                  <p className="text-xs text-gray-400">{p.payment_date} · {p.payment_mode}{p.notes ? ` · ${p.notes}` : ''}</p>
+                </div>
+                <span className="text-sm font-bold text-green-600">{inr(p.amount)}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -320,200 +659,250 @@ function AgInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
   );
 }
 
-function AgSales({ bunkId, products, customers, onRefresh, showToast }: { bunkId: string; products: Product[]; customers: Customer[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; }) {
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [customerName, setCustomerName] = useState('Walk-in');
-  const [customerId, setCustomerId] = useState('');
-  const [paymentMode, setPaymentMode] = useState('cash');
-  const [saleDate, setSaleDate] = useState(getTodayIST());
-  const [notes, setNotes] = useState('');
+// ── Purchases ──────────────────────────────────────────────────────────────
+function AgPurchases({ bunkId, onRefresh, showToast }: { bunkId: string; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void }) {
+  const [purchases, setPurchases] = useState<AgPurchase[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [search, setSearch] = useState('');
+  const blank = { date: getTodayIST(), supplier_name: '', product_name: '', category: 'Fertilizer', quantity: '', unit: 'bag', rate_per_unit: '', payment_mode: 'cash', notes: '' };
+  const [form, setForm] = useState(blank);
+  const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+  const total = (parseFloat(form.quantity) || 0) * (parseFloat(form.rate_per_unit) || 0);
 
-  const filteredProducts = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
-
-  function addToCart(p: Product) {
-    setCart(c => {
-      const ex = c.find(i => i.product.id === p.id);
-      if (ex) return c.map(i => i.product.id === p.id ? { ...i, quantity: i.quantity + 1 } : i);
-      return [...c, { product: p, quantity: 1, price: p.selling_price }];
-    });
+  async function load() {
+    setLoading(true);
+    const { data } = await supabase.from('ag_purchases').select('*').eq('bunk_id', bunkId).order('date', { ascending: false }).limit(60);
+    setPurchases(data || []);
+    setLoading(false);
   }
 
-  function updateQty(id: string, qty: number) {
-    if (qty <= 0) { setCart(c => c.filter(i => i.product.id !== id)); return; }
-    setCart(c => c.map(i => i.product.id === id ? { ...i, quantity: qty } : i));
-  }
+  useEffect(() => { load(); }, [bunkId]);
 
-  const total = cart.reduce((a, i) => a + i.price * i.quantity, 0);
-
-  async function handleSell() {
-    if (cart.length === 0) { showToast('Cart is empty', 'error'); return; }
+  async function handleSave() {
+    if (!form.product_name.trim() || !form.supplier_name.trim()) { showToast('Enter supplier and product name', 'error'); return; }
+    const qty = parseFloat(form.quantity) || 0;
+    const rate = parseFloat(form.rate_per_unit) || 0;
+    if (!qty || !rate) { showToast('Enter quantity and rate', 'error'); return; }
     setSaving(true);
-    const name = customerId ? customers.find(c => c.id === customerId)?.name || customerName : customerName;
-    const { data: sale, error: sErr } = await supabase.from('ag_sales').insert({
-      bunk_id: bunkId, customer_id: customerId || null, customer_name: name,
-      sale_date: saleDate, total_amount: total, payment_mode: paymentMode,
-      payment_status: paymentMode === 'credit' ? 'credit' : 'paid', notes,
-    }).select().single();
-    if (sErr || !sale) { showToast(sErr?.message || 'Sale failed', 'error'); setSaving(false); return; }
-    await supabase.from('ag_sale_items').insert(cart.map(i => ({
-      sale_id: sale.id, bunk_id: bunkId, product_id: i.product.id,
-      product_name: i.product.name, quantity: i.quantity, unit_price: i.price,
-      total_price: i.price * i.quantity,
-    })));
-    for (const i of cart) {
-      await supabase.from('ag_products').update({ current_stock: i.product.current_stock - i.quantity }).eq('id', i.product.id);
-    }
-    showToast('Sale recorded!');
-    setCart([]); setCustomerName('Walk-in'); setCustomerId(''); setNotes('');
-    setSaving(false); onRefresh();
+    const { error } = await supabase.from('ag_purchases').insert({ bunk_id: bunkId, date: form.date, supplier_name: form.supplier_name.trim(), product_name: form.product_name.trim(), category: form.category, quantity: qty, unit: form.unit, rate_per_unit: rate, total_amount: qty * rate, payment_mode: form.payment_mode, notes: form.notes || null });
+    if (error) { showToast(error.message, 'error'); setSaving(false); return; }
+    // Auto-update matching product stock
+    const { data: prod } = await supabase.from('ag_products').select('id, stock_qty').eq('bunk_id', bunkId).ilike('name', `%${form.product_name.trim().split(' ')[0]}%`).limit(1).maybeSingle();
+    if (prod) await supabase.from('ag_products').update({ stock_qty: Number(prod.stock_qty) + qty }).eq('id', prod.id).eq('bunk_id', bunkId);
+    setSaving(false);
+    showToast('Purchase recorded' + (prod ? ' — stock updated' : ''));
+    setShowForm(false); setForm(blank); load(); onRefresh();
   }
+
+  const totalValue = purchases.reduce((a, p) => a + p.total_amount, 0);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <div className="lg:col-span-2 space-y-4">
-        <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search products to add…" className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400" />
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div><h2 className="font-semibold text-gray-800">Stock Purchases</h2><p className="text-xs text-gray-500">Total: {inr(totalValue)}</p></div>
+        <button onClick={() => setShowForm(true)} className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition"><Plus size={14} /> Add</button>
+      </div>
+
+      {showForm && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
+          <h3 className="font-semibold text-green-800">Record Purchase</h3>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-xs text-gray-500 mb-1 block">Date</label><input type="date" value={form.date} onChange={e => setF('date', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label className="text-xs text-gray-500 mb-1 block">Category</label><select value={form.category} onChange={e => setF('category', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></div>
+            <div className="col-span-2"><label className="text-xs text-gray-500 mb-1 block">Product Name *</label><input value={form.product_name} onChange={e => setF('product_name', e.target.value)} placeholder="e.g., Urea 50kg" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+            <div className="col-span-2"><label className="text-xs text-gray-500 mb-1 block">Supplier / Company *</label><input value={form.supplier_name} onChange={e => setF('supplier_name', e.target.value)} placeholder="Distributor name" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label className="text-xs text-gray-500 mb-1 block">Qty *</label><input type="number" min="0" value={form.quantity} onChange={e => setF('quantity', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label className="text-xs text-gray-500 mb-1 block">Unit</label><select value={form.unit} onChange={e => setF('unit', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">{['bag', 'kg', 'litre', 'bottle', 'piece'].map(u => <option key={u}>{u}</option>)}</select></div>
+            <div><label className="text-xs text-gray-500 mb-1 block">Rate/Unit (₹) *</label><input type="number" min="0" value={form.rate_per_unit} onChange={e => setF('rate_per_unit', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label className="text-xs text-gray-500 mb-1 block">Total</label><div className="border border-gray-200 bg-green-50 rounded-lg px-3 py-2 text-sm font-bold text-green-700">{inr(total)}</div></div>
+            <div><label className="text-xs text-gray-500 mb-1 block">Payment</label><select value={form.payment_mode} onChange={e => setF('payment_mode', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"><option value="cash">Cash</option><option value="upi">UPI</option><option value="credit">Credit</option><option value="bank_transfer">Bank Transfer</option></select></div>
+            <div><label className="text-xs text-gray-500 mb-1 block">Notes</label><input value={form.notes} onChange={e => setF('notes', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleSave} disabled={saving} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50">{saving ? 'Saving…' : 'Record'}</button>
+            <button onClick={() => setShowForm(false)} className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+          </div>
         </div>
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto max-h-96 overflow-y-auto">
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+        {loading ? <p className="text-center py-8 text-gray-400 text-sm">Loading…</p> : (
+          <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-gray-600 text-xs uppercase sticky top-0">
-                <tr><th className="px-4 py-2 text-left">Product</th><th className="px-4 py-2 text-right">Price</th><th className="px-4 py-2 text-right">Stock</th><th className="px-4 py-2"></th></tr>
+              <thead className="bg-green-50 text-gray-600 text-xs uppercase">
+                <tr><th className="px-4 py-2 text-left">Date</th><th className="px-4 py-2 text-left">Product</th><th className="px-4 py-2 text-left">Supplier</th><th className="px-4 py-2 text-right">Qty</th><th className="px-4 py-2 text-right">Total</th><th className="px-4 py-2 text-right">Mode</th></tr>
               </thead>
               <tbody>
-                {filteredProducts.map(p => (
+                {purchases.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No purchases yet</td></tr>}
+                {purchases.map(p => (
                   <tr key={p.id} className="border-t border-gray-100 hover:bg-green-50">
-                    <td className="px-4 py-2"><p className="font-medium text-gray-800">{p.name}</p><p className="text-xs text-gray-400">{p.category}</p></td>
-                    <td className="px-4 py-2 text-right">{inr(p.selling_price)}</td>
-                    <td className="px-4 py-2 text-right text-gray-500">{p.current_stock} {p.unit}</td>
-                    <td className="px-4 py-2 text-right"><button onClick={() => addToCart(p)} disabled={p.current_stock <= 0} className="bg-green-700 text-white px-3 py-1 rounded-lg text-xs font-medium hover:bg-green-800 disabled:opacity-40"><Plus size={12} className="inline" /> Add</button></td>
+                    <td className="px-4 py-2 text-gray-500 whitespace-nowrap">{p.date}</td>
+                    <td className="px-4 py-2"><p className="font-medium text-gray-800">{p.product_name}</p><p className="text-xs text-gray-400">{p.category}</p></td>
+                    <td className="px-4 py-2 text-gray-600">{p.supplier_name}</td>
+                    <td className="px-4 py-2 text-right">{p.quantity} {p.unit}</td>
+                    <td className="px-4 py-2 text-right font-semibold">{inr(p.total_amount)}</td>
+                    <td className="px-4 py-2 text-right text-xs text-gray-500">{p.payment_mode}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Expenses ───────────────────────────────────────────────────────────────
+function AgExpenses({ bunkId, onRefresh, showToast }: { bunkId: string; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void }) {
+  const [expenses, setExpenses] = useState<AgExpense[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const blank = { date: getTodayIST(), category: 'Other', amount: '', description: '', payment_mode: 'cash' };
+  const [form, setForm] = useState(blank);
+  const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  async function load() {
+    setLoading(true);
+    const { data } = await supabase.from('ag_expenses').select('*').eq('bunk_id', bunkId).order('date', { ascending: false }).limit(60);
+    setExpenses(data || []);
+    setLoading(false);
+  }
+
+  useEffect(() => { load(); }, [bunkId]);
+
+  async function handleSave() {
+    const amt = parseFloat(form.amount) || 0;
+    if (!amt) { showToast('Enter amount', 'error'); return; }
+    setSaving(true);
+    const { error } = await supabase.from('ag_expenses').insert({ bunk_id: bunkId, date: form.date, category: form.category, amount: amt, description: form.description || '', payment_mode: form.payment_mode });
+    setSaving(false);
+    if (error) { showToast(error.message, 'error'); return; }
+    showToast('Expense saved'); setShowForm(false); setForm(blank); load(); onRefresh();
+  }
+
+  const totalExp = expenses.reduce((a, e) => a + Number(e.amount), 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div><h2 className="font-semibold text-gray-800">Expenses</h2><p className="text-xs text-gray-500">Total: {inr(totalExp)}</p></div>
+        <button onClick={() => setShowForm(true)} className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition"><Plus size={14} /> Add</button>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4 h-fit">
-        <h2 className="font-semibold text-gray-800">Cart</h2>
-        {cart.length === 0 ? <p className="text-gray-400 text-sm">No items added.</p> : (
-          <div className="space-y-2 max-h-48 overflow-y-auto">
-            {cart.map(i => (
-              <div key={i.product.id} className="flex items-center gap-2 py-1 border-b border-gray-100 last:border-0">
-                <div className="flex-1 min-w-0"><p className="text-sm font-medium text-gray-800 truncate">{i.product.name}</p><p className="text-xs text-gray-400">{inr(i.price)} / {i.product.unit}</p></div>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => updateQty(i.product.id, i.quantity - 1)} className="w-6 h-6 rounded border flex items-center justify-center text-gray-600 hover:bg-gray-100">-</button>
-                  <span className="w-8 text-center text-sm font-medium">{i.quantity}</span>
-                  <button onClick={() => updateQty(i.product.id, i.quantity + 1)} className="w-6 h-6 rounded border flex items-center justify-center text-gray-600 hover:bg-gray-100">+</button>
+      {showForm && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-xs text-gray-500 mb-1 block">Date</label><input type="date" value={form.date} onChange={e => setF('date', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label className="text-xs text-gray-500 mb-1 block">Category</label><select value={form.category} onChange={e => setF('category', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">{EXPENSE_CATS.map(c => <option key={c}>{c}</option>)}</select></div>
+            <div><label className="text-xs text-gray-500 mb-1 block">Amount (₹) *</label><input type="number" min="0" value={form.amount} onChange={e => setF('amount', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+            <div><label className="text-xs text-gray-500 mb-1 block">Payment</label><select value={form.payment_mode} onChange={e => setF('payment_mode', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"><option value="cash">Cash</option><option value="upi">UPI</option><option value="bank_transfer">Bank</option></select></div>
+            <div className="col-span-2"><label className="text-xs text-gray-500 mb-1 block">Description</label><input value={form.description} onChange={e => setF('description', e.target.value)} placeholder="e.g., Labour charges, Transport" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleSave} disabled={saving} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button>
+            <button onClick={() => setShowForm(false)} className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm hover:bg-gray-50">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        {loading ? <p className="text-center py-8 text-gray-400 text-sm">Loading…</p> : (
+          <div className="divide-y divide-gray-100">
+            {expenses.length === 0 && <p className="text-center py-8 text-gray-400 text-sm">No expenses yet</p>}
+            {expenses.map(e => (
+              <div key={e.id} className="flex justify-between items-center px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-gray-800">{e.description || e.category}</p>
+                  <p className="text-xs text-gray-400">{e.date} · {e.category} · {e.payment_mode}</p>
                 </div>
-                <span className="text-sm font-semibold text-gray-800">{inr(i.price * i.quantity)}</span>
+                <span className="text-sm font-bold text-red-600">{inr(e.amount)}</span>
               </div>
             ))}
           </div>
         )}
-        <div className="border-t pt-3">
-          <div className="flex justify-between text-base font-bold mb-3"><span>Total</span><span>{inr(total)}</span></div>
-          <div className="space-y-2">
-            <div><label className="text-xs text-gray-500 mb-1 block">Customer / Farmer</label>
-              <select value={customerId} onChange={e => { setCustomerId(e.target.value); if (!e.target.value) setCustomerName('Walk-in'); }} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">Walk-in Customer</option>
-                {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-            <div><label className="text-xs text-gray-500 mb-1 block">Payment Mode</label>
-              <select value={paymentMode} onChange={e => setPaymentMode(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                {PAYMENT_MODES.map(m => <option key={m}>{m}</option>)}
-              </select>
-            </div>
-            <div><label className="text-xs text-gray-500 mb-1 block">Date</label><input type="date" value={saleDate} onChange={e => setSaleDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
-            <div><label className="text-xs text-gray-500 mb-1 block">Notes</label><input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes…" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
-          </div>
-          <button onClick={handleSell} disabled={saving || cart.length === 0} className="mt-3 w-full bg-green-700 text-white py-2.5 rounded-lg font-medium hover:bg-green-800 disabled:opacity-60 flex items-center justify-center gap-2">
-            {saving && <Loader2 size={14} className="animate-spin" />}{saving ? 'Processing…' : 'Complete Sale'}
+      </div>
+    </div>
+  );
+}
+
+// ── Reports ────────────────────────────────────────────────────────────────
+function AgReports({ bunkId }: { bunkId: string }) {
+  const [period, setPeriod] = useState<'today' | 'month' | 'season'>('today');
+  const [reportData, setReportData] = useState<{ sales: number; cash: number; credit: number; expenses: number; payments: number } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const season = getCurrentSeason();
+
+  const loadReport = useCallback(async () => {
+    setLoading(true);
+    const today = getTodayIST();
+    let start = today, end = today;
+    if (period === 'month') {
+      const d = new Date();
+      start = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+      end = today;
+    } else if (period === 'season') {
+      start = season.start;
+      end = today < season.end ? today : season.end;
+    }
+
+    const [salesRes, expRes, payRes] = await Promise.all([
+      supabase.from('ag_sales').select('total, payment_mode').eq('bunk_id', bunkId).gte('date', start).lte('date', end),
+      supabase.from('ag_expenses').select('amount').eq('bunk_id', bunkId).gte('date', start).lte('date', end),
+      supabase.from('ag_payments').select('amount').eq('bunk_id', bunkId).gte('payment_date', start).lte('payment_date', end),
+    ]);
+
+    const s = salesRes.data || [];
+    const totalSales = s.reduce((a, r) => a + Number(r.total || 0), 0);
+    const cashSales = s.filter(r => r.payment_mode !== 'credit').reduce((a, r) => a + Number(r.total || 0), 0);
+    const creditSales = s.filter(r => r.payment_mode === 'credit').reduce((a, r) => a + Number(r.total || 0), 0);
+    const totalExp = (expRes.data || []).reduce((a, e) => a + Number(e.amount || 0), 0);
+    const totalPay = (payRes.data || []).reduce((a, p) => a + Number(p.amount || 0), 0);
+    setReportData({ sales: totalSales, cash: cashSales, credit: creditSales, expenses: totalExp, payments: totalPay });
+    setLoading(false);
+  }, [bunkId, period, season.start, season.end]);
+
+  useEffect(() => { loadReport(); }, [loadReport]);
+
+  const periodLabel = period === 'today' ? `Today (${getTodayIST()})` : period === 'month' ? 'This Month' : `${season.emoji} ${season.label} Season`;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-2">
+        {(['today', 'month', 'season'] as const).map(p => (
+          <button key={p} onClick={() => setPeriod(p)} className={`flex-1 py-2 text-sm font-medium rounded-lg transition capitalize ${period === p ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+            {p === 'season' ? `${season.emoji} Season` : p}
           </button>
-        </div>
+        ))}
       </div>
-    </div>
-  );
-}
 
-interface CustForm { name: string; phone: string; address: string; land_area: string; }
-const defaultCF = (): CustForm => ({ name: '', phone: '', address: '', land_area: '' });
-
-function AgCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: string; customers: Customer[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; }) {
-  const [search, setSearch] = useState('');
-  const [showModal, setShowModal] = useState(false);
-  const [editing, setEditing] = useState<Customer | null>(null);
-  const [form, setForm] = useState<CustForm>(defaultCF());
-  const [saving, setSaving] = useState(false);
-
-  const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search));
-
-  function openAdd() { setEditing(null); setForm(defaultCF()); setShowModal(true); }
-  function openEdit(c: Customer) { setEditing(c); setForm({ name: c.name, phone: c.phone, address: c.address, land_area: c.land_area || '' }); setShowModal(true); }
-
-  async function handleSave() {
-    if (!form.name.trim()) { showToast('Farmer name required', 'error'); return; }
-    setSaving(true);
-    const payload = { ...form, bunk_id: bunkId, is_active: true };
-    const { error } = editing ? await supabase.from('ag_customers').update(payload).eq('id', editing.id) : await supabase.from('ag_customers').insert(payload);
-    setSaving(false);
-    if (error) { showToast(error.message, 'error'); return; }
-    showToast(editing ? 'Farmer updated' : 'Farmer added');
-    setShowModal(false); onRefresh();
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex gap-3 items-center justify-between">
-        <div className="relative flex-1 max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search farmers…" className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400" />
-        </div>
-        <button onClick={openAdd} className="flex items-center gap-1.5 bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-800">
-          <Plus size={16} /> Add Farmer
-        </button>
-      </div>
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
-              <tr><th className="px-4 py-3 text-left">Name</th><th className="px-4 py-3 text-left">Phone</th><th className="px-4 py-3 text-left">Village / Address</th><th className="px-4 py-3 text-left">Land Area</th><th className="px-4 py-3 text-right">Outstanding</th><th className="px-4 py-3 text-center">Actions</th></tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 && <tr><td colSpan={6} className="text-center py-10 text-gray-400">No farmers found.</td></tr>}
-              {filtered.map(c => (
-                <tr key={c.id} className="border-t border-gray-100 hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-800">{c.name}</td>
-                  <td className="px-4 py-3 text-gray-600">{c.phone || '—'}</td>
-                  <td className="px-4 py-3 text-gray-600">{c.address || '—'}</td>
-                  <td className="px-4 py-3 text-gray-600">{c.land_area || '—'}</td>
-                  <td className="px-4 py-3 text-right"><span className={`font-semibold ${c.outstanding_amount > 0 ? 'text-orange-600' : 'text-gray-500'}`}>{inr(c.outstanding_amount)}</span></td>
-                  <td className="px-4 py-3 text-center"><button onClick={() => openEdit(c)} className="text-green-600 hover:text-green-800"><Edit2 size={14} /></button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-            <div className="flex items-center justify-between p-5 border-b"><h2 className="text-lg font-semibold">{editing ? 'Edit Farmer' : 'Add Farmer'}</h2><button onClick={() => setShowModal(false)}><X size={20} /></button></div>
-            <div className="p-5 space-y-3">
-              <div><label className="text-xs text-gray-500 mb-1 block">Name *</label><input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Phone</label><input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Village / Address</label><input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Land Area (e.g., 5 acres)</label><input value={form.land_area} onChange={e => setForm(f => ({ ...f, land_area: e.target.value }))} placeholder="e.g., 5 acres" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
-            </div>
-            <div className="flex gap-3 p-5 border-t">
-              <button onClick={() => setShowModal(false)} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">Cancel</button>
-              <button onClick={handleSave} disabled={saving} className="flex-1 bg-green-700 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-800 disabled:opacity-60">{saving ? 'Saving…' : 'Save'}</button>
-            </div>
+      {loading ? <div className="text-center py-8 text-gray-400 text-sm">Loading…</div> : reportData && (
+        <div className="space-y-3">
+          <h2 className="font-semibold text-gray-800">{periodLabel}</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: 'Total Sales', value: inr(reportData.sales), color: 'text-green-600' },
+              { label: 'Cash / UPI', value: inr(reportData.cash), color: 'text-emerald-600' },
+              { label: 'Credit Sales', value: inr(reportData.credit), color: 'text-amber-600' },
+              { label: 'Payments In', value: inr(reportData.payments), color: 'text-blue-600' },
+              { label: 'Expenses', value: inr(reportData.expenses), color: 'text-red-600' },
+              { label: 'Net (Cash basis)', value: inr(reportData.cash + reportData.payments - reportData.expenses), color: 'text-purple-600' },
+            ].map(c => (
+              <div key={c.label} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+                <p className="text-xs text-gray-500">{c.label}</p>
+                <p className={`text-xl font-bold mt-1 ${c.color}`}>{c.value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm text-green-800 space-y-1">
+            <p className="font-semibold">📊 {periodLabel} Summary</p>
+            <p>Cash + UPI collected: <strong>{inr(reportData.cash)}</strong></p>
+            <p>Farmer payments received: <strong>{inr(reportData.payments)}</strong></p>
+            <p>Expenses paid: <strong>{inr(reportData.expenses)}</strong></p>
+            <p className="font-bold text-green-700 border-t border-green-200 pt-1 mt-1">Net in hand: {inr(reportData.cash + reportData.payments - reportData.expenses)}</p>
+            <p className="text-xs text-gray-500">Credit sales of {inr(reportData.credit)} still outstanding from farmers.</p>
           </div>
         </div>
       )}
@@ -521,133 +910,99 @@ function AgCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: stri
   );
 }
 
-interface PurchForm { supplier_name: string; invoice_number: string; purchase_date: string; total_amount: number; notes: string; }
-const defaultPurchF = (): PurchForm => ({ supplier_name: '', invoice_number: '', purchase_date: getTodayIST(), total_amount: 0, notes: '' });
-
-function AgPurchases({ bunkId, purchases, onRefresh, showToast }: { bunkId: string; purchases: Purchase[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; }) {
-  const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState<PurchForm>(defaultPurchF());
+// ── Settings ───────────────────────────────────────────────────────────────
+function AgSettings({ bunkId, onLogout, showToast }: { bunkId: string; onLogout: () => void; showToast: (m: string, t?: 'success' | 'error') => void }) {
+  const [bunkName, setBunkName] = useState('');
+  const [phone, setPhone] = useState('');
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    supabase.from('bunks').select('name, owner_phone').eq('id', bunkId).maybeSingle().then(({ data }) => {
+      if (data) { setBunkName(data.name || ''); setPhone(data.owner_phone || ''); }
+    });
+  }, [bunkId]);
+
   async function handleSave() {
-    if (!form.supplier_name.trim() || form.total_amount <= 0) { showToast('Supplier name and amount required', 'error'); return; }
     setSaving(true);
-    const { error } = await supabase.from('ag_purchases').insert({ ...form, bunk_id: bunkId });
+    const { error } = await supabase.from('bunks').update({ name: bunkName }).eq('id', bunkId);
     setSaving(false);
     if (error) { showToast(error.message, 'error'); return; }
-    showToast('Purchase added'); setShowModal(false); setForm(defaultPurchF()); onRefresh();
+    showToast('Settings saved');
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <button onClick={() => setShowModal(true)} className="flex items-center gap-1.5 bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-800"><Plus size={16} /> Add Purchase</button>
+      <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
+        <h2 className="font-semibold text-gray-800">Shop Settings</h2>
+        <div><label className="text-xs text-gray-500 mb-1 block">Shop Name</label><input value={bunkName} onChange={e => setBunkName(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
+        <div><label className="text-xs text-gray-500 mb-1 block">Owner Phone (read-only)</label><input value={phone} disabled className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-gray-50 text-gray-500" /></div>
+        <button onClick={handleSave} disabled={saving} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50 transition">{saving ? 'Saving…' : 'Save Changes'}</button>
       </div>
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
-              <tr><th className="px-4 py-3 text-left">Date</th><th className="px-4 py-3 text-left">Supplier</th><th className="px-4 py-3 text-left">Invoice</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3 text-left">Notes</th></tr>
-            </thead>
-            <tbody>
-              {purchases.length === 0 && <tr><td colSpan={5} className="text-center py-10 text-gray-400">No purchases yet.</td></tr>}
-              {purchases.map(p => (
-                <tr key={p.id} className="border-t border-gray-100 hover:bg-gray-50">
-                  <td className="px-4 py-3 text-gray-600">{formatISTDate(p.purchase_date)}</td>
-                  <td className="px-4 py-3 font-medium text-gray-800">{p.supplier_name}</td>
-                  <td className="px-4 py-3 text-gray-600">{p.invoice_number || '—'}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-gray-800">{inr(p.total_amount)}</td>
-                  <td className="px-4 py-3 text-gray-500">{p.notes || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <h3 className="font-semibold text-gray-800 mb-3">WhatsApp Bot Commands</h3>
+        <div className="space-y-1.5 text-xs text-gray-600">
+          {[
+            ['Ramu ne 5 bag urea liya 2500', 'Credit sale to farmer'],
+            ['Ramu ne 3000 diya', 'Payment received'],
+            ['100 bag DAP vacchindi', 'Add stock'],
+            ['urea stock', 'Check product stock'],
+            ['low stock', 'See all low-stock items'],
+            ['today report', "Today's summary"],
+            ['season report', 'Kharif / Rabi season P&L'],
+            ['farmers', 'List farmers with dues'],
+            ['Ramu balance', "Farmer's outstanding"],
+            ['expense 500 labour', 'Log an expense'],
+            ['overdue 30 days', 'Farmers overdue 30+ days'],
+          ].map(([cmd, desc]) => (
+            <div key={cmd} className="flex justify-between gap-2">
+              <code className="bg-gray-100 px-1.5 py-0.5 rounded text-xs font-mono">{cmd}</code>
+              <span className="text-gray-400 text-right">{desc}</span>
+            </div>
+          ))}
         </div>
       </div>
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-            <div className="flex items-center justify-between p-5 border-b"><h2 className="text-lg font-semibold">Add Purchase</h2><button onClick={() => setShowModal(false)}><X size={20} /></button></div>
-            <div className="p-5 space-y-3">
-              <div><label className="text-xs text-gray-500 mb-1 block">Supplier Name *</label><input value={form.supplier_name} onChange={e => setForm(f => ({ ...f, supplier_name: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Invoice Number</label><input value={form.invoice_number} onChange={e => setForm(f => ({ ...f, invoice_number: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Date</label><input type="date" value={form.purchase_date} onChange={e => setForm(f => ({ ...f, purchase_date: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Total Amount (₹) *</label><input type="number" value={form.total_amount} onChange={e => setForm(f => ({ ...f, total_amount: parseFloat(e.target.value) || 0 }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Notes</label><input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
-            </div>
-            <div className="flex gap-3 p-5 border-t">
-              <button onClick={() => setShowModal(false)} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">Cancel</button>
-              <button onClick={handleSave} disabled={saving} className="flex-1 bg-green-700 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-800 disabled:opacity-60">{saving ? 'Saving…' : 'Save'}</button>
-            </div>
-          </div>
-        </div>
-      )}
+
+      <button onClick={onLogout} className="w-full border border-red-200 text-red-600 py-2.5 rounded-xl text-sm font-medium hover:bg-red-50 transition">Logout</button>
     </div>
   );
 }
 
-interface ExpForm { category: string; description: string; amount: number; expense_date: string; payment_mode: string; notes: string; }
-const defaultEF = (): ExpForm => ({ category: EXPENSE_CATEGORIES[0], description: '', amount: 0, expense_date: getTodayIST(), payment_mode: 'cash', notes: '' });
+// ── Main App ───────────────────────────────────────────────────────────────
+export function AgricultureApp({ bunkId, onLogout, user }: { bunkId: string; onLogout: () => void; user: { name?: string; phone?: string } }) {
+  const [tab, setTab] = useState('dashboard');
+  const [products, setProducts] = useState<AgProduct[]>([]);
+  const [customers, setCustomers] = useState<AgCustomer[]>([]);
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-function AgExpenses({ bunkId, expenses, onRefresh, showToast }: { bunkId: string; expenses: Expense[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; }) {
-  const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState<ExpForm>(defaultEF());
-  const [saving, setSaving] = useState(false);
-
-  async function handleSave() {
-    if (!form.description.trim() || form.amount <= 0) { showToast('Description and amount required', 'error'); return; }
-    setSaving(true);
-    const { error } = await supabase.from('ag_expenses').insert({ ...form, bunk_id: bunkId });
-    setSaving(false);
-    if (error) { showToast(error.message, 'error'); return; }
-    showToast('Expense added'); setShowModal(false); setForm(defaultEF()); onRefresh();
+  function showToast(msg: string, type: 'success' | 'error' = 'success') {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
   }
 
+  const refresh = useCallback(() => setRefreshKey(k => k + 1), []);
+
+  useEffect(() => {
+    if (!bunkId) return;
+    supabase.from('ag_products').select('*').eq('bunk_id', bunkId).order('category').order('name').then(({ data }) => setProducts(data || []));
+    supabase.from('ag_customers').select('*').eq('bunk_id', bunkId).eq('is_active', true).order('name').then(({ data }) => setCustomers(data || []));
+  }, [bunkId, refreshKey]);
+
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
-        <button onClick={() => setShowModal(true)} className="flex items-center gap-1.5 bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-800"><Plus size={16} /> Add Expense</button>
+    <div className="min-h-screen bg-gray-50">
+      <Header onLogout={onLogout} user={user} tab={tab} setTab={setTab} />
+      <div className="max-w-4xl mx-auto px-4 py-4">
+        {tab === 'dashboard' && <AgDashboard bunkId={bunkId} products={products} customers={customers} onRefresh={refresh} />}
+        {tab === 'inventory' && <AgInventory bunkId={bunkId} products={products} onRefresh={refresh} showToast={showToast} />}
+        {tab === 'sales' && <AgSales bunkId={bunkId} products={products} customers={customers} onRefresh={refresh} showToast={showToast} />}
+        {tab === 'farmers' && <AgFarmers bunkId={bunkId} customers={customers} onRefresh={refresh} showToast={showToast} />}
+        {tab === 'purchases' && <AgPurchases bunkId={bunkId} onRefresh={refresh} showToast={showToast} />}
+        {tab === 'expenses' && <AgExpenses bunkId={bunkId} onRefresh={refresh} showToast={showToast} />}
+        {tab === 'reports' && <AgReports bunkId={bunkId} />}
+        {tab === 'settings' && <AgSettings bunkId={bunkId} onLogout={onLogout} showToast={showToast} />}
       </div>
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
-              <tr><th className="px-4 py-3 text-left">Date</th><th className="px-4 py-3 text-left">Category</th><th className="px-4 py-3 text-left">Description</th><th className="px-4 py-3 text-left">Payment</th><th className="px-4 py-3 text-right">Amount</th></tr>
-            </thead>
-            <tbody>
-              {expenses.length === 0 && <tr><td colSpan={5} className="text-center py-10 text-gray-400">No expenses recorded.</td></tr>}
-              {expenses.map(e => (
-                <tr key={e.id} className="border-t border-gray-100 hover:bg-gray-50">
-                  <td className="px-4 py-3 text-gray-600">{formatISTDate(e.expense_date)}</td>
-                  <td className="px-4 py-3 text-gray-600">{e.category}</td>
-                  <td className="px-4 py-3 font-medium text-gray-800">{e.description}</td>
-                  <td className="px-4 py-3 text-gray-600">{e.payment_mode}</td>
-                  <td className="px-4 py-3 text-right font-semibold text-red-600">{inr(e.amount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-            <div className="flex items-center justify-between p-5 border-b"><h2 className="text-lg font-semibold">Add Expense</h2><button onClick={() => setShowModal(false)}><X size={20} /></button></div>
-            <div className="p-5 space-y-3">
-              <div><label className="text-xs text-gray-500 mb-1 block">Category</label><select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">{EXPENSE_CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Description *</label><input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Amount (₹) *</label><input type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: parseFloat(e.target.value) || 0 }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Date</label><input type="date" value={form.expense_date} onChange={e => setForm(f => ({ ...f, expense_date: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Payment Mode</label><select value={form.payment_mode} onChange={e => setForm(f => ({ ...f, payment_mode: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">{PAYMENT_MODES.map(m => <option key={m}>{m}</option>)}</select></div>
-              <div><label className="text-xs text-gray-500 mb-1 block">Notes</label><input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" /></div>
-            </div>
-            <div className="flex gap-3 p-5 border-t">
-              <button onClick={() => setShowModal(false)} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">Cancel</button>
-              <button onClick={handleSave} disabled={saving} className="flex-1 bg-green-700 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-800 disabled:opacity-60">{saving ? 'Saving…' : 'Save'}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {toast && <Toast msg={toast.msg} type={toast.type} />}
     </div>
   );
 }
