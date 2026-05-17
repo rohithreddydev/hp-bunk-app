@@ -70,11 +70,15 @@ export function HardwareApp({ bunkId, onLogout, user }: { bunkId: string; onLogo
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  // BUG-FIX: Replace browser confirm() with React state modal (confirm() is blocked on mobile PWA)
+  const [confirmState, setConfirmState] = useState<{ msg: string; onYes: () => void } | null>(null);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3500);
   };
+
+  const showConfirm = (msg: string, onYes: () => void) => setConfirmState({ msg, onYes });
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -136,6 +140,29 @@ export function HardwareApp({ bunkId, onLogout, user }: { bunkId: string; onLogo
         </div>
       )}
 
+      {/* BUG-FIX: React-based confirm modal — replaces browser confirm() which is blocked on mobile PWA */}
+      {confirmState && (
+        <div className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <div className="flex items-center gap-2 text-red-600 mb-3">
+              <AlertTriangle size={22} />
+              <h3 className="font-bold text-gray-900">Confirm</h3>
+            </div>
+            <p className="text-gray-700 mb-6 text-sm">{confirmState.msg}</p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setConfirmState(null)}
+                className="px-4 py-2 text-gray-600 font-semibold hover:bg-gray-100 rounded-xl transition text-sm">
+                Cancel
+              </button>
+              <button onClick={() => { const fn = confirmState.onYes; setConfirmState(null); fn(); }}
+                className="px-4 py-2 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition text-sm">
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <nav className="bg-white border-b border-gray-200 overflow-x-auto">
         <div className="flex min-w-max">
           {tabs.map(t => (
@@ -153,7 +180,7 @@ export function HardwareApp({ bunkId, onLogout, user }: { bunkId: string; onLogo
         ) : (
           <>
             {activeTab === 'dashboard' && <HwDashboard todaySalesTotal={todaySalesTotal} todayExpenses={todayExpenses} todayCollections={todayCollections} lowStock={lowStock} recentSales={sales.slice(0, 8)} totalProducts={products.length} totalCreditOutstanding={totalCreditOutstanding} pendingCheques={pendingCheques} customers={customers} />}
-            {activeTab === 'inventory' && <HwInventory bunkId={bunkId} products={products} onRefresh={fetchAll} showToast={showToast} />}
+            {activeTab === 'inventory' && <HwInventory bunkId={bunkId} products={products} onRefresh={fetchAll} showToast={showToast} showConfirm={showConfirm} />}
             {activeTab === 'sales' && <HwSales bunkId={bunkId} products={products} customers={customers} sales={sales} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'customers' && <HwCustomers bunkId={bunkId} customers={customers} payments={payments} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'purchases' && <HwPurchases bunkId={bunkId} purchases={purchases} onRefresh={fetchAll} showToast={showToast} />}
@@ -261,7 +288,7 @@ interface ProdForm {
 }
 const defaultPF = (): ProdForm => ({ name: '', brand: '', category: CATEGORIES[0], unit: UNITS[0], mrp: 0, selling_price: 0, purchase_price: 0, current_stock: 0, reorder_level: 5 });
 
-function HwInventory({ bunkId, products, onRefresh, showToast }: { bunkId: string; products: Product[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; }) {
+function HwInventory({ bunkId, products, onRefresh, showToast, showConfirm }: { bunkId: string; products: Product[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; showConfirm: (msg: string, onYes: () => void) => void; }) {
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('All');
   const [showModal, setShowModal] = useState(false);
@@ -301,10 +328,12 @@ function HwInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
   }
 
   async function handleDelete(p: Product) {
-    if (!confirm(`Delete "${p.name}"?`)) return;
-    const { error } = await supabase.from('hw_products').update({ is_active: false }).eq('id', p.id).eq('bunk_id', bunkId);
-    if (error) { showToast(error.message, 'error'); return; }
-    showToast('Product removed'); onRefresh();
+    // BUG-FIX: use React modal instead of browser confirm() — confirm() is blocked on mobile PWA/fullscreen
+    showConfirm(`Delete "${p.name}" from inventory?`, async () => {
+      const { error } = await supabase.from('hw_products').update({ is_active: false }).eq('id', p.id).eq('bunk_id', bunkId);
+      if (error) { showToast(error.message, 'error'); return; }
+      showToast('Product removed'); onRefresh();
+    });
   }
 
   async function handleAdjust() {

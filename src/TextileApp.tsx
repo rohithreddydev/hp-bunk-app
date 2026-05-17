@@ -235,6 +235,7 @@ function TxInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState<ProdForm>(defaultPF());
   const [saving, setSaving] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{ msg: string; onYes: () => void } | null>(null);
 
   const filtered = products.filter(p => {
     const s = p.name.toLowerCase().includes(search.toLowerCase()) || (p.brand || '').toLowerCase().includes(search.toLowerCase());
@@ -252,18 +253,22 @@ function TxInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
     if (!form.name.trim()) { showToast('Item name required', 'error'); return; }
     setSaving(true);
     const payload = { ...form, bunk_id: bunkId, is_active: true };
-    const { error } = editing ? await supabase.from('tx_products').update(payload).eq('id', editing.id) : await supabase.from('tx_products').insert(payload);
+    const { error } = editing ? await supabase.from('tx_products').update(payload).eq('id', editing.id).eq('bunk_id', bunkId) : await supabase.from('tx_products').insert(payload);
     setSaving(false);
     if (error) { showToast(error.message, 'error'); return; }
     showToast(editing ? 'Item updated' : 'Item added');
     setShowModal(false); onRefresh();
   }
 
-  async function handleDelete(p: Product) {
-    if (!confirm(`Delete "${p.name}"?`)) return;
-    const { error } = await supabase.from('tx_products').update({ is_active: false }).eq('id', p.id);
-    if (error) { showToast(error.message, 'error'); return; }
-    showToast('Item removed'); onRefresh();
+  function handleDelete(p: Product) {
+    setConfirmModal({
+      msg: `Delete "${p.name}"?`,
+      onYes: async () => {
+        const { error } = await supabase.from('tx_products').update({ is_active: false }).eq('id', p.id).eq('bunk_id', bunkId);
+        if (error) { showToast(error.message, 'error'); return; }
+        showToast('Item removed'); onRefresh();
+      },
+    });
   }
 
   const setF = (k: keyof ProdForm, v: string | number) => setForm(f => ({ ...f, [k]: v }));
@@ -342,6 +347,17 @@ function TxInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
               <button onClick={handleSave} disabled={saving} className="flex-1 bg-purple-700 text-white py-2 rounded-lg text-sm font-medium hover:bg-purple-800 disabled:opacity-60 flex items-center justify-center gap-2">
                 {saving && <Loader2 size={14} className="animate-spin" />}{saving ? 'Saving…' : 'Save'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-sm mx-4">
+            <p className="text-gray-800 mb-4">{confirmModal.msg}</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmModal(null)} className="flex-1 px-4 py-2 border rounded-lg">Cancel</button>
+              <button onClick={() => { confirmModal.onYes(); setConfirmModal(null); }} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg">Confirm</button>
             </div>
           </div>
         </div>

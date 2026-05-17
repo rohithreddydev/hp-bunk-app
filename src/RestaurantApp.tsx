@@ -247,7 +247,7 @@ function RstMenu({ bunkId, menuItems, onRefresh, showToast }: { bunkId: string; 
   function openEdit(i: MenuItem) { setEditing(i); setForm({ name: i.name, category: i.category, price: i.price, description: i.description, is_available: i.is_available }); setShowModal(true); }
 
   async function toggleAvailability(item: MenuItem) {
-    const { error } = await supabase.from('rst_menu_items').update({ is_available: !item.is_available }).eq('id', item.id);
+    const { error } = await supabase.from('rst_menu_items').update({ is_available: !item.is_available }).eq('id', item.id).eq('bunk_id', bunkId);
     if (error) { showToast(error.message, 'error'); return; }
     showToast(item.is_available ? 'Marked unavailable' : 'Marked available'); onRefresh();
   }
@@ -256,7 +256,7 @@ function RstMenu({ bunkId, menuItems, onRefresh, showToast }: { bunkId: string; 
     if (!form.name.trim()) { showToast('Item name required', 'error'); return; }
     setSaving(true);
     const payload = { ...form, bunk_id: bunkId };
-    const { error } = editing ? await supabase.from('rst_menu_items').update(payload).eq('id', editing.id) : await supabase.from('rst_menu_items').insert(payload);
+    const { error } = editing ? await supabase.from('rst_menu_items').update(payload).eq('id', editing.id).eq('bunk_id', bunkId) : await supabase.from('rst_menu_items').insert(payload);
     setSaving(false);
     if (error) { showToast(error.message, 'error'); return; }
     showToast(editing ? 'Item updated' : 'Item added'); setShowModal(false); onRefresh();

@@ -240,6 +240,7 @@ function ApInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState<AProdForm>(defaultAPF());
   const [saving, setSaving] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{ msg: string; onYes: () => void } | null>(null);
 
   const filtered = products.filter(p => {
     const s = p.name.toLowerCase().includes(search.toLowerCase()) || p.brand.toLowerCase().includes(search.toLowerCase());
@@ -257,16 +258,21 @@ function ApInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
     if (!form.name.trim()) { showToast('Product name required', 'error'); return; }
     setSaving(true);
     const payload = { ...form, bunk_id: bunkId, is_active: true };
-    const { error } = editing ? await supabase.from('ap_products').update(payload).eq('id', editing.id) : await supabase.from('ap_products').insert(payload);
+    const { error } = editing ? await supabase.from('ap_products').update(payload).eq('id', editing.id).eq('bunk_id', bunkId) : await supabase.from('ap_products').insert(payload);
     setSaving(false);
     if (error) { showToast(error.message, 'error'); return; }
     showToast(editing ? 'Part updated' : 'Part added'); setShowModal(false); onRefresh();
   }
 
-  async function handleDelete(p: Product) {
-    if (!confirm(`Delete "${p.name}"?`)) return;
-    await supabase.from('ap_products').update({ is_active: false }).eq('id', p.id);
-    showToast('Part removed'); onRefresh();
+  function handleDelete(p: Product) {
+    setConfirmModal({
+      msg: `Delete "${p.name}"?`,
+      onYes: async () => {
+        const { error } = await supabase.from('ap_products').update({ is_active: false }).eq('id', p.id).eq('bunk_id', bunkId);
+        if (error) { showToast(error.message, 'error'); return; }
+        showToast('Part removed'); onRefresh();
+      },
+    });
   }
 
   const setF = (k: keyof AProdForm, v: string | number) => setForm(f => ({ ...f, [k]: v }));
@@ -331,6 +337,17 @@ function ApInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
             <div className="flex gap-3 p-5 border-t">
               <button onClick={() => setShowModal(false)} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">Cancel</button>
               <button onClick={handleSave} disabled={saving} className="flex-1 bg-slate-700 text-white py-2 rounded-lg text-sm font-medium hover:bg-slate-800 disabled:opacity-60">{saving ? 'Saving…' : 'Save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-sm mx-4">
+            <p className="text-gray-800 mb-4">{confirmModal.msg}</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmModal(null)} className="flex-1 px-4 py-2 border rounded-lg">Cancel</button>
+              <button onClick={() => { confirmModal.onYes(); setConfirmModal(null); }} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg">Confirm</button>
             </div>
           </div>
         </div>

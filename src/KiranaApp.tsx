@@ -248,6 +248,9 @@ function KiInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState<ProdForm>(defaultPF());
   const [saving, setSaving] = useState(false);
+  // BUG-FIX: Replace browser confirm() with React state modal (confirm() is blocked on mobile PWA)
+  const [confirmState, setConfirmState] = useState<{ msg: string; onYes: () => void } | null>(null);
+  const showConfirm = (msg: string, onYes: () => void) => setConfirmState({ msg, onYes });
 
   const filtered = products.filter(p => {
     const match = p.name.toLowerCase().includes(search.toLowerCase()) || (p.brand || '').toLowerCase().includes(search.toLowerCase());
@@ -266,17 +269,20 @@ function KiInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
     if (form.selling_price <= 0) { showToast('Selling price must be > 0', 'error'); return; }
     setSaving(true);
     const payload = { ...form, bunk_id: bunkId, is_active: true };
-    const { error } = editing ? await supabase.from('ki_products').update(payload).eq('id', editing.id) : await supabase.from('ki_products').insert(payload);
+    const { error } = editing ? await supabase.from('ki_products').update(payload).eq('id', editing.id).eq('bunk_id', bunkId) : await supabase.from('ki_products').insert(payload);
     setSaving(false);
     if (error) { showToast(error.message, 'error'); return; }
     showToast(editing ? 'Product updated' : 'Product added');
     setShowModal(false); onRefresh();
   }
 
-  async function handleDelete(p: Product) {
-    if (!confirm(`Remove "${p.name}" from inventory?`)) return;
-    await supabase.from('ki_products').update({ is_active: false }).eq('id', p.id);
-    showToast('Product removed'); onRefresh();
+  function handleDelete(p: Product) {
+    // BUG-FIX: use React modal instead of browser confirm() — confirm() is blocked on mobile PWA/fullscreen
+    showConfirm(`Remove "${p.name}" from inventory?`, async () => {
+      const { error } = await supabase.from('ki_products').update({ is_active: false }).eq('id', p.id).eq('bunk_id', bunkId);
+      if (error) { showToast(error.message, 'error'); return; }
+      showToast('Product removed'); onRefresh();
+    });
   }
 
   const setF = (k: keyof ProdForm, v: string | number) => setForm(f => ({ ...f, [k]: v }));
@@ -337,6 +343,23 @@ function KiInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
           </table>
         </div>
       </div>
+
+      {/* BUG-FIX: React-based confirm modal — replaces browser confirm() which is blocked on mobile PWA */}
+      {confirmState && (
+        <div className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <div className="flex items-center gap-2 text-red-600 mb-3">
+              <AlertTriangle size={22} />
+              <h3 className="font-bold text-gray-900">Confirm</h3>
+            </div>
+            <p className="text-gray-700 mb-6 text-sm">{confirmState.msg}</p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setConfirmState(null)} className="px-4 py-2 text-gray-600 font-semibold hover:bg-gray-100 rounded-xl transition text-sm">Cancel</button>
+              <button onClick={() => { const fn = confirmState.onYes; setConfirmState(null); fn(); }} className="px-4 py-2 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition text-sm">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -415,8 +438,11 @@ function KiSales({ bunkId, products, customers, onRefresh, showToast }: { bunkId
       sale_id: sale.id, bunk_id: bunkId, product_id: i.product.id,
       product_name: i.product.name, quantity: i.quantity, unit_price: i.price, total_price: i.price * i.quantity,
     })));
+    // BUG-FIX: read fresh stock from DB to prevent race-condition overwrites; also add bunk_id guard
     for (const i of cart) {
-      await supabase.from('ki_products').update({ current_stock: i.product.current_stock - i.quantity }).eq('id', i.product.id);
+      const { data: freshProd } = await supabase.from('ki_products').select('current_stock').eq('id', i.product.id).eq('bunk_id', bunkId).single();
+      const newStock = Math.max(0, Number(freshProd?.current_stock || 0) - i.quantity);
+      await supabase.from('ki_products').update({ current_stock: newStock }).eq('id', i.product.id).eq('bunk_id', bunkId);
     }
     if (paymentMode === 'credit' && customerId) {
       const { data: freshCust } = await supabase.from('ki_customers').select('outstanding_amount').eq('id', customerId).eq('bunk_id', bunkId).maybeSingle();
@@ -527,7 +553,7 @@ function KiCustomers({ bunkId, customers, sales, onRefresh, showToast }: { bunkI
     if (!form.name.trim()) { showToast('Customer name required', 'error'); return; }
     setSaving(true);
     const payload = { ...form, bunk_id: bunkId, is_active: true };
-    const { error } = editing ? await supabase.from('ki_customers').update(payload).eq('id', editing.id) : await supabase.from('ki_customers').insert(payload);
+    const { error } = editing ? await supabase.from('ki_customers').update(payload).eq('id', editing.id).eq('bunk_id', bunkId) : await supabase.from('ki_customers').insert(payload);
     setSaving(false);
     if (error) { showToast(error.message, 'error'); return; }
     showToast(editing ? 'Customer updated' : 'Customer added');
@@ -660,7 +686,7 @@ function KiSuppliers({ bunkId, suppliers, onRefresh, showToast }: { bunkId: stri
     if (!form.name.trim()) { showToast('Supplier name required', 'error'); return; }
     setSaving(true);
     const payload = { ...form, bunk_id: bunkId, is_active: true };
-    const { error } = editing ? await supabase.from('ki_suppliers').update(payload).eq('id', editing.id) : await supabase.from('ki_suppliers').insert(payload);
+    const { error } = editing ? await supabase.from('ki_suppliers').update(payload).eq('id', editing.id).eq('bunk_id', bunkId) : await supabase.from('ki_suppliers').insert(payload);
     setSaving(false);
     if (error) { showToast(error.message, 'error'); return; }
     showToast(editing ? 'Supplier updated' : 'Supplier added');
@@ -740,8 +766,10 @@ function KiPurchases({ bunkId, purchases, suppliers, onRefresh, showToast }: { b
     setSaving(true);
     const { error } = await supabase.from('ki_purchases').insert({ ...form, bunk_id: bunkId });
     if (!error && form.payment_mode === 'credit' && form.supplier_id) {
-      const sup = suppliers.find(s => s.id === form.supplier_id);
-      if (sup) await supabase.from('ki_suppliers').update({ outstanding_amount: (sup.outstanding_amount || 0) + form.total_amount }).eq('id', form.supplier_id);
+      // BUG-FIX: read fresh outstanding_amount from DB (avoid stale in-memory value) + add bunk_id guard
+      const { data: freshSup } = await supabase.from('ki_suppliers').select('outstanding_amount').eq('id', form.supplier_id).eq('bunk_id', bunkId).single();
+      const base = freshSup ? Number(freshSup.outstanding_amount || 0) : 0;
+      await supabase.from('ki_suppliers').update({ outstanding_amount: base + form.total_amount }).eq('id', form.supplier_id).eq('bunk_id', bunkId);
     }
     setSaving(false);
     if (error) { showToast(error.message, 'error'); return; }

@@ -147,6 +147,10 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [msg, setMsg] = useState<{type:'success'|'error', text:string}|null>(null);
+  // BUG-FIX: Replace browser confirm() with React state modal (confirm() is blocked on mobile PWA)
+  const [confirmState, setConfirmState] = useState<{ msg: string; onYes: () => void } | null>(null);
+  const showConfirm = (message: string, onYes: () => void) => setConfirmState({ msg: message, onYes });
+  const [saving, setSaving] = useState(false);
 
   // inventory form
   const [showProductForm, setShowProductForm] = useState(false);
@@ -236,6 +240,7 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
   const saveProduct = async () => {
     if (!productForm.name.trim()) return flash('error', 'Medicine name is required');
     if (!productForm.selling_price) return flash('error', 'Selling price is required');
+    setSaving(true);
     const payload = {
       bunk_id: bunkId,
       name: productForm.name.trim(),
@@ -257,11 +262,14 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
       is_active: true,
     };
     if (editProduct) {
-      const { error } = await supabase.from('med_products').update(payload).eq('id', editProduct.id);
+      // BUG-FIX: add bunk_id guard to prevent cross-tenant update
+      const { error } = await supabase.from('med_products').update(payload).eq('id', editProduct.id).eq('bunk_id', bunkId);
+      setSaving(false);
       if (error) return flash('error', error.message);
       flash('success', 'Medicine updated');
     } else {
       const { error } = await supabase.from('med_products').insert(payload);
+      setSaving(false);
       if (error) return flash('error', error.message);
       flash('success', 'Medicine added');
     }
@@ -269,11 +277,14 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
     loadAll();
   };
 
-  const deleteProduct = async (id: string) => {
-    const { error } = await supabase.from('med_products').update({ is_active: false }).eq('id', id);
-    if (error) return flash('error', error.message);
-    flash('success', 'Medicine removed');
-    loadAll();
+  const deleteProduct = (id: string, name: string) => {
+    // BUG-FIX: use React modal instead of no-confirm delete; also add bunk_id guard
+    showConfirm(`Remove "${name}" from inventory?`, async () => {
+      const { error } = await supabase.from('med_products').update({ is_active: false }).eq('id', id).eq('bunk_id', bunkId);
+      if (error) return flash('error', error.message);
+      flash('success', 'Medicine removed');
+      loadAll();
+    });
   };
 
   // ── Billing ───────────────────────────────────────────────────────────────
@@ -324,9 +335,11 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
     const items = cart.map(x => ({ sale_id: saleData.id, bunk_id: bunkId, product_id: x.product_id, product_name: x.product_name, batch_number: x.batch_number, expiry_date: x.expiry_date||null, quantity: x.quantity, unit_price: x.unit_price, total_price: x.total_price }));
     await supabase.from('med_sale_items').insert(items);
 
+    // BUG-FIX: read fresh stock from DB to prevent race-condition overwrites; also add bunk_id guard
     for (const item of cart) {
-      const prod = products.find(p => p.id === item.product_id);
-      if (prod) await supabase.from('med_products').update({ current_stock: Math.max(0, prod.current_stock - item.quantity) }).eq('id', item.product_id);
+      const { data: freshProd } = await supabase.from('med_products').select('current_stock').eq('id', item.product_id).eq('bunk_id', bunkId).single();
+      const newStock = Math.max(0, Number(freshProd?.current_stock || 0) - item.quantity);
+      await supabase.from('med_products').update({ current_stock: newStock }).eq('id', item.product_id).eq('bunk_id', bunkId);
     }
 
     if (billingMode === 'credit' && selectedCustomer) {
@@ -575,7 +588,7 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
                       <div className="flex gap-1">
                         <button onClick={() => addToCart(p)} className="p-1.5 bg-teal-100 text-teal-700 rounded hover:bg-teal-200"><ShoppingCart className="w-4 h-4" /></button>
                         <button onClick={() => openEditProduct(p)} className="p-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"><FileText className="w-4 h-4" /></button>
-                        <button onClick={() => deleteProduct(p.id)} className="p-1.5 bg-red-100 text-red-700 rounded hover:bg-red-200"><X className="w-4 h-4" /></button>
+                        <button onClick={() => deleteProduct(p.id, p.name)} className="p-1.5 bg-red-100 text-red-700 rounded hover:bg-red-200"><X className="w-4 h-4" /></button>
                       </div>
                     </div>
                   );
@@ -890,6 +903,23 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
 
       </div>
 
+      {/* BUG-FIX: React-based confirm modal — replaces browser confirm() which is blocked on mobile PWA */}
+      {confirmState && (
+        <div className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <div className="flex items-center gap-2 text-red-600 mb-3">
+              <AlertTriangle className="w-5 h-5" />
+              <h3 className="font-bold text-gray-900">Confirm</h3>
+            </div>
+            <p className="text-gray-700 mb-6 text-sm">{confirmState.msg}</p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setConfirmState(null)} className="px-4 py-2 text-gray-600 font-semibold hover:bg-gray-100 rounded-xl transition text-sm">Cancel</button>
+              <button onClick={() => { const fn = confirmState.onYes; setConfirmState(null); fn(); }} className="px-4 py-2 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition text-sm">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── PRODUCT FORM MODAL ── */}
       {showProductForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-40 p-4">
@@ -934,8 +964,8 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
               </label>
             </div>
             <div className="p-4 border-t flex gap-2">
-              <button onClick={saveProduct} className="flex-1 bg-teal-600 text-white py-2 rounded-lg font-semibold hover:bg-teal-700 flex items-center justify-center gap-2">
-                <Save className="w-4 h-4" /> Save
+              <button onClick={saveProduct} disabled={saving} className="flex-1 bg-teal-600 text-white py-2 rounded-lg font-semibold hover:bg-teal-700 disabled:opacity-60 flex items-center justify-center gap-2">
+                <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save'}
               </button>
               <button onClick={() => setShowProductForm(false)} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200">Cancel</button>
             </div>

@@ -168,6 +168,7 @@ function AgInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{ msg: string; onYes: () => void } | null>(null);
   const blank = { name: '', category: 'Fertilizer', unit: 'bag', purchase_rate: '', selling_rate: '', stock_qty: '', low_stock_at: '5', hsn_code: '' };
   const [form, setForm] = useState(blank);
   const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
@@ -197,11 +198,15 @@ function AgInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
     setShowForm(false); setEditId(null); setForm(blank); onRefresh();
   }
 
-  async function handleDelete(p: AgProduct) {
-    if (!confirm(`Delete "${p.name}"?`)) return;
-    const { error } = await supabase.from('ag_products').delete().eq('id', p.id).eq('bunk_id', bunkId);
-    if (error) { showToast(error.message, 'error'); return; }
-    showToast('Deleted'); onRefresh();
+  function handleDelete(p: AgProduct) {
+    setConfirmModal({
+      msg: `Delete "${p.name}"?`,
+      onYes: async () => {
+        const { error } = await supabase.from('ag_products').delete().eq('id', p.id).eq('bunk_id', bunkId);
+        if (error) { showToast(error.message, 'error'); return; }
+        showToast('Deleted'); onRefresh();
+      },
+    });
   }
 
   return (
@@ -277,6 +282,17 @@ function AgInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
         </div>
       </div>
       <p className="text-xs text-gray-400 text-right">{filtered.length} of {products.length} products</p>
+      {confirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-sm mx-4">
+            <p className="text-gray-800 mb-4">{confirmModal.msg}</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmModal(null)} className="flex-1 px-4 py-2 border rounded-lg">Cancel</button>
+              <button onClick={() => { confirmModal.onYes(); setConfirmModal(null); }} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg">Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -489,6 +505,7 @@ function AgFarmers({ bunkId, customers, onRefresh, showToast }: { bunkId: string
   const [payNote, setPayNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [payments, setPayments] = useState<AgPayment[]>([]);
+  const [confirmModal, setConfirmModal] = useState<{ msg: string; onYes: () => void } | null>(null);
   const blank = { name: '', phone: '', village: '', land_area: '', credit_limit: '0' };
   const [form, setForm] = useState(blank);
   const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
@@ -528,10 +545,14 @@ function AgFarmers({ bunkId, customers, onRefresh, showToast }: { bunkId: string
     setPayModal(null); setPayAmount(''); setPayNote(''); onRefresh();
   }
 
-  async function deactivateFarmer(c: AgCustomer) {
-    if (!confirm(`Deactivate "${c.name}"? They will be hidden from the list.`)) return;
-    await supabase.from('ag_customers').update({ is_active: false }).eq('id', c.id).eq('bunk_id', bunkId);
-    showToast('Farmer deactivated'); onRefresh();
+  function deactivateFarmer(c: AgCustomer) {
+    setConfirmModal({
+      msg: `Deactivate "${c.name}"? They will be hidden from the list.`,
+      onYes: async () => {
+        await supabase.from('ag_customers').update({ is_active: false }).eq('id', c.id).eq('bunk_id', bunkId);
+        showToast('Farmer deactivated'); onRefresh();
+      },
+    });
   }
 
   useEffect(() => {
@@ -647,6 +668,17 @@ function AgFarmers({ bunkId, customers, onRefresh, showToast }: { bunkId: string
                 <span className="text-sm font-bold text-green-600">{inr(p.amount)}</span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+      {confirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 max-w-sm mx-4">
+            <p className="text-gray-800 mb-4">{confirmModal.msg}</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmModal(null)} className="flex-1 px-4 py-2 border rounded-lg">Cancel</button>
+              <button onClick={() => { confirmModal.onYes(); setConfirmModal(null); }} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg">Confirm</button>
+            </div>
           </div>
         </div>
       )}

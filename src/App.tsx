@@ -25,9 +25,10 @@ import {
 import { getTodayIST, nowIST, formatISTDate } from './utils';
 export { getTodayIST, nowIST, formatISTDate };
 
-const todayStr = getTodayIST();
-const currentMonthStr = todayStr.substring(0, 7);
-const currentYearStr = todayStr.substring(0, 4);
+// BUG-FIX: compute fresh at call time — module-level constants go stale for overnight sessions
+const getTodayStr = () => getTodayIST();
+const getCurrentMonthStr = () => getTodayIST().substring(0, 7);
+const getCurrentYearStr = () => getTodayIST().substring(0, 4);
 const CATEGORIES = ['Fleet', 'Milk Tanker', 'School', 'Hospital', 'Individual', 'Logistics', 'Other'];
 
 // --- SUPABASE SETUP ---
@@ -62,7 +63,7 @@ interface FuelPurchase { id: string; date: string; product: string; litres: numb
 
 interface AppContextType {
   user: User | null; dataLoading: boolean; unsavedForm: boolean; setUnsavedForm: (v: boolean) => void;
-  login: (email: string, pass: string) => Promise<boolean>; loginCustomer: (phone: string, pin: string) => void;
+  login: (email: string, pass: string) => Promise<boolean>; loginCustomer: (phone: string, pin: string) => Promise<void>;
   signup: (data: { name: string, phone: string, bunkName: string, email: string, pass: string, fuelCompany: string, bizType: string, drugLicense?: string, season?: string, cashInHand?: number, cashInBank?: number, stockValue?: number, customerReceivables?: number, supplierPayables?: number }) => Promise<void>;
   logout: () => void; currentRoute: string; setCurrentRoute: (r: string) => void; customerFilter: string; setCustomerFilter: (f: string) => void;
   customers: Customer[]; transactions: Transaction[]; morningEntries: MorningEntry[]; expenses: Expense[]; fuelPurchases: FuelPurchase[]; users: User[]; settings: any;
@@ -83,7 +84,8 @@ const formatLakhs = (num: number) => {
   const n = Number(num) || 0;
   return (n >= 100000 || n <= -100000) ? `Rs ${(n / 100000).toFixed(2)} L` : formatRs(n);
 };
-const generateId = () => Math.random().toString(36).substr(2, 9);
+// BUG-FIX: use cryptographically-secure UUID to prevent ID collisions
+const generateId = () => crypto.randomUUID();
 
 // --- APP STATE CONTEXT ---
 const AppContext = createContext<AppContextType | null>(null);
@@ -330,26 +332,31 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const netWorth = (formData.cashInHand || 0) + (formData.cashInBank || 0) + (formData.stockValue || 0) + (formData.customerReceivables || 0) - (formData.supplierPayables || 0);
     const defaultBizName: Record<string, string> = { fuel: 'My Fuel Station', kirana: 'My Kirana Store', medical: 'My Medical Shop', cement: 'My Cement Depot', hardware: 'My Hardware Shop', restaurant: 'My Restaurant', textile: 'My Textile Shop', auto_parts: 'My Auto Parts', agriculture: 'My Agro Shop', stationery: 'My Stationery', general: 'My Business' };
 
-    await Promise.all([
-      supabase.from('bunks').insert([{
-        id: newBunkId,
-        name: formData.bunkName || defaultBizName[formData.bizType] || 'My Business',
-        owner_name: formData.name, owner_phone: normalizedPhone,
-        fuel_company: formData.bizType === 'fuel' ? formData.fuelCompany : null,
-        biz_type: formData.bizType || 'fuel',
-        opening_cash: formData.cashInHand || 0,
-        opening_bank: formData.cashInBank || 0,
-        opening_stock: formData.stockValue || 0,
-        opening_receivables: formData.customerReceivables || 0,
-        opening_payables: formData.supplierPayables || 0,
-        opening_net_worth: netWorth,
-        biz_metadata: {
-          drug_license: formData.drugLicense || null,
-          agriculture_season: formData.season || null,
-        },
-        current_od_balance: 0, current_hp_balance: 0, od_limit: 3000000,
-        subscription_plan: 'trial', trial_ends_at: trialEndsAt, is_active: true
-      }]),
+    // BUG-FIX: sequential inserts — bunk must exist before profiles/staff_roles reference it
+    // (parallel Promise.all caused orphan profile rows when bunks insert failed)
+    const { error: bunkError } = await supabase.from('bunks').insert([{
+      id: newBunkId,
+      name: formData.bunkName || defaultBizName[formData.bizType] || 'My Business',
+      owner_name: formData.name, owner_phone: normalizedPhone,
+      fuel_company: formData.bizType === 'fuel' ? formData.fuelCompany : null,
+      biz_type: formData.bizType || 'fuel',
+      opening_cash: formData.cashInHand || 0,
+      opening_bank: formData.cashInBank || 0,
+      opening_stock: formData.stockValue || 0,
+      opening_receivables: formData.customerReceivables || 0,
+      opening_payables: formData.supplierPayables || 0,
+      opening_net_worth: netWorth,
+      biz_metadata: {
+        drug_license: formData.drugLicense || null,
+        agriculture_season: formData.season || null,
+      },
+      current_od_balance: 0, current_hp_balance: 0, od_limit: 3000000,
+      subscription_plan: 'trial', trial_ends_at: trialEndsAt, is_active: true
+    }]);
+    if (bunkError) return showAlert(`Setup Error: ${bunkError.message}`);
+
+    // Now that bunk exists, insert profile and staff_role in parallel (both depend on bunk, not each other)
+    const [{ error: profileError }, { error: staffError }] = await Promise.all([
       supabase.from('profiles').insert([{
         id: authData.user.id, name: formData.name, email: cleanEmail,
         role: 'owner', bunk_id: newBunkId, phone: normalizedPhone
@@ -360,6 +367,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         webapp_user_id: authData.user.id
       }]),
     ]);
+    if (profileError) console.error('[Signup] profile insert failed:', profileError.message);
+    if (staffError) console.error('[Signup] staff_role insert failed:', staffError.message);
 
     localStorage.setItem('app_biz_type', formData.bizType || 'fuel');
 
@@ -373,12 +382,25 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     showAlert(`✅ Welcome to Smart Biz AI, ${formData.name}! Your 3-month free trial has started.`);
   };
 
-  const loginCustomer = (phone: string, pin: string) => {
+  // BUG-FIX: query DB directly — in-memory customers array is empty when no owner is logged in,
+  // causing customer login to always fail with "not found"
+  const loginCustomer = async (phone: string, pin: string): Promise<void> => {
     const normalize = (p: string) => p.replace(/[^0-9]/g, '').replace(/^91/, '').slice(-10);
     const normInput = normalize(phone);
-    const c = customers.find(c => normalize(c.phone || '') === normInput && c.pin === pin && c.portalAccess);
-    if (c) { saveUserSession({ id: c.id, name: c.companyName, email: '', role: 'customer', phone }); showAlert(`Welcome to your portal, ${c.companyName}!`); }
-    else showAlert('Invalid PIN or mobile number not found.');
+    const fullPhone = `91${normInput}`;
+    const { data: rows } = await supabase
+      .from('customers')
+      .select('id, company_name, phone, pin, portal_access, bunk_id')
+      .or(`phone.eq.${normInput},phone.eq.${fullPhone}`)
+      .eq('portal_access', true)
+      .limit(1);
+    const c = rows?.[0];
+    if (c && c.pin && c.pin === pin) {
+      saveUserSession({ id: c.id, name: c.company_name, email: '', role: 'customer', phone: fullPhone });
+      showAlert(`Welcome to your portal, ${c.company_name}!`);
+    } else {
+      showAlert('Invalid PIN or mobile number not found.');
+    }
   };
 
   const logout = () => {
@@ -1111,8 +1133,8 @@ const Dashboard = () => {
   const { user, customers, getCustomerBalance, settings, morningEntries, expenses, transactions, fuelPurchases, setCurrentRoute, setCustomerFilter, dataLoading } = useAppContext();
   const [showAssets, setShowAssets] = useState(false);
 
-  const [selectedYear, setSelectedYear] = useState(currentYearStr);
-  const [selectedMonth, setSelectedMonth] = useState(currentMonthStr.substring(5, 7));
+  const [selectedYear, setSelectedYear] = useState(getCurrentYearStr());
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthStr().substring(5, 7));
   const period = selectedMonth === 'All' ? selectedYear : `${selectedYear}-${selectedMonth}`;
 
   const [chartPage, setChartPage] = useState(0);
@@ -1120,7 +1142,7 @@ const Dashboard = () => {
   const userRole = String(user?.role || '').toLowerCase();
 
   const availableYears = useMemo(() => {
-    const years = new Set<string>([currentYearStr]);
+    const years = new Set<string>([getCurrentYearStr()]);
     morningEntries.forEach(e => {
       if (e.date && typeof e.date === 'string') {
         years.add(e.date.substring(0, 4));
@@ -1243,7 +1265,7 @@ const Dashboard = () => {
   const latestSalesValue = yesterdayPetrolVal + yesterdayDieselVal;
 
   const yesterdayReceived = latestEntry ? (((latestEntry.collectionsCash || 0) - (latestEntry.openingBalance || 0)) + (latestEntry.collectionsBank || 0) + (latestEntry.collectionsDigital || 0) + (latestEntry.collectionDtp || 0) + (latestEntry.collectionsCard || 0)) : 0;
-  const mtdExpenses = expenses.filter(e => e.date && typeof e.date === 'string' && e.date.startsWith(currentMonthStr)).reduce((sum, e) => sum + (e.amount || 0), 0);
+  const mtdExpenses = expenses.filter(e => e.date && typeof e.date === 'string' && e.date.startsWith(getCurrentMonthStr())).reduce((sum, e) => sum + (e.amount || 0), 0);
 
   // Status Card
   const todayEntry = morningEntries.find(e => e.date === getTodayIST());
@@ -2061,13 +2083,13 @@ const MorningEntryForm = () => {
   const userRole = String(user?.role || '').toLowerCase();
 
   const defaultEntryDate = useMemo(() => {
-    const hasToday = morningEntries.some(m => m.date === todayStr);
+    const hasToday = morningEntries.some(m => m.date === getTodayStr());
     if (hasToday) {
-      const d = new Date(todayStr + 'T00:00:00+05:30');
+      const d = new Date(getTodayStr() + 'T00:00:00+05:30');
       d.setDate(d.getDate() + 1);
       return d.toISOString().split('T')[0];
     }
-    return todayStr;
+    return getTodayStr();
   }, [morningEntries]);
 
   const [entryDate, setEntryDate] = useState(defaultEntryDate);
@@ -2485,7 +2507,7 @@ const ExpenseModule = () => {
 
   const totalExpenses = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
   // Fix #13: budget tracker should compare CURRENT MONTH only, not all-time total
-  const currentMonthExpenses = expenses.filter(e => e.date?.startsWith(currentMonthStr)).reduce((sum, e) => sum + (e.amount || 0), 0);
+  const currentMonthExpenses = expenses.filter(e => e.date?.startsWith(getCurrentMonthStr())).reduce((sum, e) => sum + (e.amount || 0), 0);
   const budget = settings?.monthlyBudget || 0; const budgetPct = budget > 0 ? Math.min(100, (currentMonthExpenses / budget) * 100) : 0;
 
   const filteredExpenses = expenses.filter(e => {
@@ -2709,7 +2731,7 @@ const FuelStockModule = () => {
 // Monthly Reports Module (FIX 6)
 const MonthlyReports = () => {
   const { morningEntries, transactions, expenses, fuelPurchases, customers, settings, dataLoading } = useAppContext();
-  const [selectedMonth, setSelectedMonth] = useState(currentMonthStr);
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthStr());
 
   const monthEntries = morningEntries.filter(e => e.date?.startsWith(selectedMonth));
   const monthTx = transactions.filter(t => t.date?.startsWith(selectedMonth));
@@ -2898,7 +2920,7 @@ const SettingsModule = () => {
     const exportUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = exportUrl;
-    link.download = `FuelDesk_Export_${todayStr}.csv`;
+    link.download = `FuelDesk_Export_${getTodayStr()}.csv`;
     link.click();
     URL.revokeObjectURL(exportUrl);
     showAlert("Master database downloaded successfully.");
@@ -3106,42 +3128,80 @@ const DangerZone = ({ bunkId }: { bunkId: string }) => {
     }
     showConfirm(
       '🗑️ PERMANENT DELETE\n\nThis will erase ALL your data — customers, transactions, reports, everything — forever.\n\nThis CANNOT be undone. Continue?',
-      async () => {
-        setLoading(true);
-        const tables = [
-          'transactions', 'expenses', 'fuel_purchases', 'morning_entries',
-          'customers', 'bunk_accounts', 'settings', 'pending_actions',
-          'processed_messages', 'gen_products', 'gen_sales', 'gen_purchases',
-          'gen_customers', 'gen_expenses', 'gen_suppliers', 'gen_customer_payments',
-          'cement_products', 'cement_sales', 'cement_purchases', 'cement_customers',
-          'cement_expenses', 'cement_deliveries', 'cement_customer_payments',
-          'kirana_products', 'kirana_sales', 'kirana_purchases', 'kirana_customers', 'kirana_expenses',
-          'medical_products', 'medical_sales', 'medical_purchases', 'medical_customers', 'medical_expenses',
-        ];
-        await Promise.allSettled(tables.map(t => supabase.from(t).delete().eq('bunk_id', bunkId)));
-        const { data: staffList } = await supabase.from('staff_roles').select('webapp_user_id, id').eq('bunk_id', bunkId);
-        if (staffList?.length) {
-          // Fix #22: use the real /api/users/:userId DELETE endpoint on the chatbot server
-          // (implemented and fully secured with service-role key + bunk ownership check)
-          const botUrl = (import.meta as any).env?.VITE_BOT_URL || '';
-          const { data: { session } } = await supabase.auth.getSession();
-          const token = session?.access_token || '';
-          if (botUrl && token) {
-            await Promise.allSettled(
-              staffList.filter(s => s.webapp_user_id).map(s =>
-                fetch(`${botUrl}/api/users/${s.webapp_user_id}`, {
-                  method: 'DELETE',
-                  headers: { Authorization: `Bearer ${token}` }
-                }).catch(() => {})
-              )
-            );
+      // BUG-FIX: wrap in async IIFE and add try/catch so errors surface to user
+      () => {
+        (async () => {
+          setLoading(true);
+          try {
+            // BUG-FIX: added ALL store-type tables including hw_*, ki_*, rst_*, etc.
+            const tables = [
+              // Fuel station tables
+              'transactions', 'expenses', 'fuel_purchases', 'morning_entries',
+              'customers', 'bunk_accounts', 'settings', 'pending_actions',
+              'processed_messages',
+              // Hardware store (hw_*)
+              'hw_products', 'hw_sales', 'hw_sale_items', 'hw_purchases',
+              'hw_customers', 'hw_expenses', 'hw_payments', 'hw_stock_adjustments',
+              // Kirana store (ki_*)
+              'ki_products', 'ki_sales', 'ki_sale_items', 'ki_purchases',
+              'ki_customers', 'ki_expenses', 'ki_payments', 'ki_suppliers',
+              // Medical store (med_*)
+              'med_products', 'med_sales', 'med_purchases',
+              'med_customers', 'med_expenses',
+              // Restaurant (rst_*)
+              'rst_products', 'rst_sales', 'rst_purchases',
+              'rst_customers', 'rst_expenses',
+              // Cement (cem_*)
+              'cem_products', 'cem_sales', 'cem_purchases',
+              'cem_customers', 'cem_expenses', 'cem_deliveries',
+              // General (gen_*)
+              'gen_products', 'gen_sales', 'gen_purchases',
+              'gen_customers', 'gen_expenses', 'gen_suppliers',
+              // Auto parts (ap_*)
+              'ap_products', 'ap_sales', 'ap_purchases',
+              'ap_customers', 'ap_expenses',
+              // Agriculture (ag_*)
+              'ag_products', 'ag_sales', 'ag_purchases',
+              'ag_customers', 'ag_expenses',
+              // Textile (tx_*)
+              'tx_products', 'tx_sales', 'tx_purchases',
+              'tx_customers', 'tx_expenses',
+              // Stationery (st_*)
+              'st_products', 'st_sales', 'st_purchases',
+              'st_customers', 'st_expenses',
+              // Electrical (elec_*)
+              'elec_products', 'elec_sales', 'elec_purchases',
+              'elec_customers', 'elec_expenses',
+            ];
+            await Promise.allSettled(tables.map(t => supabase.from(t).delete().eq('bunk_id', bunkId)));
+
+            const { data: staffList } = await supabase.from('staff_roles').select('webapp_user_id, id').eq('bunk_id', bunkId);
+            if (staffList?.length) {
+              const botUrl = (import.meta as any).env?.VITE_BOT_URL || '';
+              // BUG-FIX: safely destructure session — avoid crash if getSession fails
+              const sessionResult = await supabase.auth.getSession();
+              const token = sessionResult?.data?.session?.access_token || '';
+              if (botUrl && token) {
+                await Promise.allSettled(
+                  staffList.filter(s => s.webapp_user_id).map(s =>
+                    fetch(`${botUrl}/api/users/${s.webapp_user_id}`, {
+                      method: 'DELETE',
+                      headers: { Authorization: `Bearer ${token}` }
+                    }).catch(() => {})
+                  )
+                );
+              }
+            }
+            await supabase.from('staff_roles').delete().eq('bunk_id', bunkId);
+            await supabase.from('bunks').delete().eq('id', bunkId);
+            showAlert('🗑️ Account permanently deleted. All data removed.');
+            logout();
+          } catch (err: any) {
+            showAlert('❌ Deletion failed: ' + (err?.message || 'Unknown error. Please try again.'));
+          } finally {
+            setLoading(false);
           }
-        }
-        await supabase.from('staff_roles').delete().eq('bunk_id', bunkId);
-        await supabase.from('bunks').delete().eq('id', bunkId);
-        setLoading(false);
-        showAlert('🗑️ Account permanently deleted. All data removed.');
-        logout();
+        })();
       }
     );
   };

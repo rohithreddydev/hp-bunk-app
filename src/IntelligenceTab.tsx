@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// Smart Biz AI — Intelligence Tab  v2.0
-// 5 sections: Overview · Customers · Agent Activity · Payment Calendar · Patterns
+// Smart Biz AI — Intelligence Tab  v3.0  (BREAKTHROUGH EDITION)
+// 6 sections: Overview · Financial Health · Customers · Bot Activity · Pay Calendar · Patterns
 // ═══════════════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -8,7 +8,7 @@ import {
   Brain, AlertTriangle, Users, Zap, BarChart2, RefreshCw, Loader2,
   ShieldAlert, Activity, Sparkles, ChevronRight, Star,
   CalendarClock, TrendingDown, TrendingUp, Bot, Clock, CheckCircle2,
-  CircleDot, Bell,
+  CircleDot, Bell, DollarSign, PieChart, Package, Award, ArrowUpRight, ArrowDownRight,
 } from 'lucide-react';
 import { supabase } from './supabase';
 
@@ -77,15 +77,171 @@ const ACTION_META: Record<string, { icon: React.ReactNode; color: string; label:
   weekly_digest:       { icon: <BarChart2 size={13} />,    color: 'bg-teal-100 text-teal-700',    label: 'Weekly Digest' },
 };
 
-type Section = 'overview' | 'customers' | 'activity' | 'calendar' | 'patterns';
+// ── Financial Health types ────────────────────────────────────────────────
+interface FinancialHealth {
+  revenue30:      number;
+  expenses30:     number;
+  grossProfit:    number;
+  grossMarginPct: number;
+  avgDailySales:  number;
+  totalOutstanding: number;
+  dso:            number;
+  creditPct:      number;
+  stockValue:     number;
+  revenueGrowthPct: number;
+  healthScore:    number;
+  healthGrade:    'A' | 'B' | 'C' | 'D' | 'F';
+  stockAlerts:    { name: string; daysLeft: number; stock: number; unit: string }[];
+  expenseByCategory: Record<string, number>;
+}
+
+// Industry benchmarks (mirrors backend STORE_BENCHMARKS)
+const BENCHMARKS: Record<string, { gross_margin_pct: number; dso_days: number; label: string }> = {
+  fuel:       { gross_margin_pct: 3,  dso_days: 15,  label: 'Fuel Station'    },
+  kirana:     { gross_margin_pct: 15, dso_days: 10,  label: 'Kirana Store'    },
+  medical:    { gross_margin_pct: 22, dso_days: 7,   label: 'Medical Shop'    },
+  hardware:   { gross_margin_pct: 28, dso_days: 30,  label: 'Hardware Store'  },
+  restaurant: { gross_margin_pct: 65, dso_days: 0,   label: 'Restaurant'      },
+  textile:    { gross_margin_pct: 45, dso_days: 15,  label: 'Textile Shop'    },
+  auto_parts: { gross_margin_pct: 32, dso_days: 30,  label: 'Auto Parts'      },
+  agriculture:{ gross_margin_pct: 20, dso_days: 30,  label: 'Agriculture'     },
+  stationery: { gross_margin_pct: 32, dso_days: 15,  label: 'Stationery'      },
+  cement:     { gross_margin_pct: 10, dso_days: 45,  label: 'Cement Depot'    },
+  electrical: { gross_margin_pct: 28, dso_days: 30,  label: 'Electrical'      },
+  general:    { gross_margin_pct: 20, dso_days: 30,  label: 'General Store'   },
+};
+
+const PREFIX_MAP: Record<string, string> = {
+  kirana: 'ki', medical: 'med', hardware: 'hw', restaurant: 'rst',
+  auto_parts: 'ap', agriculture: 'ag', textile: 'tx', stationery: 'st',
+  cement: 'cem', electrical: 'elec', general: 'gen',
+};
+
+async function computeFinancialHealth(bunkId: string, bizType: string): Promise<FinancialHealth> {
+  const since = new Date(Date.now() - 30 * 86400000).toISOString().substring(0, 10);
+  const bench = BENCHMARKS[bizType] || BENCHMARKS.general;
+  const prefix = PREFIX_MAP[bizType];
+
+  let revenue30 = 0, creditRevenue = 0, expenses30 = 0;
+  const expenseByCategory: Record<string, number> = {};
+  let stockValue = 0;
+  const stockAlerts: { name: string; daysLeft: number; stock: number; unit: string }[] = [];
+
+  if (bizType === 'fuel' || !prefix) {
+    // Fuel store: use transactions + expenses tables
+    const [txRes, expRes] = await Promise.all([
+      supabase.from('transactions').select('type, amount, payment_mode').eq('bunk_id', bunkId).gte('date', since),
+      supabase.from('expenses').select('amount, category').eq('bunk_id', bunkId).gte('date', since),
+    ]);
+    (txRes.data || []).forEach((t: any) => {
+      if (t.type === 'credit_sale' || t.type === 'cash_sale') {
+        revenue30 += Number(t.amount || 0);
+        if (t.type === 'credit_sale') creditRevenue += Number(t.amount || 0);
+      }
+    });
+    (expRes.data || []).forEach((e: any) => {
+      expenses30 += Number(e.amount || 0);
+      const cat = e.category || 'General';
+      expenseByCategory[cat] = (expenseByCategory[cat] || 0) + Number(e.amount || 0);
+    });
+  } else {
+    // Non-fuel: use {prefix}_sales + {prefix}_expenses + {prefix}_products
+    const [salesRes, expRes, prodRes, saleVelRes] = await Promise.all([
+      supabase.from(`${prefix}_sales`).select('total_amount, payment_mode').eq('bunk_id', bunkId).gte('sale_date', since),
+      supabase.from(`${prefix}_expenses`).select('amount, category').eq('bunk_id', bunkId).gte('exp_date', since),
+      supabase.from(`${prefix}_products`).select('name, price, stock_qty, unit').eq('bunk_id', bunkId).eq('is_active', true).limit(100),
+      supabase.from(`${prefix}_sales`).select('product_name, qty, sale_date').eq('bunk_id', bunkId).gte('sale_date', since),
+    ]);
+
+    (salesRes.data || []).forEach((s: any) => {
+      revenue30 += Number(s.total_amount || 0);
+      if ((s.payment_mode || '').toLowerCase() === 'credit') creditRevenue += Number(s.total_amount || 0);
+    });
+    (expRes.data || []).forEach((e: any) => {
+      expenses30 += Number(e.amount || 0);
+      const cat = e.category || 'General';
+      expenseByCategory[cat] = (expenseByCategory[cat] || 0) + Number(e.amount || 0);
+    });
+
+    // Stock value + stockout prediction
+    const velocity: Record<string, { qty: number; days: Set<string> }> = {};
+    (saleVelRes.data || []).forEach((s: any) => {
+      if (!s.product_name) return;
+      if (!velocity[s.product_name]) velocity[s.product_name] = { qty: 0, days: new Set() };
+      velocity[s.product_name].qty += Number(s.qty || 1);
+      velocity[s.product_name].days.add((s.sale_date || '').substring(0, 10));
+    });
+
+    (prodRes.data || []).forEach((p: any) => {
+      stockValue += Number(p.stock_qty || 0) * Number(p.price || 0);
+      const v = velocity[p.name];
+      if (v && v.days.size > 0) {
+        const daily = v.qty / v.days.size;
+        const stock = Number(p.stock_qty || 0);
+        const daysLeft = daily > 0 ? Math.round(stock / daily) : null;
+        if (daysLeft !== null && daysLeft <= 10) {
+          stockAlerts.push({ name: p.name, daysLeft, stock, unit: p.unit || 'pcs' });
+        }
+      }
+    });
+    stockAlerts.sort((a, b) => a.daysLeft - b.daysLeft);
+  }
+
+  // Compute derived metrics
+  const grossProfit = revenue30 - expenses30;
+  const grossMarginPct = revenue30 > 0 ? Math.round(grossProfit / revenue30 * 1000) / 10 : 0;
+  const avgDailySales = Math.round(revenue30 / 30);
+  const creditPct = revenue30 > 0 ? Math.round(creditRevenue / revenue30 * 100) : 0;
+
+  // Health score components (mirrors backend)
+  const marginScore = bench.gross_margin_pct > 0
+    ? Math.min(100, Math.round(grossMarginPct / bench.gross_margin_pct * 85)) : 50;
+  const growthScore = 70; // Can't compute growth without prior period easily
+  const liquidityScore = expenses30 > 0 ? Math.min(100, Math.round((revenue30 - creditRevenue) / expenses30 * 70)) : 70;
+
+  const healthScore = Math.round(marginScore * 0.40 + growthScore * 0.30 + liquidityScore * 0.30);
+  const grade = healthScore >= 80 ? 'A' : healthScore >= 65 ? 'B' : healthScore >= 50 ? 'C' : healthScore >= 35 ? 'D' : 'F';
+
+  // Outstanding (reuse customers data already fetched elsewhere — will be passed in)
+  const { data: custData } = await supabase.from(
+    bizType === 'fuel' ? 'customers' : `${prefix}_customers`
+  ).select('outstanding_amount').eq('bunk_id', bunkId).gt('outstanding_amount', 0);
+  const totalOutstanding = (custData || []).reduce((s: number, c: any) => s + Number(c.outstanding_amount || 0), 0);
+  const dso = avgDailySales > 0 ? Math.round(totalOutstanding / avgDailySales) : 0;
+
+  return {
+    revenue30, expenses30, grossProfit, grossMarginPct,
+    avgDailySales, totalOutstanding, dso, creditPct, stockValue,
+    revenueGrowthPct: 0, healthScore, healthGrade: grade as 'A'|'B'|'C'|'D'|'F',
+    stockAlerts, expenseByCategory,
+  };
+}
+
+type Section = 'overview' | 'finance' | 'customers' | 'activity' | 'calendar' | 'patterns';
 
 export function IntelligenceTab({ bunkId }: Props) {
-  const [memories, setMemories]     = useState<AgentMemory[]>([]);
-  const [customers, setCustomers]   = useState<CustomerRow[]>([]);
-  const [activities, setActivities] = useState<BotActivity[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [section, setSection]       = useState<Section>('overview');
+  const [memories, setMemories]       = useState<AgentMemory[]>([]);
+  const [customers, setCustomers]     = useState<CustomerRow[]>([]);
+  const [activities, setActivities]   = useState<BotActivity[]>([]);
+  const [finance, setFinance]         = useState<FinancialHealth | null>(null);
+  const [financeLoading, setFLoading] = useState(false);
+  const [loading, setLoading]         = useState(true);
+  const [refreshing, setRefreshing]   = useState(false);
+  const [section, setSection]         = useState<Section>('overview');
+
+  // Detect biz_type from localStorage (set at login/signup)
+  const bizType = localStorage.getItem('app_biz_type') || 'fuel';
+
+  const loadFinance = useCallback(async () => {
+    setFLoading(true);
+    try {
+      const fh = await computeFinancialHealth(bunkId, bizType);
+      setFinance(fh);
+    } catch (e) {
+      console.error('Financial health load failed', e);
+    }
+    setFLoading(false);
+  }, [bunkId, bizType]);
 
   const load = useCallback(async (silent = false) => {
     silent ? setRefreshing(true) : setLoading(true);
@@ -103,7 +259,7 @@ export function IntelligenceTab({ bunkId }: Props) {
     setLoading(false); setRefreshing(false);
   }, [bunkId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); loadFinance(); }, [load, loadFinance]);
 
   // Subscribe to real-time bot activity
   useEffect(() => {
@@ -151,8 +307,10 @@ export function IntelligenceTab({ bunkId }: Props) {
       return { name: cust.name, balance: cust.balance, daysUntil, cycleDays, expectedDate: new Date(expectedMs).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) };
     }).filter(Boolean).sort((a, b) => a!.daysUntil - b!.daysUntil) as { name: string; balance: number; daysUntil: number; cycleDays: number; expectedDate: string }[];
 
+  const stockBadge = finance?.stockAlerts.filter(s => s.daysLeft <= 3).length || undefined;
   const SECTIONS: { id: Section; label: string; badge?: number }[] = [
     { id: 'overview',  label: 'Overview' },
+    { id: 'finance',   label: '💰 Financial Health', badge: stockBadge },
     { id: 'customers', label: 'Customers', badge: criticalCount > 0 ? criticalCount : undefined },
     { id: 'activity',  label: 'Bot Activity', badge: activities.length > 0 ? activities.length : undefined },
     { id: 'calendar',  label: 'Pay Calendar', badge: calendarPreds.filter(p => p.daysUntil <= 3).length || undefined },
@@ -300,6 +458,161 @@ export function IntelligenceTab({ bunkId }: Props) {
               <Sparkles size={36} className="text-indigo-200 mx-auto mb-3" />
               <p className="text-sm font-semibold text-gray-600">AI is warming up</p>
               <p className="text-xs text-gray-400 mt-1 max-w-xs mx-auto">Record a few transactions via WhatsApp. The AI will start learning your business and filling this dashboard automatically.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── FINANCIAL HEALTH (BREAKTHROUGH SECTION) ────────────────────── */}
+      {section === 'finance' && (
+        <div className="space-y-4">
+          {/* Refresh button */}
+          <div className="flex justify-end">
+            <button onClick={loadFinance} disabled={financeLoading}
+              className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-800 font-medium disabled:opacity-50">
+              <RefreshCw size={13} className={financeLoading ? 'animate-spin' : ''} />
+              {financeLoading ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
+
+          {financeLoading && !finance ? (
+            <div className="flex items-center justify-center h-40 text-gray-400">
+              <Loader2 size={24} className="animate-spin mr-2" />
+              <span className="text-sm">Computing financial health from live data…</span>
+            </div>
+          ) : finance ? (() => {
+            const bench = BENCHMARKS[bizType] || BENCHMARKS.general;
+            const marginOk = finance.grossMarginPct >= bench.gross_margin_pct;
+            const dsoOk = bench.dso_days === 0 || finance.dso <= bench.dso_days;
+            const scoreColor = finance.healthScore >= 80 ? 'text-green-600' : finance.healthScore >= 65 ? 'text-yellow-600' : finance.healthScore >= 50 ? 'text-orange-500' : 'text-red-600';
+            const scoreBg = finance.healthScore >= 80 ? 'from-green-50 to-emerald-50 border-green-200' : finance.healthScore >= 65 ? 'from-yellow-50 to-amber-50 border-yellow-200' : finance.healthScore >= 50 ? 'from-orange-50 to-yellow-50 border-orange-200' : 'from-red-50 to-pink-50 border-red-200';
+            return (
+              <>
+                {/* Health Score Hero Card */}
+                <div className={`bg-gradient-to-br ${scoreBg} border rounded-2xl p-5 flex items-center gap-4`}>
+                  <div className="text-center shrink-0">
+                    <div className={`text-5xl font-black ${scoreColor}`}>{finance.healthScore}</div>
+                    <div className={`text-xs font-bold mt-0.5 ${scoreColor}`}>/ 100</div>
+                    <div className={`mt-1 inline-block px-2 py-0.5 rounded-full text-xs font-bold ${scoreColor} bg-white/60`}>Grade {finance.healthGrade}</div>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Award size={16} className={scoreColor} />
+                      <span className="font-bold text-gray-800">Business Health Score</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mb-2">{bench.label} · Last 30 days</p>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className={`h-2 rounded-full transition-all ${finance.healthScore >= 80 ? 'bg-green-500' : finance.healthScore >= 65 ? 'bg-yellow-400' : finance.healthScore >= 50 ? 'bg-orange-400' : 'bg-red-500'}`}
+                        style={{ width: `${finance.healthScore}%` }} />
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-400 mt-1"><span>Critical</span><span>Excellent</span></div>
+                  </div>
+                </div>
+
+                {/* P&L Summary Grid */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-white border border-gray-200 rounded-xl p-4">
+                    <div className="flex items-center gap-1.5 mb-1.5 text-gray-500 text-xs"><DollarSign size={13} />Revenue (30d)</div>
+                    <div className="text-xl font-bold text-gray-800">{inr(finance.revenue30)}</div>
+                    <div className="text-xs text-gray-500 mt-0.5">{inr(finance.avgDailySales)}/day avg</div>
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-xl p-4">
+                    <div className="flex items-center gap-1.5 mb-1.5 text-gray-500 text-xs"><BarChart2 size={13} />Gross Profit</div>
+                    <div className={`text-xl font-bold ${finance.grossProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{inr(finance.grossProfit)}</div>
+                    <div className="flex items-center gap-1 text-xs mt-0.5">
+                      <span className={marginOk ? 'text-green-600' : 'text-orange-500'}>{finance.grossMarginPct}% margin</span>
+                      {marginOk ? <ArrowUpRight size={11} className="text-green-500" /> : <ArrowDownRight size={11} className="text-orange-500" />}
+                      <span className="text-gray-400">bench {bench.gross_margin_pct}%</span>
+                    </div>
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-xl p-4">
+                    <div className="flex items-center gap-1.5 mb-1.5 text-gray-500 text-xs"><AlertTriangle size={13} />Outstanding</div>
+                    <div className="text-xl font-bold text-red-600">{inr(finance.totalOutstanding)}</div>
+                    <div className="flex items-center gap-1 text-xs mt-0.5">
+                      <span className={dsoOk ? 'text-green-600' : 'text-orange-500'}>DSO: {finance.dso}d</span>
+                      {!dsoOk && <span className="text-gray-400">(target &lt;{bench.dso_days}d)</span>}
+                    </div>
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-xl p-4">
+                    <div className="flex items-center gap-1.5 mb-1.5 text-gray-500 text-xs"><PieChart size={13} />Cash vs Credit</div>
+                    <div className="text-xl font-bold text-gray-800">{100 - finance.creditPct}%</div>
+                    <div className="text-xs text-gray-500 mt-0.5">cash · {finance.creditPct}% credit</div>
+                  </div>
+                </div>
+
+                {/* Expense Breakdown */}
+                {Object.keys(finance.expenseByCategory).length > 0 && (
+                  <div className="bg-white border border-gray-200 rounded-xl p-4">
+                    <div className="flex items-center gap-1.5 mb-3 text-gray-700 font-semibold text-sm"><Zap size={14} />Expense Breakdown</div>
+                    <div className="space-y-2">
+                      {Object.entries(finance.expenseByCategory).sort((a, b) => b[1] - a[1]).map(([cat, amt]) => {
+                        const pct = finance.expenses30 > 0 ? Math.round(amt / finance.expenses30 * 100) : 0;
+                        return (
+                          <div key={cat}>
+                            <div className="flex justify-between text-xs mb-1">
+                              <span className="text-gray-600">{cat}</span>
+                              <span className="font-medium text-gray-800">{inr(amt)} <span className="text-gray-400">({pct}%)</span></span>
+                            </div>
+                            <div className="h-1.5 bg-gray-100 rounded-full"><div className="h-1.5 bg-indigo-400 rounded-full" style={{ width: `${pct}%` }} /></div>
+                          </div>
+                        );
+                      })}
+                      <div className="border-t pt-2 mt-1 flex justify-between text-xs font-bold text-gray-700">
+                        <span>Total Expenses</span><span>{inr(finance.expenses30)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Stock Alerts */}
+                {finance.stockAlerts.length > 0 && (
+                  <div className="bg-white border border-gray-200 rounded-xl p-4">
+                    <div className="flex items-center gap-1.5 mb-3 text-gray-700 font-semibold text-sm">
+                      <Package size={14} />Stock Alerts
+                      <span className="ml-auto text-xs text-gray-400">Based on 30-day velocity</span>
+                    </div>
+                    <div className="space-y-2">
+                      {finance.stockAlerts.slice(0, 8).map(s => (
+                        <div key={s.name} className={`flex items-center justify-between p-2.5 rounded-lg ${s.daysLeft <= 3 ? 'bg-red-50 border border-red-200' : 'bg-yellow-50 border border-yellow-200'}`}>
+                          <div>
+                            <div className="text-sm font-semibold text-gray-800">{s.name}</div>
+                            <div className="text-xs text-gray-500">{s.stock} {s.unit} remaining</div>
+                          </div>
+                          <div className={`text-right text-xs font-bold ${s.daysLeft <= 3 ? 'text-red-600' : 'text-yellow-600'}`}>
+                            {s.daysLeft <= 3 ? '🚨' : '⚠️'} {s.daysLeft}d left
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Benchmark Comparison */}
+                <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100 rounded-xl p-4">
+                  <div className="flex items-center gap-1.5 mb-3 text-indigo-700 font-semibold text-sm"><Star size={14} />vs Industry Benchmark ({bench.label})</div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className={`p-2 rounded-lg ${marginOk ? 'bg-green-100' : 'bg-orange-100'}`}>
+                      <div className="font-medium">Gross Margin</div>
+                      <div>Yours: <strong>{finance.grossMarginPct}%</strong></div>
+                      <div className="text-gray-500">Bench: {bench.gross_margin_pct}% {marginOk ? '✅' : '⚠️'}</div>
+                    </div>
+                    {bench.dso_days > 0 && (
+                      <div className={`p-2 rounded-lg ${dsoOk ? 'bg-green-100' : 'bg-orange-100'}`}>
+                        <div className="font-medium">Collection Speed</div>
+                        <div>DSO: <strong>{finance.dso}d</strong></div>
+                        <div className="text-gray-500">Target: &lt;{bench.dso_days}d {dsoOk ? '✅' : '⚠️'}</div>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-indigo-500 mt-3">💡 Type <strong>"p&l"</strong> or <strong>"credit risk"</strong> in WhatsApp for full AI analysis</p>
+                </div>
+              </>
+            );
+          })() : (
+            <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
+              <PieChart size={28} className="text-gray-300 mx-auto mb-2" />
+              <p className="text-sm font-medium text-gray-500">No financial data yet</p>
+              <p className="text-xs text-gray-400 mt-1">Record sales via WhatsApp to see your financial health score.</p>
             </div>
           )}
         </div>
