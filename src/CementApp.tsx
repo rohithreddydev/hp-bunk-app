@@ -1042,6 +1042,19 @@ function DashboardTab({ bunkId }: { bunkId: string }) {
         )}
       </div>
 
+      {/* Overdue Delivery Warning */}
+      {(() => {
+        const overdueDeliveries = pendingDels.filter(d => d.delivery_date < today && d.status !== 'delivered');
+        return overdueDeliveries.length > 0 ? (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-2">
+            <AlertTriangle size={16} className="text-red-600 flex-shrink-0" />
+            <span className="text-sm text-red-700 font-medium">
+              {overdueDeliveries.length} overdue deliver{overdueDeliveries.length > 1 ? 'ies' : 'y'} — customer{overdueDeliveries.length > 1 ? 's' : ''}: {overdueDeliveries.map(d => d.customer_name || 'Unknown').join(', ')}
+            </span>
+          </div>
+        ) : null;
+      })()}
+
       <div className="grid md:grid-cols-2 gap-5">
         {/* Low Stock Alert */}
         <div className="bg-white rounded-xl border border-yellow-200 p-4">
@@ -1116,6 +1129,11 @@ function InventoryTab({ bunkId }: { bunkId: string }) {
     purchase_price: '', current_stock: '', reorder_level: 10, hsn_code: '',
   });
   const [saving, setSaving] = useState(false);
+  const [adjustProduct, setAdjustProduct] = useState<Product | null>(null);
+  const [adjustMode, setAdjustMode] = useState<'add' | 'remove'>('add');
+  const [adjustQty, setAdjustQty] = useState('');
+  const [adjustReason, setAdjustReason] = useState('Physical count correction');
+  const [adjustSaving, setAdjustSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1222,18 +1240,19 @@ function InventoryTab({ bunkId }: { bunkId: string }) {
         {filtered.map(p => {
           const isLow = Number(p.current_stock) <= Number(p.reorder_level);
           return (
-            <div key={p.id} className={`bg-white rounded-xl border p-4 cursor-pointer hover:shadow-sm transition-shadow ${isLow ? 'border-yellow-300' : 'border-gray-100'}`}
-              onClick={() => openForm(p)}>
+            <div key={p.id} className={`bg-white rounded-xl border p-4 hover:shadow-sm transition-shadow ${isLow ? 'border-yellow-300' : 'border-gray-100'}`}>
               <div className="flex justify-between items-start">
-                <div>
+                <div className="flex-1" onClick={() => openForm(p)}>
                   <div className="font-semibold text-gray-800">{p.name}</div>
                   <div className="text-xs text-gray-400 mt-0.5">
                     {p.brand} {p.grade ? `· ${p.grade}` : ''} {p.diameter_mm ? `· ${p.diameter_mm}mm` : ''} · GST {p.gst_percent}%
                   </div>
                 </div>
-                <div className="text-right">
+                <div className="text-right flex flex-col items-end gap-1">
                   <div className={`font-bold text-lg ${isLow ? 'text-red-600' : 'text-gray-800'}`}>{p.current_stock} <span className="text-sm font-normal text-gray-400">{p.unit}</span></div>
                   {isLow && <div className="text-xs text-red-500">⚠ Low Stock</div>}
+                  <button onClick={e => { e.stopPropagation(); setAdjustProduct(p); setAdjustMode('add'); setAdjustQty(''); setAdjustReason('Physical count correction'); }}
+                    className="text-xs bg-orange-50 text-orange-700 border border-orange-200 px-2 py-0.5 rounded font-medium hover:bg-orange-100">± Adjust</button>
                 </div>
               </div>
               <div className="mt-2 flex gap-4 text-xs text-gray-500">
@@ -1246,6 +1265,49 @@ function InventoryTab({ bunkId }: { bunkId: string }) {
         })}
         {filtered.length === 0 && <div className="text-center py-10 text-gray-400">No products found</div>}
       </div>
+
+      {/* Stock Adjustment Modal */}
+      {adjustProduct && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-gray-800">Adjust Stock</h3>
+              <button onClick={() => setAdjustProduct(null)}><X size={20} className="text-gray-400" /></button>
+            </div>
+            <p className="text-sm text-gray-600">{adjustProduct.name} <span className="text-gray-400">— current: <strong>{adjustProduct.current_stock} {adjustProduct.unit}</strong></span></p>
+            <div className="flex gap-2">
+              {(['add', 'remove'] as const).map(m => (
+                <button key={m} onClick={() => setAdjustMode(m)} className={`flex-1 py-2 rounded-lg text-sm font-medium ${adjustMode === m ? (m === 'add' ? 'bg-green-600 text-white' : 'bg-red-500 text-white') : 'bg-gray-100 text-gray-600'}`}>{m === 'add' ? '+ Add Stock' : '− Remove Stock'}</button>
+              ))}
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Quantity ({adjustProduct.unit}) *</label>
+              <input type="number" min="0.001" step="any" value={adjustQty} onChange={e => setAdjustQty(e.target.value)} placeholder="0" className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-400 focus:outline-none" autoFocus />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Reason</label>
+              <select value={adjustReason} onChange={e => setAdjustReason(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm">
+                {['Physical count correction', 'Supplier delivery', 'Damage/Breakage', 'Transfer in', 'Transfer out', 'Other'].map(r => <option key={r}>{r}</option>)}
+              </select>
+            </div>
+            <button disabled={adjustSaving || !adjustQty || Number(adjustQty) <= 0} onClick={async () => {
+              const qty = Number(adjustQty);
+              if (!qty || qty <= 0) return;
+              setAdjustSaving(true);
+              const { data: fresh } = await supabase.from('cement_products').select('current_stock').eq('id', adjustProduct.id).eq('bunk_id', bunkId).maybeSingle();
+              const base = Number(fresh?.current_stock ?? adjustProduct.current_stock);
+              const newStock = adjustMode === 'add' ? base + qty : Math.max(0, base - qty);
+              await supabase.from('cement_products').update({ current_stock: newStock }).eq('id', adjustProduct.id);
+              setAdjustSaving(false);
+              setAdjustProduct(null);
+              load();
+            }} className="w-full bg-orange-600 text-white py-3 rounded-xl font-semibold hover:bg-orange-700 disabled:opacity-50 flex items-center justify-center gap-2">
+              {adjustSaving && <Loader2 size={16} className="animate-spin" />}
+              Confirm Adjustment
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Product Form Modal */}
       {showForm && (
@@ -1567,6 +1629,73 @@ function SalesTab({ bunkId }: { bunkId: string }) {
 }
 
 // ── Customers ────────────────────────────────────────────────────────────────
+interface LedgerEntry { date: string; type: 'sale' | 'payment'; amount: number; label: string; status?: string; mode?: string; }
+
+function CustomerLedgerModal({ bunkId, customer, onClose }: { bunkId: string; customer: Customer; onClose: () => void }) {
+  const [entries, setEntries] = useState<LedgerEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const [salesRes, paymentsRes] = await Promise.all([
+        supabase.from('cement_sales').select('id,sale_date,total_amount,paid_amount,payment_status').eq('bunk_id', bunkId).eq('customer_id', customer.id).order('sale_date', { ascending: true }),
+        supabase.from('cement_customer_payments').select('id,payment_date,amount,payment_mode').eq('bunk_id', bunkId).eq('customer_id', customer.id).order('payment_date', { ascending: true }),
+      ]);
+      const rows: LedgerEntry[] = [
+        ...(salesRes.data || []).map(s => ({ date: s.sale_date, type: 'sale' as const, amount: Number(s.total_amount), label: 'Sale', status: s.payment_status })),
+        ...(paymentsRes.data || []).map(p => ({ date: p.payment_date, type: 'payment' as const, amount: Number(p.amount), label: 'Payment', mode: p.payment_mode })),
+      ];
+      rows.sort((a, b) => a.date.localeCompare(b.date));
+      setEntries(rows);
+      setLoading(false);
+    })();
+  }, [bunkId, customer.id]);
+
+  let running = 0;
+  const rowsWithBalance = entries.map(e => {
+    if (e.type === 'sale') running += e.amount;
+    else running = Math.max(0, running - e.amount);
+    return { ...e, balance: running };
+  });
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3">
+      <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col shadow-2xl">
+        <div className="flex items-center justify-between p-4 border-b">
+          <div>
+            <h2 className="font-bold text-gray-800">{customer.name}</h2>
+            <p className="text-xs text-gray-500 capitalize">{customer.customer_type} · Outstanding: <span className="text-red-600 font-semibold">{inr(customer.outstanding_amount)}</span></p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-4">
+          {loading && <div className="flex justify-center py-8"><Loader2 className="animate-spin text-orange-500" size={24} /></div>}
+          {!loading && rowsWithBalance.length === 0 && <p className="text-center text-gray-400 py-8">No transactions yet</p>}
+          {!loading && rowsWithBalance.length > 0 && (
+            <div className="space-y-1">
+              <div className="grid grid-cols-4 gap-1 text-xs font-medium text-gray-500 pb-2 border-b">
+                <span>Date</span><span>Transaction</span><span className="text-right">Amount</span><span className="text-right">Balance</span>
+              </div>
+              {rowsWithBalance.map((e, i) => (
+                <div key={i} className={`grid grid-cols-4 gap-1 py-2 border-b last:border-0 text-sm ${e.type === 'payment' ? 'bg-green-50 rounded' : ''}`}>
+                  <span className="text-xs text-gray-500">{formatISTDate(e.date)}</span>
+                  <span className={`text-xs font-medium ${e.type === 'payment' ? 'text-green-700' : 'text-gray-700'}`}>
+                    {e.type === 'payment' ? `✅ Payment (${e.mode})` : `📦 Sale (${e.status})`}
+                  </span>
+                  <span className={`text-right text-xs font-semibold ${e.type === 'payment' ? 'text-green-600' : 'text-orange-600'}`}>
+                    {e.type === 'payment' ? '-' : '+'}{inr(e.amount)}
+                  </span>
+                  <span className="text-right text-xs font-bold text-gray-700">{inr(e.balance)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CustomersTab({ bunkId }: { bunkId: string }) {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1580,6 +1709,7 @@ function CustomersTab({ bunkId }: { bunkId: string }) {
   const [payAmount, setPayAmount] = useState('');
   const [payMode, setPayMode] = useState('cash');
   const [payingSaving, setPayingSaving] = useState(false);
+  const [ledgerCustomer, setLedgerCustomer] = useState<Customer | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1608,9 +1738,14 @@ function CustomersTab({ bunkId }: { bunkId: string }) {
     if (!payModal) return;
     const amt = parseFloat(payAmount);
     if (!amt || amt <= 0) return;
-    if (amt > payModal.outstanding_amount) return;
     setPayingSaving(true);
-    await supabase.from('cement_customers').update({ outstanding_amount: Number(payModal.outstanding_amount) - amt }).eq('id', payModal.id);
+    await supabase.from('cement_customer_payments').insert({
+      bunk_id: bunkId, customer_id: payModal.id,
+      amount: amt, payment_mode: payMode, payment_date: today,
+    });
+    const { data: fresh } = await supabase.from('cement_customers').select('outstanding_amount').eq('id', payModal.id).eq('bunk_id', bunkId).maybeSingle();
+    const base = fresh ? Number(fresh.outstanding_amount) : Number(payModal.outstanding_amount);
+    await supabase.from('cement_customers').update({ outstanding_amount: Math.max(0, base - amt) }).eq('id', payModal.id);
     setPayingSaving(false);
     setPayModal(null); setPayAmount(''); load();
   };
@@ -1649,7 +1784,10 @@ function CustomersTab({ bunkId }: { bunkId: string }) {
               <div className="text-right flex flex-col items-end gap-1.5">
                 {c.outstanding_amount > 0 && <div className="text-sm font-bold text-red-600">{inr(c.outstanding_amount)}</div>}
                 <div className="text-xs text-gray-400">Total: {inr(c.total_purchases)}</div>
-                {c.outstanding_amount > 0 && <button onClick={() => { setPayModal(c); setPayAmount(''); setPayMode('cash'); }} className="bg-orange-500 text-white text-xs px-3 py-1 rounded-lg hover:bg-orange-600 font-medium">Collect</button>}
+                <div className="flex gap-1.5">
+                  <button onClick={() => setLedgerCustomer(c)} className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-lg hover:bg-gray-200 font-medium">Ledger</button>
+                  {c.outstanding_amount > 0 && <button onClick={() => { setPayModal(c); setPayAmount(''); setPayMode('cash'); }} className="bg-orange-500 text-white text-xs px-3 py-1 rounded-lg hover:bg-orange-600 font-medium">Collect</button>}
+                </div>
               </div>
             </div>
           </div>
@@ -1700,7 +1838,7 @@ function CustomersTab({ bunkId }: { bunkId: string }) {
             </div>
             <p className="text-sm text-gray-600">Customer: <span className="font-semibold">{payModal.name}</span></p>
             <p className="text-sm text-red-600 font-medium">Outstanding: {inr(payModal.outstanding_amount)}</p>
-            <div><label className="text-xs font-medium text-gray-600 mb-1 block">Amount Received (₹) *</label><input type="number" min="1" max={payModal.outstanding_amount} value={payAmount} onChange={e => setPayAmount(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-400 focus:outline-none" autoFocus /></div>
+            <div><label className="text-xs font-medium text-gray-600 mb-1 block">Amount Received (₹) *</label><input type="number" min="1" value={payAmount} onChange={e => setPayAmount(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-400 focus:outline-none" autoFocus /></div>
             <div><label className="text-xs font-medium text-gray-600 mb-1 block">Payment Mode</label><select value={payMode} onChange={e => setPayMode(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm">{['cash','upi','card','cheque'].map(m => <option key={m}>{m}</option>)}</select></div>
             <button onClick={handleCollectPayment} disabled={payingSaving} className="w-full bg-orange-600 text-white py-3 rounded-xl font-semibold hover:bg-orange-700 disabled:opacity-50 flex items-center justify-center gap-2">
               {payingSaving && <Loader2 size={16} className="animate-spin" />}Confirm Payment
@@ -1708,6 +1846,7 @@ function CustomersTab({ bunkId }: { bunkId: string }) {
           </div>
         </div>
       )}
+      {ledgerCustomer && <CustomerLedgerModal bunkId={bunkId} customer={ledgerCustomer} onClose={() => setLedgerCustomer(null)} />}
     </div>
   );
 }
@@ -2139,16 +2278,19 @@ function ReportsTab({ bunkId }: { bunkId: string }) {
     setLoading(true);
     const from = `${month}-01`;
     const to = `${month}-31`;
-    const [sales, exp, pur, prod, cust] = await Promise.all([
-      supabase.from('cement_sales').select('total_amount, paid_amount, payment_status, sale_date').eq('bunk_id', bunkId).gte('sale_date', from).lte('sale_date', to),
+    const [sales, exp, pur, prod, cust, topCust] = await Promise.all([
+      supabase.from('cement_sales').select('id, total_amount, paid_amount, payment_status, sale_date').eq('bunk_id', bunkId).gte('sale_date', from).lte('sale_date', to),
       supabase.from('cement_expenses').select('amount, category').eq('bunk_id', bunkId).gte('expense_date', from).lte('expense_date', to),
       supabase.from('cement_purchases').select('total_amount').eq('bunk_id', bunkId).gte('purchase_date', from).lte('purchase_date', to),
       supabase.from('cement_products').select('name, current_stock, purchase_price, product_type').eq('bunk_id', bunkId).eq('is_active', true),
       supabase.from('cement_customers').select('outstanding_amount').eq('bunk_id', bunkId).eq('is_active', true),
+      supabase.from('cement_customers').select('name, customer_type, outstanding_amount').eq('bunk_id', bunkId).eq('is_active', true).gt('outstanding_amount', 0).order('outstanding_amount', { ascending: false }).limit(5),
     ]);
 
     const totalSales = (sales.data || []).reduce((s, r) => s + Number(r.total_amount || 0), 0);
     const totalPaid = (sales.data || []).reduce((s, r) => s + Number(r.paid_amount || 0), 0);
+    const cashCollected = (sales.data || []).filter(r => r.payment_status === 'paid').reduce((s, r) => s + Number(r.total_amount || 0), 0);
+    const creditGiven = totalSales - cashCollected;
     const totalExp = (exp.data || []).reduce((s, r) => s + Number(r.amount || 0), 0);
     const totalPurchases = (pur.data || []).reduce((s, r) => s + Number(r.total_amount || 0), 0);
     const totalOutstanding = (cust.data || []).reduce((s, r) => s + Number(r.outstanding_amount || 0), 0);
@@ -2160,7 +2302,21 @@ function ReportsTab({ bunkId }: { bunkId: string }) {
     const salesByDay: Record<string, number> = {};
     (sales.data || []).forEach(s => { salesByDay[s.sale_date] = (salesByDay[s.sale_date] || 0) + Number(s.total_amount || 0); });
 
-    setReport({ totalSales, totalPaid, totalExp, totalPurchases, totalOutstanding, stockValue, expByCategory, salesByDay, salesCount: (sales.data || []).length });
+    // Top products from sale_items
+    let topProducts: { name: string; qty: number; revenue: number }[] = [];
+    const saleIds = (sales.data || []).map(s => s.id);
+    if (saleIds.length > 0) {
+      const { data: items } = await supabase.from('cement_sale_items').select('product_name, quantity, total_amount').in('sale_id', saleIds);
+      const grouped: Record<string, { qty: number; revenue: number }> = {};
+      (items || []).forEach(i => {
+        if (!grouped[i.product_name]) grouped[i.product_name] = { qty: 0, revenue: 0 };
+        grouped[i.product_name].qty += Number(i.quantity || 0);
+        grouped[i.product_name].revenue += Number(i.total_amount || 0);
+      });
+      topProducts = Object.entries(grouped).map(([name, d]) => ({ name, ...d })).sort((a, b) => b.revenue - a.revenue).slice(0, 6);
+    }
+
+    setReport({ totalSales, totalPaid, cashCollected, creditGiven, totalExp, totalPurchases, totalOutstanding, stockValue, expByCategory, salesByDay, salesCount: (sales.data || []).length, topCustomers: topCust.data || [], topProducts });
     setLoading(false);
   }, [bunkId, month]);
 
@@ -2215,6 +2371,45 @@ function ReportsTab({ bunkId }: { bunkId: string }) {
               ))}
             </div>
           </div>
+
+          {/* Cash vs Credit split */}
+          {report.cashCollected + report.creditGiven > 0 && (
+            <div className="bg-white rounded-xl border border-gray-100 p-4">
+              <h3 className="font-semibold text-gray-700 mb-3 text-sm">Cash vs Credit Split</h3>
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm"><span className="text-green-700 font-medium">💵 Cash Sales</span><span className="font-bold text-green-700">{inr(report.cashCollected)}</span></div>
+                <div className="w-full bg-gray-100 rounded-full h-2"><div className="bg-green-500 h-2 rounded-full" style={{ width: `${report.totalSales > 0 ? (report.cashCollected / report.totalSales) * 100 : 0}%` }} /></div>
+                <div className="flex justify-between text-sm"><span className="text-orange-600 font-medium">📝 Credit Sales</span><span className="font-bold text-orange-600">{inr(report.creditGiven)}</span></div>
+                <div className="w-full bg-gray-100 rounded-full h-2"><div className="bg-orange-400 h-2 rounded-full" style={{ width: `${report.totalSales > 0 ? (report.creditGiven / report.totalSales) * 100 : 0}%` }} /></div>
+              </div>
+            </div>
+          )}
+
+          {/* Top Products */}
+          {report.topProducts?.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-100 p-4">
+              <h3 className="font-semibold text-gray-700 mb-3 text-sm">🏆 Top Products by Revenue</h3>
+              {report.topProducts.map((p: { name: string; qty: number; revenue: number }, i: number) => (
+                <div key={i} className="flex justify-between items-center py-1.5 border-b last:border-0 text-sm">
+                  <div><span className="font-medium text-orange-600 mr-1">{i + 1}.</span><span className="text-gray-800">{p.name}</span><span className="text-xs text-gray-400 ml-1">({p.qty.toFixed(1)} units)</span></div>
+                  <span className="font-bold text-gray-700">{inr(p.revenue)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Top Customers by Outstanding */}
+          {report.topCustomers?.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-100 p-4">
+              <h3 className="font-semibold text-gray-700 mb-3 text-sm">🔴 Top 5 by Outstanding</h3>
+              {report.topCustomers.map((c: { name: string; customer_type: string; outstanding_amount: number }, i: number) => (
+                <div key={i} className="flex justify-between items-center py-1.5 border-b last:border-0 text-sm">
+                  <div><span className="font-medium text-gray-500 mr-1">{i + 1}.</span><span className="text-gray-800">{c.name}</span><span className="text-xs text-gray-400 ml-1 capitalize">({c.customer_type})</span></div>
+                  <span className="font-bold text-red-600">{inr(c.outstanding_amount)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
