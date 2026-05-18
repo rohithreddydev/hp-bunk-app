@@ -3,7 +3,7 @@ import {
   Package, Users, ShoppingCart, TrendingUp, Plus, Search,
   AlertTriangle, CheckCircle, X, Save, ArrowLeft, ChevronRight,
   DollarSign, Calendar, Pill, FileText, Truck, BarChart2,
-  Clock, Tag, RefreshCw, Receipt,
+  Clock, Tag, RefreshCw, Receipt, BookOpen, ArrowUpRight, ArrowDownLeft,
   Settings as SettingsIcon, LogOut,
 } from 'lucide-react';
 import { supabase } from './supabase';
@@ -94,6 +94,15 @@ interface MedExpense {
   notes: string;
 }
 
+interface LedgerEntry {
+  date: string;
+  type: 'sale' | 'payment';
+  amount: number;
+  label: string;
+  mode?: string;
+  running_balance?: number;
+}
+
 interface DashboardStats {
   todaySales: number;
   todayCash: number;
@@ -136,8 +145,224 @@ function expiryColor(days: number): string {
   return 'text-green-600 bg-green-100';
 }
 
+function MedLedgerModal({ bunkId, customer, onClose }: { bunkId: string; customer: MedCustomer; onClose: () => void }) {
+  const [entries, setEntries] = useState<LedgerEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const [salesRes, payRes] = await Promise.all([
+        supabase.from('med_sales').select('sale_date,total_amount,payment_mode').eq('bunk_id', bunkId).eq('customer_id', customer.id).order('sale_date'),
+        supabase.from('med_payments').select('payment_date,amount,payment_mode').eq('bunk_id', bunkId).eq('customer_id', customer.id).order('payment_date'),
+      ]);
+      const all: LedgerEntry[] = [
+        ...(salesRes.data || []).map(s => ({ date: s.sale_date, type: 'sale' as const, amount: Number(s.total_amount), label: 'Sale', mode: s.payment_mode })),
+        ...(payRes.data || []).map(p => ({ date: p.payment_date, type: 'payment' as const, amount: Number(p.amount), label: 'Payment', mode: p.payment_mode })),
+      ].sort((a, b) => a.date.localeCompare(b.date));
+      let bal = 0;
+      for (const e of all) {
+        bal = e.type === 'sale' ? bal + e.amount : Math.max(0, bal - e.amount);
+        e.running_balance = bal;
+      }
+      setEntries(all);
+      setLoading(false);
+    })();
+  }, [bunkId, customer.id]);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
+        <div className="p-4 border-b flex justify-between items-center">
+          <div>
+            <h3 className="font-bold text-gray-700 flex items-center gap-2"><BookOpen className="w-4 h-4 text-teal-600" /> Ledger — {customer.name}</h3>
+            <div className="text-xs text-orange-600 mt-0.5">Outstanding: ₹{Number(customer.outstanding_amount).toFixed(0)}</div>
+          </div>
+          <button onClick={onClose}><X className="w-5 h-5 text-gray-400" /></button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-4">
+          {loading ? <div className="text-center py-8 text-gray-400">Loading...</div> : entries.length === 0 ? (
+            <div className="text-center py-8 text-gray-400">No transactions yet</div>
+          ) : (
+            <div className="space-y-1">
+              {entries.map((e, i) => (
+                <div key={i} className="flex items-center gap-3 p-2 rounded-lg bg-gray-50">
+                  <div className={`p-1.5 rounded-full ${e.type === 'sale' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
+                    {e.type === 'sale' ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownLeft className="w-3.5 h-3.5" />}
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-gray-700">{e.label}</div>
+                    <div className="text-xs text-gray-400">{e.date}{e.mode && ` • ${e.mode}`}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className={`text-sm font-semibold ${e.type === 'sale' ? 'text-orange-600' : 'text-green-600'}`}>
+                      {e.type === 'sale' ? '+' : '-'}₹{e.amount.toFixed(0)}
+                    </div>
+                    <div className="text-xs text-gray-500">Bal: ₹{(e.running_balance || 0).toFixed(0)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MedReports({ bunkId }: { bunkId: string }) {
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [data, setData] = useState<{
+    totalSales: number; totalExpenses: number; profit: number; creditCollected: number;
+    topMeds: { name: string; qty: number; revenue: number }[];
+    expirySummary: { expired: number; within30: number; within90: number };
+    expenseBreakdown: { category: string; amount: number }[];
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const from = `${year}-${String(month).padStart(2,'0')}-01`;
+    const toDate = new Date(year, month, 0);
+    const to = `${year}-${String(month).padStart(2,'0')}-${String(toDate.getDate()).padStart(2,'0')}`;
+
+    const [salesRes, itemsRes, expRes, payRes, prodRes] = await Promise.all([
+      supabase.from('med_sales').select('total_amount,payment_mode').eq('bunk_id', bunkId).gte('sale_date', from).lte('sale_date', to),
+      supabase.from('med_sale_items').select('product_name,quantity,total_price').eq('bunk_id', bunkId).gte('created_at', from).lte('created_at', to + 'T23:59:59'),
+      supabase.from('med_expenses').select('category,amount').eq('bunk_id', bunkId).gte('expense_date', from).lte('expense_date', to),
+      supabase.from('med_payments').select('amount').eq('bunk_id', bunkId).gte('payment_date', from).lte('payment_date', to),
+      supabase.from('med_products').select('expiry_date').eq('bunk_id', bunkId).eq('is_active', true),
+    ]);
+
+    const sales = salesRes.data || [];
+    const items = itemsRes.data || [];
+    const exps = expRes.data || [];
+    const pays = payRes.data || [];
+    const prods = prodRes.data || [];
+
+    const totalSales = sales.reduce((a, x) => a + Number(x.total_amount), 0);
+    const totalExpenses = exps.reduce((a, x) => a + Number(x.amount), 0);
+    const creditCollected = pays.reduce((a, x) => a + Number(x.amount), 0);
+    const profit = totalSales - totalExpenses;
+
+    const medMap: Record<string, { qty: number; revenue: number }> = {};
+    for (const it of items) {
+      if (!medMap[it.product_name]) medMap[it.product_name] = { qty: 0, revenue: 0 };
+      medMap[it.product_name].qty += Number(it.quantity);
+      medMap[it.product_name].revenue += Number(it.total_price);
+    }
+    const topMeds = Object.entries(medMap).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.revenue - a.revenue).slice(0, 8);
+
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const expirySummary = prods.filter(p => p.expiry_date).reduce((acc, p) => {
+      const days = Math.floor((new Date(p.expiry_date).getTime() - today.getTime()) / 86400000);
+      if (days < 0) acc.expired++;
+      else if (days <= 30) acc.within30++;
+      else if (days <= 90) acc.within90++;
+      return acc;
+    }, { expired: 0, within30: 0, within90: 0 });
+
+    const expCats: Record<string, number> = {};
+    for (const e of exps) { expCats[e.category] = (expCats[e.category] || 0) + Number(e.amount); }
+    const expenseBreakdown = Object.entries(expCats).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
+
+    setData({ totalSales, totalExpenses, profit, creditCollected, topMeds, expirySummary, expenseBreakdown });
+    setLoading(false);
+  }, [bunkId, month, year]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <select value={month} onChange={e => setMonth(Number(e.target.value))} className="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none">
+          {MONTHS.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+        </select>
+        <select value={year} onChange={e => setYear(Number(e.target.value))} className="border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none">
+          {[now.getFullYear()-1, now.getFullYear()].map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <button onClick={load} className="p-2 rounded-lg bg-teal-50 text-teal-600 hover:bg-teal-100"><RefreshCw className="w-4 h-4" /></button>
+      </div>
+
+      {loading ? <div className="text-center py-12 text-gray-400">Loading...</div> : !data ? null : (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-teal-500">
+              <div className="text-xs text-gray-500 mb-1">Total Sales</div>
+              <div className="text-2xl font-bold text-teal-700">₹{data.totalSales.toFixed(0)}</div>
+            </div>
+            <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-red-500">
+              <div className="text-xs text-gray-500 mb-1">Expenses</div>
+              <div className="text-2xl font-bold text-red-700">₹{data.totalExpenses.toFixed(0)}</div>
+            </div>
+            <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-green-500">
+              <div className="text-xs text-gray-500 mb-1">Profit</div>
+              <div className={`text-2xl font-bold ${data.profit >= 0 ? 'text-green-700' : 'text-red-700'}`}>₹{data.profit.toFixed(0)}</div>
+            </div>
+            <div className="bg-white rounded-xl p-4 shadow-sm border-l-4 border-blue-500">
+              <div className="text-xs text-gray-500 mb-1">Credit Collected</div>
+              <div className="text-2xl font-bold text-blue-700">₹{data.creditCollected.toFixed(0)}</div>
+            </div>
+          </div>
+
+          {(data.expirySummary.expired > 0 || data.expirySummary.within30 > 0 || data.expirySummary.within90 > 0) && (
+            <div className="bg-white rounded-xl p-4 shadow-sm">
+              <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2"><Clock className="w-4 h-4 text-teal-600" /> Expiry Status</h3>
+              <div className="flex gap-3 flex-wrap">
+                {data.expirySummary.expired > 0 && <span className="px-3 py-1.5 rounded-full bg-red-100 text-red-700 text-sm font-medium">{data.expirySummary.expired} Expired</span>}
+                {data.expirySummary.within30 > 0 && <span className="px-3 py-1.5 rounded-full bg-orange-100 text-orange-700 text-sm font-medium">{data.expirySummary.within30} Expiring &lt;30d</span>}
+                {data.expirySummary.within90 > 0 && <span className="px-3 py-1.5 rounded-full bg-yellow-100 text-yellow-700 text-sm font-medium">{data.expirySummary.within90} Expiring &lt;90d</span>}
+              </div>
+            </div>
+          )}
+
+          {data.topMeds.length > 0 && (
+            <div className="bg-white rounded-xl p-4 shadow-sm">
+              <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-teal-600" /> Top Medicines</h3>
+              <div className="space-y-2">
+                {data.topMeds.map((m, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-gray-400 w-5">{i+1}</span>
+                    <div className="flex-1">
+                      <div className="flex justify-between text-sm mb-0.5">
+                        <span className="font-medium text-gray-700 truncate">{m.name}</span>
+                        <span className="font-semibold text-teal-700 ml-2">₹{m.revenue.toFixed(0)}</span>
+                      </div>
+                      <div className="w-full bg-gray-100 rounded-full h-1.5">
+                        <div className="bg-teal-500 h-1.5 rounded-full" style={{ width: `${Math.min(100, (m.revenue / (data.topMeds[0]?.revenue || 1)) * 100)}%` }} />
+                      </div>
+                    </div>
+                    <span className="text-xs text-gray-400 w-14 text-right">{m.qty} sold</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {data.expenseBreakdown.length > 0 && (
+            <div className="bg-white rounded-xl p-4 shadow-sm">
+              <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2"><DollarSign className="w-4 h-4 text-teal-600" /> Expense Breakdown</h3>
+              <div className="space-y-1">
+                {data.expenseBreakdown.map((e, i) => (
+                  <div key={i} className="flex justify-between items-center py-1.5 border-b last:border-0">
+                    <span className="text-sm text-gray-600">{e.category}</span>
+                    <span className="font-semibold text-red-600">₹{e.amount.toFixed(0)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogout: () => void; user: { name: string; email: string; role: string } }) {
-  const [tab, setTab] = useState<'dashboard'|'inventory'|'sales'|'customers'|'purchases'|'expenses'|'expiry'|'settings'>('dashboard');
+  const [tab, setTab] = useState<'dashboard'|'inventory'|'sales'|'customers'|'purchases'|'expenses'|'expiry'|'reports'|'settings'>('dashboard');
   const [products, setProducts] = useState<MedProduct[]>([]);
   const [customers, setCustomers] = useState<MedCustomer[]>([]);
   const [sales, setSales] = useState<MedSale[]>([]);
@@ -151,6 +376,12 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
   const [confirmState, setConfirmState] = useState<{ msg: string; onYes: () => void } | null>(null);
   const showConfirm = (message: string, onYes: () => void) => setConfirmState({ msg: message, onYes });
   const [saving, setSaving] = useState(false);
+  const [ledgerCust, setLedgerCust] = useState<MedCustomer|null>(null);
+  const [adjustProduct, setAdjustProduct] = useState<MedProduct|null>(null);
+  const [adjustMode, setAdjustMode] = useState<'add'|'remove'>('add');
+  const [adjustQty, setAdjustQty] = useState('');
+  const [adjustReason, setAdjustReason] = useState('Physical count');
+  const [adjustSaving, setAdjustSaving] = useState(false);
 
   // inventory form
   const [showProductForm, setShowProductForm] = useState(false);
@@ -411,6 +642,22 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
     loadAll();
   };
 
+  const handleAdjust = async () => {
+    if (!adjustProduct) return;
+    const qty = parseFloat(adjustQty);
+    if (!qty || qty <= 0) return flash('error', 'Enter valid quantity');
+    setAdjustSaving(true);
+    const { data: fresh } = await supabase.from('med_products').select('current_stock').eq('id', adjustProduct.id).eq('bunk_id', bunkId).single();
+    const base = Number(fresh?.current_stock || 0);
+    const newStock = adjustMode === 'add' ? base + qty : Math.max(0, base - qty);
+    const { error } = await supabase.from('med_products').update({ current_stock: newStock }).eq('id', adjustProduct.id).eq('bunk_id', bunkId);
+    setAdjustSaving(false);
+    if (error) return flash('error', error.message);
+    flash('success', `Stock ${adjustMode === 'add' ? 'added' : 'removed'}: ${qty}`);
+    setAdjustProduct(null); setAdjustQty('');
+    loadAll();
+  };
+
   const filteredProducts = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || (p.generic_name||'').toLowerCase().includes(search.toLowerCase()) || (p.brand||'').toLowerCase().includes(search.toLowerCase()));
   const expiryProducts = products.filter(p => p.expiry_date).sort((a,b) => new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime());
   const cartSearchProducts = products.filter(p => p.name.toLowerCase().includes(cartSearch.toLowerCase()) || (p.generic_name||'').toLowerCase().includes(cartSearch.toLowerCase()));
@@ -454,6 +701,7 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
           ['purchases','Purchases',Truck],
           ['expenses','Expenses',DollarSign],
           ['expiry','Expiry Tracker',Clock],
+          ['reports','Reports',FileText],
           ['settings','Settings',SettingsIcon],
         ] as const).map(([key, label, Icon]) => (
           <button key={key} onClick={() => setTab(key as typeof tab)}
@@ -589,6 +837,7 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
                         <button onClick={() => addToCart(p)} className="p-1.5 bg-teal-100 text-teal-700 rounded hover:bg-teal-200"><ShoppingCart className="w-4 h-4" /></button>
                         <button onClick={() => openEditProduct(p)} className="p-1.5 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"><FileText className="w-4 h-4" /></button>
                         <button onClick={() => deleteProduct(p.id, p.name)} className="p-1.5 bg-red-100 text-red-700 rounded hover:bg-red-200"><X className="w-4 h-4" /></button>
+                        <button onClick={() => { setAdjustProduct(p); setAdjustMode('add'); setAdjustQty(''); setAdjustReason('Physical count'); }} className="p-1.5 bg-purple-100 text-purple-700 rounded hover:bg-purple-200 text-xs font-bold leading-none">±</button>
                       </div>
                     </div>
                   );
@@ -757,9 +1006,12 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
                   {Number(c.outstanding_amount) > 0 && <div className="text-xs font-medium text-orange-600">Outstanding: ₹{Number(c.outstanding_amount).toFixed(0)}</div>}
                   {Number(c.credit_limit) > 0 && <div className="text-xs text-gray-400">Limit: ₹{c.credit_limit}</div>}
                 </div>
-                {Number(c.outstanding_amount) > 0 && (
-                  <button onClick={() => setShowPaymentModal(c)} className="bg-green-100 text-green-700 px-3 py-1 rounded-lg text-xs font-medium hover:bg-green-200">Collect</button>
-                )}
+                <div className="flex gap-1">
+                  <button onClick={() => setLedgerCust(c)} className="bg-blue-100 text-blue-700 px-3 py-1 rounded-lg text-xs font-medium hover:bg-blue-200">Ledger</button>
+                  {Number(c.outstanding_amount) > 0 && (
+                    <button onClick={() => setShowPaymentModal(c)} className="bg-green-100 text-green-700 px-3 py-1 rounded-lg text-xs font-medium hover:bg-green-200">Collect</button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -899,6 +1151,8 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
           </div>
         )}
 
+        {tab === 'reports' && <MedReports bunkId={bunkId} />}
+
         {tab === 'settings' && <SettingsTab bunkId={bunkId} user={user} onLogout={onLogout} />}
 
       </div>
@@ -972,6 +1226,42 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
           </div>
         </div>
       )}
+
+      {/* ── STOCK ADJUSTMENT MODAL ── */}
+      {adjustProduct && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-gray-700">Adjust Stock</h3>
+              <button onClick={() => setAdjustProduct(null)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+            <div className="text-sm text-gray-600 mb-4"><span className="font-semibold">{adjustProduct.name}</span> — Current: {adjustProduct.current_stock} {adjustProduct.unit}</div>
+            <div className="flex gap-2 mb-3">
+              <button onClick={() => setAdjustMode('add')} className={`flex-1 py-2 rounded-lg text-sm font-medium ${adjustMode === 'add' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600'}`}>+ Add</button>
+              <button onClick={() => setAdjustMode('remove')} className={`flex-1 py-2 rounded-lg text-sm font-medium ${adjustMode === 'remove' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600'}`}>− Remove</button>
+            </div>
+            <div className="space-y-2">
+              <div><label className="text-xs text-gray-500">Quantity *</label>
+                <input type="number" value={adjustQty} onChange={e => setAdjustQty(e.target.value)} min={0} placeholder="0" className="w-full border rounded-lg px-3 py-2 mt-0.5 focus:ring-2 focus:ring-teal-500 focus:outline-none" />
+              </div>
+              <div><label className="text-xs text-gray-500">Reason</label>
+                <select value={adjustReason} onChange={e => setAdjustReason(e.target.value)} className="w-full border rounded-lg px-3 py-2 mt-0.5 focus:ring-2 focus:ring-teal-500 focus:outline-none">
+                  {['Physical count','Dispensing error','Damage','Expired return','Supplier return','Opening stock'].map(r => <option key={r}>{r}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={handleAdjust} disabled={adjustSaving} className="flex-1 bg-teal-600 text-white py-2 rounded-lg font-semibold hover:bg-teal-700 disabled:opacity-50">
+                {adjustSaving ? 'Saving...' : 'Apply Adjustment'}
+              </button>
+              <button onClick={() => setAdjustProduct(null)} className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-200">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── LEDGER MODAL ── */}
+      {ledgerCust && <MedLedgerModal bunkId={bunkId} customer={ledgerCust} onClose={() => setLedgerCust(null)} />}
 
       {/* ── PAYMENT MODAL ── */}
       {showPaymentModal && (
