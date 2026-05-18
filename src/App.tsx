@@ -1827,7 +1827,7 @@ const CustomerList = () => {
 
 // Credit Ledger Module (Independent Scrolling & Advance Logic)
 const CreditLedger = () => {
-  const { user, customers, transactions, addTransaction, updateTransaction, deleteTransaction, settings, showAlert, showConfirm, validateInputs, dataLoading, sendWhatsAppAlert } = useAppContext();
+  const { user, customers, transactions, addTransaction, updateTransaction, deleteTransaction, settings, showAlert, showConfirm, validateInputs, dataLoading, sendWhatsAppAlert, getCustomerBalance } = useAppContext();
   const [tab, setTab] = useState<'sale' | 'payment'>('sale');
   const [editId, setEditId] = useState<string | null>(null);
   const [txDate, setTxDate] = useState(getTodayIST());
