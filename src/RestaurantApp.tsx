@@ -7,7 +7,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   LayoutDashboard, Package, ShoppingCart, Users, Truck, Receipt,
   Plus, Edit2, X, Search, AlertTriangle, CheckCircle2, Loader2,
-  TrendingUp, TrendingDown, Wallet,
+  TrendingUp, TrendingDown, Wallet, FileText, BookOpen,
+  ArrowUpRight, ArrowDownLeft, RefreshCw, BarChart2,
   Settings as SettingsIcon, LogOut,
 } from 'lucide-react';
 import { SettingsTab } from './SettingsTab';
@@ -47,7 +48,16 @@ interface Expense {
 }
 interface CartItem { item: MenuItem; quantity: number; }
 
-type Tab = 'dashboard' | 'menu' | 'orders' | 'customers' | 'purchases' | 'expenses' | 'settings';
+interface RstLedgerEntry {
+  date: string;
+  type: 'order' | 'payment';
+  amount: number;
+  label: string;
+  mode?: string;
+  running_balance?: number;
+}
+
+type Tab = 'dashboard' | 'menu' | 'orders' | 'customers' | 'purchases' | 'expenses' | 'reports' | 'settings';
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 export function RestaurantApp({ bunkId, onLogout, user }: { bunkId: string; onLogout: () => void; user: { name: string; email: string; role: string } }) {
@@ -100,6 +110,7 @@ export function RestaurantApp({ bunkId, onLogout, user }: { bunkId: string; onLo
     { id: 'customers', label: 'Customers', icon: <Users size={16} /> },
     { id: 'purchases', label: 'Purchases', icon: <Truck size={16} /> },
     { id: 'expenses', label: 'Expenses', icon: <Receipt size={16} /> },
+    { id: 'reports', label: 'Reports', icon: <BarChart2 size={16} /> },
     { id: 'settings', label: 'Settings', icon: <SettingsIcon size={16} /> },
   ];
 
@@ -145,6 +156,7 @@ export function RestaurantApp({ bunkId, onLogout, user }: { bunkId: string; onLo
             {activeTab === 'customers' && <RstCustomers bunkId={bunkId} customers={customers} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'purchases' && <RstPurchases bunkId={bunkId} purchases={purchases} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'expenses' && <RstExpenses bunkId={bunkId} expenses={expenses} onRefresh={fetchAll} showToast={showToast} />}
+            {activeTab === 'reports' && <RstReports bunkId={bunkId} />}
             {activeTab === 'settings' && <SettingsTab bunkId={bunkId} user={user} onLogout={onLogout} />}
           </>
         )}
@@ -363,7 +375,7 @@ function RstOrders({ bunkId, menuItems, customers, onRefresh, showToast }: { bun
     }).select().single();
     if (error || !order) { showToast(error?.message || 'Order failed', 'error'); setSaving(false); return; }
     await supabase.from('rst_order_items').insert(cart.map(ci => ({
-      order_id: order.id, bunk_id: bunkId, menu_item_id: ci.item.id,
+      order_id: order.id, bunk_id: bunkId, item_id: ci.item.id,
       item_name: ci.item.name, quantity: ci.quantity, unit_price: ci.item.price, total_price: ci.item.price * ci.quantity,
     })));
     if (paymentMode === 'credit' && cust) {
@@ -457,6 +469,7 @@ function RstCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: str
   const [payAmount, setPayAmount] = useState('');
   const [payMode, setPayMode] = useState('cash');
   const [payingSaving, setPayingSaving] = useState(false);
+  const [ledgerModal, setLedgerModal] = useState<Customer | null>(null);
 
   const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search));
 
@@ -499,7 +512,7 @@ function RstCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: str
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
-              <tr><th className="px-4 py-3 text-left">Name</th><th className="px-4 py-3 text-left">Phone</th><th className="px-4 py-3 text-right">Outstanding</th><th className="px-4 py-3 text-right">Action</th></tr>
+              <tr><th className="px-4 py-3 text-left">Name</th><th className="px-4 py-3 text-left">Phone</th><th className="px-4 py-3 text-right">Outstanding</th><th className="px-4 py-3 text-right">Actions</th></tr>
             </thead>
             <tbody>
               {filtered.length === 0 && <tr><td colSpan={4} className="text-center py-10 text-gray-400">No customers found.</td></tr>}
@@ -508,7 +521,12 @@ function RstCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: str
                   <td className="px-4 py-3 font-medium text-gray-800">{c.name}</td>
                   <td className="px-4 py-3 text-gray-600">{c.phone || '—'}</td>
                   <td className="px-4 py-3 text-right"><span className={`font-semibold ${c.outstanding_amount > 0 ? 'text-orange-600' : 'text-gray-500'}`}>{inr(c.outstanding_amount)}</span></td>
-                  <td className="px-4 py-3 text-right">{c.outstanding_amount > 0 && <button onClick={() => { setPayModal(c); setPayAmount(''); setPayMode('cash'); }} className="bg-orange-500 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-orange-600 font-medium">Collect</button>}</td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex gap-1 justify-end">
+                      <button onClick={() => setLedgerModal(c)} className="bg-blue-100 text-blue-700 text-xs px-3 py-1.5 rounded-lg hover:bg-blue-200 font-medium flex items-center gap-1"><BookOpen size={12} /> Ledger</button>
+                      {c.outstanding_amount > 0 && <button onClick={() => { setPayModal(c); setPayAmount(''); setPayMode('cash'); }} className="bg-orange-500 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-orange-600 font-medium">Collect</button>}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -548,6 +566,7 @@ function RstCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: str
           </div>
         </div>
       )}
+      {ledgerModal && <RstLedgerModal bunkId={bunkId} customer={ledgerModal} onClose={() => setLedgerModal(null)} />}
     </div>
   );
 }
@@ -667,6 +686,208 @@ function RstExpenses({ bunkId, expenses, onRefresh, showToast }: { bunkId: strin
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Ledger Modal ──────────────────────────────────────────────────────────────
+function RstLedgerModal({ bunkId, customer, onClose }: { bunkId: string; customer: Customer; onClose: () => void }) {
+  const [entries, setEntries] = useState<RstLedgerEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const [ordersRes, payRes] = await Promise.all([
+        supabase.from('rst_orders').select('sale_date,total_amount,payment_mode,order_type').eq('bunk_id', bunkId).eq('customer_id', customer.id).order('sale_date'),
+        supabase.from('rst_payments').select('payment_date,amount,payment_mode').eq('bunk_id', bunkId).eq('customer_id', customer.id).order('payment_date'),
+      ]);
+      const all: RstLedgerEntry[] = [
+        ...(ordersRes.data || []).map(o => ({ date: o.sale_date, type: 'order' as const, amount: Number(o.total_amount), label: o.order_type || 'Order', mode: o.payment_mode })),
+        ...(payRes.data || []).map(p => ({ date: p.payment_date, type: 'payment' as const, amount: Number(p.amount), label: 'Payment', mode: p.payment_mode })),
+      ].sort((a, b) => a.date.localeCompare(b.date));
+      let bal = 0;
+      for (const e of all) {
+        bal = e.type === 'order' ? bal + e.amount : Math.max(0, bal - e.amount);
+        e.running_balance = bal;
+      }
+      setEntries(all);
+      setLoading(false);
+    })();
+  }, [bunkId, customer.id]);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b">
+          <div>
+            <h2 className="text-lg font-semibold flex items-center gap-2"><BookOpen size={18} className="text-red-600" /> Ledger — {customer.name}</h2>
+            {Number(customer.outstanding_amount) > 0 && <p className="text-sm text-orange-600 mt-0.5">Outstanding: {inr(customer.outstanding_amount)}</p>}
+          </div>
+          <button onClick={onClose}><X size={20} /></button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-4">
+          {loading ? <div className="text-center py-8 text-gray-400">Loading…</div> : entries.length === 0 ? (
+            <p className="text-center py-8 text-gray-400">No transactions yet.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {entries.map((e, i) => (
+                <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl bg-gray-50">
+                  <div className={`p-1.5 rounded-full shrink-0 ${e.type === 'order' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
+                    {e.type === 'order' ? <ArrowUpRight size={14} /> : <ArrowDownLeft size={14} />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-gray-700">{e.label}</div>
+                    <div className="text-xs text-gray-400">{e.date}{e.mode && ` • ${e.mode}`}</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className={`text-sm font-semibold ${e.type === 'order' ? 'text-orange-600' : 'text-green-600'}`}>
+                      {e.type === 'order' ? '+' : '-'}{inr(e.amount)}
+                    </div>
+                    <div className="text-xs text-gray-500">Bal: {inr(e.running_balance || 0)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Reports ───────────────────────────────────────────────────────────────────
+function RstReports({ bunkId }: { bunkId: string }) {
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [data, setData] = useState<{
+    totalRev: number; totalExp: number; profit: number; creditCollected: number;
+    orderCount: number; dineIn: number; takeaway: number;
+    topItems: { name: string; qty: number; revenue: number }[];
+    expenseBreakdown: { category: string; amount: number }[];
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const from = `${year}-${String(month).padStart(2,'0')}-01`;
+    const toDate = new Date(year, month, 0);
+    const to = `${year}-${String(month).padStart(2,'0')}-${String(toDate.getDate()).padStart(2,'0')}`;
+
+    const [ordersRes, itemsRes, expRes, payRes] = await Promise.all([
+      supabase.from('rst_orders').select('total_amount,payment_mode,order_type').eq('bunk_id', bunkId).gte('sale_date', from).lte('sale_date', to),
+      supabase.from('rst_order_items').select('item_name,quantity,total_price').eq('bunk_id', bunkId).gte('created_at', from).lte('created_at', to + 'T23:59:59'),
+      supabase.from('rst_expenses').select('category,amount').eq('bunk_id', bunkId).gte('expense_date', from).lte('expense_date', to),
+      supabase.from('rst_payments').select('amount').eq('bunk_id', bunkId).gte('payment_date', from).lte('payment_date', to),
+    ]);
+
+    const orders = ordersRes.data || [];
+    const items  = itemsRes.data || [];
+    const exps   = expRes.data || [];
+    const pays   = payRes.data || [];
+
+    const totalRev        = orders.reduce((a, o) => a + Number(o.total_amount), 0);
+    const totalExp        = exps.reduce((a, e) => a + Number(e.amount), 0);
+    const creditCollected = pays.reduce((a, p) => a + Number(p.amount), 0);
+    const profit          = totalRev - totalExp;
+    const dineIn          = orders.filter(o => o.order_type === 'Dine In').length;
+    const takeaway        = orders.filter(o => o.order_type === 'Takeaway').length;
+
+    const itemMap: Record<string, { qty: number; revenue: number }> = {};
+    for (const it of items) {
+      if (!itemMap[it.item_name]) itemMap[it.item_name] = { qty: 0, revenue: 0 };
+      itemMap[it.item_name].qty += Number(it.quantity);
+      itemMap[it.item_name].revenue += Number(it.total_price);
+    }
+    const topItems = Object.entries(itemMap).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.revenue - a.revenue).slice(0, 8);
+
+    const expCats: Record<string, number> = {};
+    for (const e of exps) expCats[e.category] = (expCats[e.category] || 0) + Number(e.amount);
+    const expenseBreakdown = Object.entries(expCats).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
+
+    setData({ totalRev, totalExp, profit, creditCollected, orderCount: orders.length, dineIn, takeaway, topItems, expenseBreakdown });
+    setLoading(false);
+  }, [bunkId, month, year]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <select value={month} onChange={e => setMonth(Number(e.target.value))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          {MONTHS.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+        </select>
+        <select value={year} onChange={e => setYear(Number(e.target.value))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          {[now.getFullYear()-1, now.getFullYear()].map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <button onClick={load} className="p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100"><RefreshCw size={16} /></button>
+      </div>
+
+      {loading ? <div className="flex justify-center py-12"><Loader2 className="animate-spin text-red-600" size={28} /></div> : !data ? null : (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              { label: 'Revenue', value: inr(data.totalRev), border: 'border-green-500', text: 'text-green-700' },
+              { label: 'Expenses', value: inr(data.totalExp), border: 'border-red-500', text: 'text-red-700' },
+              { label: 'Profit', value: inr(data.profit), border: 'border-blue-500', text: data.profit >= 0 ? 'text-green-700' : 'text-red-700' },
+              { label: 'Credit Collected', value: inr(data.creditCollected), border: 'border-orange-500', text: 'text-orange-700' },
+            ].map(k => (
+              <div key={k.label} className={`bg-white rounded-xl p-4 shadow-sm border-l-4 ${k.border}`}>
+                <div className="text-xs text-gray-500 mb-1">{k.label}</div>
+                <div className={`text-2xl font-bold ${k.text}`}>{k.value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <h3 className="font-semibold text-gray-700 mb-3">Order Breakdown ({data.orderCount} orders)</h3>
+            <div className="flex gap-4 text-sm flex-wrap">
+              <span className="text-green-700 font-medium">🪑 Dine-in: {data.dineIn}</span>
+              <span className="text-orange-700 font-medium">🥡 Takeaway: {data.takeaway}</span>
+              <span className="text-blue-700 font-medium">📦 Delivery: {data.orderCount - data.dineIn - data.takeaway}</span>
+            </div>
+          </div>
+
+          {data.topItems.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2"><TrendingUp size={16} className="text-red-600" /> Top Items</h3>
+              <div className="space-y-2">
+                {data.topItems.map((item, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <span className="text-xs font-bold text-gray-400 w-5">{i+1}</span>
+                    <div className="flex-1">
+                      <div className="flex justify-between text-sm mb-0.5">
+                        <span className="font-medium text-gray-700 truncate">{item.name}</span>
+                        <span className="font-semibold text-red-600 ml-2">{inr(item.revenue)}</span>
+                      </div>
+                      <div className="w-full bg-gray-100 rounded-full h-1.5">
+                        <div className="bg-red-500 h-1.5 rounded-full" style={{ width: `${Math.min(100, (item.revenue / (data.topItems[0]?.revenue || 1)) * 100)}%` }} />
+                      </div>
+                    </div>
+                    <span className="text-xs text-gray-400 w-14 text-right">{item.qty} served</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {data.expenseBreakdown.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2"><FileText size={16} className="text-red-600" /> Expense Breakdown</h3>
+              <div className="divide-y">
+                {data.expenseBreakdown.map((e, i) => (
+                  <div key={i} className="flex justify-between py-2 text-sm">
+                    <span className="text-gray-600">{e.category}</span>
+                    <span className="font-semibold text-red-600">{inr(e.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
