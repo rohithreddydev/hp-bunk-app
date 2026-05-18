@@ -471,9 +471,9 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       return false;
     }
 
-    // Use RPC function (SECURITY DEFINER) — bypasses RLS, resolves bunk_id
-    // from the authenticated user's profile server-side. Works even if the
-    // direct table INSERT policy has misconfiguration.
+    // DEBUG — remove after confirming fix
+    showAlert(`⏳ Saving ${t.type} ₹${t.amount} for customer ${String(t.customerId).slice(0,8)}...`);
+
     const { data, error } = await supabase.rpc('add_credit_transaction', {
       p_customer_id:    t.customerId,
       p_type:           t.type,
@@ -486,16 +486,15 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       p_remarks:        t.remarks        || null,
     });
 
+    // DEBUG — remove after confirming fix
     if (error) {
-      console.error('[addTransaction] RPC error:', error);
-      showAlert(`❌ Save failed: ${error.message || JSON.stringify(error)}`);
+      showAlert(`❌ RPC error: ${error.message} (code:${error.code})`);
       return false;
     }
+    showAlert(`✅ RPC returned: ${JSON.stringify(data)}`);
 
-    // RPC returns JSON — check for server-side error string
     if (data?.error) {
-      console.error('[addTransaction] Server error:', data.error);
-      showAlert(`❌ Save failed: ${data.error}`);
+      showAlert(`❌ Server error: ${data.error}`);
       return false;
     }
 
