@@ -466,8 +466,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   };
 
   const addTransaction = async (t: any): Promise<boolean> => {
-    // Guard: catch bad bunkId before hitting the DB
-    if (!bId || bId === 'default' || bId === 'null' || bId === 'undefined') {
+    // Guard: catch missing bunkId
+    if (!bId) {
       showAlert('❌ Save failed: Session invalid. Please sign out and sign in again.');
       return false;
     }
