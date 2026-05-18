@@ -466,38 +466,36 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   };
 
   const addTransaction = async (t: any): Promise<boolean> => {
-    // Guard: catch missing bunkId
-    if (!bId) {
-      showAlert('❌ Save failed: Session invalid. Please sign out and sign in again.');
-      return false;
-    }
     if (!t.customerId) {
       showAlert('❌ Save failed: No customer selected.');
       return false;
     }
 
-    const row: any = {
-      bunk_id: bId, customer_id: t.customerId, type: t.type,
-      date: t.date, amount: t.amount,
-    };
-    if (t.product)       row.product        = t.product;
-    if (t.quantity)      row.quantity       = t.quantity;
-    if (t.mode)          row.payment_mode   = t.mode;
-    if (t.vehicleNumber) row.vehicle_number = t.vehicleNumber;
-    if (t.remarks)       row.remarks        = t.remarks;
-
-    // Use supabase JS client — it auto-manages JWT refresh and is already
-    // proven to work for updateTransaction / deleteTransaction in this app.
-    const { data, error } = await supabase
-      .from('transactions')
-      .insert(row)
-      .select()
-      .single();
+    // Use RPC function (SECURITY DEFINER) — bypasses RLS, resolves bunk_id
+    // from the authenticated user's profile server-side. Works even if the
+    // direct table INSERT policy has misconfiguration.
+    const { data, error } = await supabase.rpc('add_credit_transaction', {
+      p_customer_id:    t.customerId,
+      p_type:           t.type,
+      p_date:           t.date,
+      p_amount:         t.amount,
+      p_product:        t.product        || null,
+      p_quantity:       t.quantity       || null,
+      p_payment_mode:   t.mode           || null,
+      p_vehicle_number: t.vehicleNumber  || null,
+      p_remarks:        t.remarks        || null,
+    });
 
     if (error) {
-      console.error('[addTransaction] Supabase error:', error);
-      const msg = error?.message || error?.details || JSON.stringify(error);
-      showAlert(`❌ Save failed: ${msg}`);
+      console.error('[addTransaction] RPC error:', error);
+      showAlert(`❌ Save failed: ${error.message || JSON.stringify(error)}`);
+      return false;
+    }
+
+    // RPC returns JSON — check for server-side error string
+    if (data?.error) {
+      console.error('[addTransaction] Server error:', data.error);
+      showAlert(`❌ Save failed: ${data.error}`);
       return false;
     }
 
