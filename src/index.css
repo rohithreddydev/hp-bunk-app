@@ -21,7 +21,7 @@
     padding-bottom: env(safe-area-inset-bottom);
     padding-left:   env(safe-area-inset-left);
     padding-right:  env(safe-area-inset-right);
-    background-color: #f0f4f8;
+    background-color: #f4f6fb;
   }
 
   /* Better focus rings */
@@ -34,17 +34,18 @@
 
 /* ── CSS Custom Properties — easy theme overrides ──────────────────── */
 :root {
-  --sidebar-bg:       #04080f;
-  --sidebar-hover:    rgba(255,255,255,0.05);
-  --sidebar-active:   rgba(255,255,255,0.10);
-  --sidebar-border:   rgba(255,255,255,0.05);
-  --sidebar-text:     rgba(255,255,255,0.50);
-  --sidebar-text-hi:  rgba(255,255,255,0.90);
-  --accent-primary:   #3b82f6;   /* blue — primary action */
+  /* Sidebar: midnight navy petroleum blue — premium, not coal-black */
+  --sidebar-bg:       #0e2057;
+  --sidebar-hover:    rgba(255,255,255,0.07);
+  --sidebar-active:   rgba(255,255,255,0.13);
+  --sidebar-border:   rgba(255,255,255,0.08);
+  --sidebar-text:     rgba(255,255,255,0.55);
+  --sidebar-text-hi:  rgba(255,255,255,0.95);
+  --accent-primary:   #2563eb;   /* blue-600 — primary action */
   --accent-amber:     #f59e0b;   /* petrol/fuel amber */
-  --canvas-bg:        #f0f4f8;   /* page background */
+  --canvas-bg:        #f4f6fb;   /* page background — slightly warmer */
   --card-bg:          #ffffff;
-  --card-border:      rgba(0,0,0,0.06);
+  --card-border:      rgba(0,0,0,0.05);
   --text-primary:     #0f172a;
   --text-secondary:   #64748b;
   --text-muted:       #94a3b8;

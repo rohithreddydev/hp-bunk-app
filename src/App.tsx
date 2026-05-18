@@ -928,10 +928,10 @@ const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
 
   return (
     <div className="min-h-[100dvh] flex items-center justify-center p-4"
-      style={{ background: 'linear-gradient(135deg, #04080f 0%, #0a1628 55%, #0e1f42 100%)' }}>
+      style={{ background: 'linear-gradient(135deg, #0e2057 0%, #152e80 55%, #1a3a9e 100%)' }}>
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
-        <div className="p-6 text-center text-white"
-          style={{ background: 'linear-gradient(135deg, #04080f 0%, #0c1a32 60%, #112040 100%)' }}>
+        <div className="p-6 text-center text-white relative overflow-hidden"
+          style={{ background: 'linear-gradient(135deg, #0e1f6e 0%, #1e3a98 60%, #1e40af 100%)' }}>
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center mx-auto mb-3 shadow-xl">
             <span className="text-2xl">⛽</span>
           </div>
@@ -1328,26 +1328,35 @@ const Dashboard = () => {
   // Early return AFTER all hooks (Rules of Hooks compliance)
   if (dataLoading) return <div className="flex justify-center items-center p-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
 
+  const greetingHr = nowIST().getHours();
+  const greeting = greetingHr < 12 ? { text: 'Good morning', emoji: '🌅', accent: '#f59e0b' }
+    : greetingHr < 17 ? { text: 'Good afternoon', emoji: '☀️', accent: '#f97316' }
+    : { text: 'Good evening', emoji: '🌙', accent: '#6366f1' };
+  const firstName = user?.name?.split(' ')[0] || 'there';
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
-        <div>
-          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-0.5">{formatISTDate(getTodayIST())}</p>
-          <h1 className="text-2xl font-black text-gray-900 leading-tight">
-            {(() => {
-              const hr = nowIST().getHours();
-              if (hr < 12) return `Good morning, ${user?.name?.split(' ')[0] || 'there'} 🌅`;
-              if (hr < 17) return `Good afternoon, ${user?.name?.split(' ')[0] || 'there'} ☀️`;
-              return `Good evening, ${user?.name?.split(' ')[0] || 'there'} 🌙`;
-            })()}
-          </h1>
-          <p className="text-gray-500 text-sm mt-0.5">{settings?.bunkName || 'your station'} — financial command center</p>
+    <div className="space-y-5">
+      {/* ── Header ─────────────────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex items-center gap-4">
+          {/* Greeting avatar with time-based color */}
+          <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0 shadow-sm"
+            style={{ background: `linear-gradient(135deg, ${greeting.accent}22, ${greeting.accent}44)`, border: `1px solid ${greeting.accent}30` }}>
+            {greeting.emoji}
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-[0.18em] mb-0.5">{formatISTDate(getTodayIST())}</p>
+            <h1 className="text-xl font-black text-gray-900 leading-tight">
+              {greeting.text}, <span style={{ color: greeting.accent }}>{firstName}</span>
+            </h1>
+            <p className="text-[12px] text-gray-400 mt-0.5 font-medium">{settings?.bunkName || 'your station'} · Financial Command Center</p>
+          </div>
         </div>
         <div className="flex gap-2">
-          <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="p-2 border rounded-xl font-bold text-blue-900 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500">
+          <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="p-2 border border-gray-200 rounded-xl font-bold text-blue-900 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-400 text-sm">
             {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
-          <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="p-2 border rounded-xl font-bold text-blue-900 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500">
+          <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="p-2 border border-gray-200 rounded-xl font-bold text-blue-900 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-400 text-sm">
             {MONTHS.map(m => <option key={m.val} value={m.val}>{m.label}</option>)}
           </select>
         </div>
@@ -1355,94 +1364,103 @@ const Dashboard = () => {
 
       {userRole === 'owner' && (
         <div className="rounded-2xl text-white relative overflow-hidden"
-          style={{ background: 'linear-gradient(135deg, #04080f 0%, #0a1628 55%, #0e1f42 100%)', boxShadow: '0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04)' }}>
-          {/* subtle grid pattern overlay */}
-          <div className="absolute inset-0 opacity-[0.03]"
-            style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '28px 28px' }} />
+          style={{
+            background: 'linear-gradient(135deg, #0e1f6e 0%, #1e3a98 45%, #1e40af 100%)',
+            boxShadow: '0 4px 28px rgba(14,31,110,0.45), inset 0 1px 0 rgba(255,255,255,0.10)',
+          }}>
+          {/* Subtle mesh pattern overlay */}
+          <div className="absolute inset-0 opacity-[0.04]"
+            style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '24px 24px' }} />
+          {/* Soft glow in top-right */}
+          <div className="absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-[0.12]"
+            style={{ background: 'radial-gradient(circle, #60a5fa, transparent 70%)' }} />
 
-          <div className="relative p-5">
-            <div className="flex justify-between items-center mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-lg bg-amber-500/20 flex items-center justify-center">
-                  <BarChart3 size={13} className="text-amber-400" />
+          <div className="relative p-5 md:p-6">
+            <div className="flex justify-between items-center mb-5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-xl flex items-center justify-center"
+                  style={{ background: 'rgba(251,191,36,0.25)', border: '1px solid rgba(251,191,36,0.30)' }}>
+                  <BarChart3 size={14} style={{ color: '#fcd34d' }} />
                 </div>
-                <span className="text-[11px] font-bold uppercase tracking-widest text-white/40">Business Net Value</span>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em]" style={{ color: 'rgba(255,255,255,0.45)' }}>Business Net Value</p>
+                  <p className="text-[9px]" style={{ color: 'rgba(255,255,255,0.25)' }}>{settings?.bunkName || 'FuelDesk'}</p>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+                style={{ background: 'rgba(52,211,153,0.15)', border: '1px solid rgba(52,211,153,0.25)' }}>
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 live-pulse" />
-                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Live</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#6ee7b7' }}>Live</span>
               </div>
             </div>
 
-            <div className="flex items-end gap-4 mb-6">
-              <div>
-                <p className="text-3xl md:text-4xl font-black tracking-tight num leading-none"
-                  style={{ fontVariantNumeric: 'tabular-nums' }}>
-                  {formatLakhs(bunkNetValue)}
-                </p>
-                <p className="text-[11px] mt-1.5" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                  Total net worth including all assets &amp; liabilities
-                </p>
-              </div>
+            <div className="mb-6">
+              <p className="text-[11px] mb-1" style={{ color: 'rgba(255,255,255,0.35)' }}>Total Net Worth</p>
+              <p className="text-3xl md:text-4xl font-black tracking-tight num leading-none">
+                {formatLakhs(bunkNetValue)}
+              </p>
+              <p className="text-[11px] mt-1" style={{ color: 'rgba(255,255,255,0.28)' }}>
+                All assets minus liabilities
+              </p>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
               {/* Credit Receivables */}
               <button onClick={() => setCurrentRoute('customers')}
-                className="text-left p-3.5 rounded-xl transition-all hover:scale-[1.02]"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                className="text-left p-3.5 rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                style={{ background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.14)', backdropFilter: 'blur(6px)' }}>
                 <div className="flex items-center gap-1.5 mb-2">
-                  <div className="w-4 h-4 rounded bg-indigo-500/30 flex items-center justify-center">
-                    <Users size={9} className="text-indigo-400" />
+                  <div className="w-4 h-4 rounded-md flex items-center justify-center" style={{ background: 'rgba(167,139,250,0.35)' }}>
+                    <Users size={9} style={{ color: '#c4b5fd' }} />
                   </div>
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-white/35">Credit Out</p>
+                  <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.45)' }}>Credit Out</p>
                 </div>
                 <p className="text-base md:text-lg font-black num">{formatLakhs(totalReceivables)}</p>
               </button>
 
               {/* Liquid Assets */}
               <button onClick={() => setShowAssets(true)}
-                className="text-left p-3.5 rounded-xl transition-all hover:scale-[1.02]"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px dashed rgba(99,179,237,0.25)' }}>
+                className="text-left p-3.5 rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                style={{ background: 'rgba(255,255,255,0.10)', border: '1px dashed rgba(147,197,253,0.35)', backdropFilter: 'blur(6px)' }}>
                 <div className="flex items-center gap-1.5 mb-2">
-                  <div className="w-4 h-4 rounded bg-blue-500/30 flex items-center justify-center">
-                    <Wallet size={9} className="text-blue-400" />
+                  <div className="w-4 h-4 rounded-md flex items-center justify-center" style={{ background: 'rgba(96,165,250,0.35)' }}>
+                    <Wallet size={9} style={{ color: '#93c5fd' }} />
                   </div>
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-white/35">Liquid Assets ↗</p>
+                  <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.45)' }}>Liquid ↗</p>
                 </div>
                 <p className="text-base md:text-lg font-black num">{formatLakhs(strictlyLiquidAssets)}</p>
               </button>
 
               {/* Fuel Stock */}
               <button onClick={() => setCurrentRoute('fuel')}
-                className="text-left p-3.5 rounded-xl transition-all hover:scale-[1.02]"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                className="text-left p-3.5 rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                style={{ background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(251,191,36,0.25)', backdropFilter: 'blur(6px)' }}>
                 <div className="flex items-center gap-1.5 mb-2">
-                  <div className="w-4 h-4 rounded bg-amber-500/30 flex items-center justify-center">
-                    <Fuel size={9} className="text-amber-400" />
+                  <div className="w-4 h-4 rounded-md flex items-center justify-center" style={{ background: 'rgba(251,191,36,0.30)' }}>
+                    <Fuel size={9} style={{ color: '#fcd34d' }} />
                   </div>
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-white/35">Fuel Stock</p>
+                  <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.45)' }}>Fuel Stock</p>
                 </div>
                 <p className="text-base md:text-lg font-black num">{formatLakhs(fuelStockValue)}</p>
               </button>
 
               {/* OD Drawn */}
               <div className="p-3.5 rounded-xl"
-                style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.20)' }}>
+                style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)', backdropFilter: 'blur(6px)' }}>
                 <div className="flex items-center gap-1.5 mb-2">
-                  <div className="w-4 h-4 rounded bg-red-500/30 flex items-center justify-center">
-                    <TrendingDown size={9} className="text-red-400" />
+                  <div className="w-4 h-4 rounded-md flex items-center justify-center" style={{ background: 'rgba(239,68,68,0.30)' }}>
+                    <TrendingDown size={9} style={{ color: '#fca5a5' }} />
                   </div>
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-red-400/70">OD Drawn</p>
+                  <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: 'rgba(252,165,165,0.70)' }}>OD Drawn</p>
                 </div>
-                <p className="text-base md:text-lg font-black text-red-300 num">-{formatRs(odDrawnAmount)}</p>
+                <p className="text-base md:text-lg font-black num" style={{ color: '#fca5a5' }}>-{formatRs(odDrawnAmount)}</p>
                 <div className="mt-2">
-                  <div className="flex justify-between text-[9px] text-red-400/60 mb-1">
+                  <div className="flex justify-between text-[9px] mb-1" style={{ color: 'rgba(252,165,165,0.55)' }}>
                     <span>{odUsedPct.toFixed(0)}% used</span>
                     <span>{!odEntryIsToday && latestOdEntry ? latestOdEntry.date : 'today'}</span>
                   </div>
-                  <div className="w-full h-1 rounded-full" style={{ background: 'rgba(239,68,68,0.15)' }}>
-                    <div className="h-1 rounded-full bg-red-500/60" style={{ width: `${Math.min(100, odUsedPct)}%` }} />
+                  <div className="w-full h-1.5 rounded-full" style={{ background: 'rgba(239,68,68,0.20)' }}>
+                    <div className="h-1.5 rounded-full" style={{ width: `${Math.min(100, odUsedPct)}%`, background: 'rgba(252,165,165,0.70)' }} />
                   </div>
                 </div>
               </div>
@@ -2665,7 +2683,7 @@ const MorningEntryForm = () => {
       <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] overflow-hidden">
         {/* Wizard header */}
         <div className="px-6 py-5 text-white flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4"
-          style={{ background: 'linear-gradient(135deg, #04080f 0%, #0a1628 60%, #0e1f42 100%)' }}>
+          style={{ background: 'linear-gradient(135deg, #0e1f6e 0%, #1e3a98 60%, #1e40af 100%)' }}>
           <div>
             <div className="flex items-center gap-2.5 mb-4">
               <div className="w-8 h-8 rounded-xl bg-amber-500/20 flex items-center justify-center">
@@ -4137,16 +4155,17 @@ const AppContent = () => {
 
   const userRole = String(user.role || 'supervisor').toLowerCase();
 
+  // Each nav item has its own accent color — makes sidebar scannable & alive
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: BarChart3, roles: ['owner', 'supervisor'] },
-    { id: 'customers', label: 'Customers', icon: Users, roles: ['owner', 'supervisor'] },
-    { id: 'ledger', label: 'Credit Ledger', icon: BookOpen, roles: ['owner', 'supervisor'] },
-    { id: 'fuel', label: 'Fuel Receipts', icon: Truck, roles: ['owner', 'supervisor'] },
-    { id: 'morning', label: 'Morning Entry', icon: Sun, roles: ['owner', 'supervisor'] },
-    { id: 'expenses', label: 'Expenses', icon: Receipt, roles: ['owner', 'supervisor'] },
-    { id: 'reports', label: 'Reports', icon: TrendingUp, roles: ['owner'] },
-    { id: 'intelligence', label: 'AI Intelligence', icon: Brain, roles: ['owner'] },
-    { id: 'settings', label: 'Settings', icon: Settings, roles: ['owner'] },
+    { id: 'dashboard',    label: 'Dashboard',     icon: BarChart3,  roles: ['owner', 'supervisor'], color: '#3b82f6' },
+    { id: 'customers',   label: 'Customers',     icon: Users,      roles: ['owner', 'supervisor'], color: '#6366f1' },
+    { id: 'ledger',      label: 'Credit Ledger', icon: BookOpen,   roles: ['owner', 'supervisor'], color: '#10b981' },
+    { id: 'fuel',        label: 'Fuel Receipts', icon: Truck,      roles: ['owner', 'supervisor'], color: '#f97316' },
+    { id: 'morning',     label: 'Morning Entry', icon: Sun,        roles: ['owner', 'supervisor'], color: '#f59e0b' },
+    { id: 'expenses',    label: 'Expenses',      icon: Receipt,    roles: ['owner', 'supervisor'], color: '#8b5cf6' },
+    { id: 'reports',     label: 'Reports',       icon: TrendingUp, roles: ['owner'],               color: '#f43f5e' },
+    { id: 'intelligence',label: 'AI Intelligence',icon: Brain,     roles: ['owner'],               color: '#a855f7' },
+    { id: 'settings',    label: 'Settings',      icon: Settings,   roles: ['owner'],               color: '#94a3b8' },
   ];
 
   // Bottom-nav tabs (mobile-first navigation)
@@ -4158,7 +4177,7 @@ const AppContent = () => {
   ];
 
   return (
-    <div className="flex h-[100dvh] bg-[#f0f4f8] font-sans text-gray-900">
+    <div className="flex h-[100dvh] bg-[#f4f6fb] font-sans text-gray-900">
       {/* Sidebar backdrop (mobile) */}
       {isSidebarOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] z-20 md:hidden transition-opacity"
@@ -4166,26 +4185,30 @@ const AppContent = () => {
       )}
 
       {/* ── Sidebar ─────────────────────────────────────────────── */}
-      <aside className={`fixed inset-y-0 left-0 w-60 bg-sidebar-gradient flex flex-col shadow-sidebar z-30 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}
-        style={{ background: 'linear-gradient(160deg, #04080f 0%, #080f1c 65%, #0b1629 100%)' }}>
+      <aside className={`fixed inset-y-0 left-0 w-60 flex flex-col z-30 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}
+        style={{
+          background: 'linear-gradient(160deg, #0e2057 0%, #152e80 60%, #1a3a9e 100%)',
+          boxShadow: '4px 0 32px rgba(14,32,87,0.45)',
+        }}>
 
         {/* Logo / Brand */}
-        <div className="px-4 py-5 flex justify-between items-center"
-          style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        <div className="px-4 pt-5 pb-4 flex justify-between items-center"
+          style={{ borderBottom: '1px solid rgba(255,255,255,0.09)' }}>
           <div>
             <div className="flex items-center gap-2.5 mb-0.5">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shrink-0 shadow-lg">
+              <div className="w-8 h-8 rounded-xl shadow-lg flex items-center justify-center shrink-0"
+                style={{ background: 'linear-gradient(135deg, #f59e0b, #f97316)' }}>
                 <span className="text-[15px] leading-none">⛽</span>
               </div>
               <span className="font-black text-[15px] text-white tracking-tight truncate max-w-[130px]">
                 {settings?.bunkName || 'FuelDesk'}
               </span>
             </div>
-            <p className="text-[10px] tracking-widest uppercase ml-[42px]"
-              style={{ color: 'rgba(255,255,255,0.22)' }}>Smart Biz AI</p>
+            <p className="text-[9px] tracking-[0.2em] uppercase ml-[42px] font-semibold"
+              style={{ color: 'rgba(255,255,255,0.28)' }}>Smart Biz AI</p>
           </div>
-          <button className="md:hidden p-1.5 rounded-lg hover:bg-white/5 transition"
-            style={{ color: 'rgba(255,255,255,0.35)' }}
+          <button className="md:hidden p-1.5 rounded-lg transition"
+            style={{ color: 'rgba(255,255,255,0.40)', background: 'rgba(255,255,255,0.06)' }}
             onClick={() => setIsSidebarOpen(false)}>
             <X size={18} />
           </button>
@@ -4197,18 +4220,27 @@ const AppContent = () => {
             const isActive = currentRoute === item.id;
             return (
               <button key={item.id} onClick={() => handleNavClick(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-[13px] font-medium ${
-                  isActive ? 'bg-white/10 text-white' : 'hover:bg-white/[0.04] hover:text-white/80'
-                }`}
-                style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.45)' }}>
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-all ${
-                  isActive ? 'bg-blue-500/90 text-white' : 'text-white/30'
-                }`} style={!isActive ? { background: 'rgba(255,255,255,0.05)' } : {}}>
-                  <item.icon size={14} strokeWidth={isActive ? 2.5 : 1.8} />
+                className="w-full flex items-center gap-3 px-2.5 py-2.5 rounded-xl transition-all text-[13px] font-medium group"
+                style={{
+                  background: isActive ? 'rgba(255,255,255,0.13)' : 'transparent',
+                  color: isActive ? '#fff' : 'rgba(255,255,255,0.50)',
+                  backdropFilter: isActive ? 'blur(8px)' : undefined,
+                }}
+                onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'; (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.80)'; }}
+                onMouseLeave={e => { if (!isActive) { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.50)'; } }}>
+                {/* Icon with per-item color */}
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-all"
+                  style={{
+                    background: isActive ? item.color : 'rgba(255,255,255,0.08)',
+                    boxShadow: isActive ? `0 2px 8px ${item.color}60` : 'none',
+                  }}>
+                  <item.icon size={14} strokeWidth={isActive ? 2.5 : 1.8}
+                    style={{ color: isActive ? '#fff' : item.color + 'cc' }} />
                 </div>
-                <span>{item.label}</span>
+                <span className="font-medium">{item.label}</span>
                 {isActive && (
-                  <div className="ml-auto w-1 h-4 rounded-full bg-blue-400 shrink-0" />
+                  <div className="ml-auto w-1.5 h-5 rounded-full shrink-0"
+                    style={{ background: item.color }} />
                 )}
               </button>
             );
@@ -4216,21 +4248,24 @@ const AppContent = () => {
         </nav>
 
         {/* User profile + logout */}
-        <div className="px-2.5 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-          <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl mb-1"
-            style={{ background: 'rgba(255,255,255,0.04)' }}>
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-xs font-black text-white shrink-0">
+        <div className="px-2.5 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl mb-1.5"
+            style={{ background: 'rgba(255,255,255,0.07)' }}>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black text-white shrink-0"
+              style={{ background: 'linear-gradient(135deg, #3b82f6, #6366f1)' }}>
               {user.name?.charAt(0)?.toUpperCase() || 'U'}
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-semibold text-white truncate">{user.name}</p>
-              <p className="text-[10px] uppercase tracking-wider"
-                style={{ color: 'rgba(255,255,255,0.32)' }}>{userRole}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider"
+                style={{ color: 'rgba(255,255,255,0.35)' }}>{userRole}</p>
             </div>
           </div>
           <button onClick={handleLogout} disabled={isLoggingOut}
-            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-[12px] font-medium transition disabled:opacity-50 hover:bg-white/5"
-            style={{ color: 'rgba(255,255,255,0.35)' }}>
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-[12px] font-semibold transition disabled:opacity-50"
+            style={{ color: 'rgba(255,255,255,0.40)' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.07)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
             {isLoggingOut ? <Loader2 size={14} className="animate-spin" /> : <LogOut size={14} />}
             <span>{isLoggingOut ? 'Signing out…' : 'Sign out'}</span>
           </button>
@@ -4242,25 +4277,31 @@ const AppContent = () => {
 
         {/* Mobile top header */}
         <header className="md:hidden text-white px-4 py-3 flex justify-between items-center z-10 sticky top-0 shrink-0"
-          style={{ background: 'linear-gradient(160deg, #04080f 0%, #080f1c 100%)', boxShadow: '0 1px 0 rgba(255,255,255,0.04), 0 4px 12px rgba(0,0,0,0.3)' }}>
+          style={{
+            background: 'linear-gradient(160deg, #0e2057 0%, #152e80 100%)',
+            boxShadow: '0 1px 0 rgba(255,255,255,0.07), 0 4px 16px rgba(14,32,87,0.45)',
+          }}>
           <button onClick={() => setIsSidebarOpen(true)}
             className="p-2 rounded-xl transition"
-            style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.7)' }}>
+            style={{ background: 'rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.80)' }}>
             <Menu size={20} />
           </button>
           <div className="flex items-center gap-2 font-black text-[15px] text-white">
-            <span>⛽</span>
+            <div className="w-6 h-6 rounded-lg flex items-center justify-center"
+              style={{ background: 'linear-gradient(135deg, #f59e0b, #f97316)' }}>
+              <span className="text-[11px]">⛽</span>
+            </div>
             <span className="truncate max-w-[140px]">{settings?.bunkName || 'FuelDesk'}</span>
           </div>
           <button onClick={handleLogout} disabled={isLoggingOut}
             className="p-2 rounded-xl transition disabled:opacity-50"
-            style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.7)' }}>
+            style={{ background: 'rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.80)' }}>
             {isLoggingOut ? <Loader2 size={18} className="animate-spin" /> : <LogOut size={18} />}
           </button>
         </header>
 
         {/* Page content */}
-        <div className="flex-1 overflow-auto p-4 md:p-6 lg:p-8 pb-20 md:pb-8">
+        <div className="flex-1 overflow-auto p-4 md:p-6 lg:p-8 pb-20 md:pb-8 bg-[#f4f6fb]">
           <div className="max-w-7xl mx-auto pb-10">
             {currentRoute === 'dashboard' && <Dashboard />}
             {currentRoute === 'customers' && <CustomerList />}
@@ -4275,28 +4316,43 @@ const AppContent = () => {
         </div>
 
         {/* ── Bottom Navigation (mobile only) ───────────────────── */}
-        <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white z-20 flex items-center"
-          style={{ boxShadow: '0 -1px 0 rgba(0,0,0,0.06), 0 -4px 12px rgba(0,0,0,0.06)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white/95 z-20 flex items-center"
+          style={{
+            boxShadow: '0 -1px 0 rgba(0,0,0,0.05), 0 -8px 20px rgba(0,0,0,0.06)',
+            backdropFilter: 'blur(12px)',
+            paddingBottom: 'env(safe-area-inset-bottom)',
+          }}>
           {BOTTOM_TABS.map(tab => {
             const isActive = currentRoute === tab.id;
+            // Match each tab to its navItem color
+            const tabColor = navItems.find(n => n.id === tab.id)?.color || '#3b82f6';
             return (
               <button key={tab.id} onClick={() => handleNavClick(tab.id)}
-                className="flex-1 flex flex-col items-center pt-2.5 pb-2 gap-0.5 relative transition-colors">
+                className="flex-1 flex flex-col items-center pt-2.5 pb-2 gap-0.5 relative transition-all">
+                {/* Active indicator bar at top */}
                 {isActive && (
-                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-blue-600" />
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[3px] rounded-full"
+                    style={{ background: tabColor }} />
                 )}
-                <tab.icon size={20} strokeWidth={isActive ? 2.5 : 1.6}
-                  className={isActive ? 'text-blue-600' : 'text-gray-400'} />
-                <span className={`text-[10px] font-semibold tracking-wide ${isActive ? 'text-blue-600' : 'text-gray-400'}`}>
+                {/* Active icon gets a soft colored bg pill */}
+                <div className={`p-1.5 rounded-xl transition-all ${isActive ? 'scale-105' : ''}`}
+                  style={isActive ? { background: tabColor + '18' } : {}}>
+                  <tab.icon size={18} strokeWidth={isActive ? 2.5 : 1.6}
+                    style={{ color: isActive ? tabColor : '#94a3b8' }} />
+                </div>
+                <span className="text-[10px] font-bold tracking-wide"
+                  style={{ color: isActive ? tabColor : '#94a3b8' }}>
                   {tab.label}
                 </span>
               </button>
             );
           })}
           <button onClick={() => setIsSidebarOpen(true)}
-            className="flex-1 flex flex-col items-center pt-2.5 pb-2 gap-0.5 text-gray-400 transition-colors">
-            <Menu size={20} strokeWidth={1.6} />
-            <span className="text-[10px] font-semibold tracking-wide">More</span>
+            className="flex-1 flex flex-col items-center pt-2.5 pb-2 gap-0.5 transition-all">
+            <div className="p-1.5 rounded-xl">
+              <Menu size={18} strokeWidth={1.6} className="text-gray-400" />
+            </div>
+            <span className="text-[10px] font-bold tracking-wide text-gray-400">More</span>
           </button>
         </nav>
       </main>
