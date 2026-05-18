@@ -9,6 +9,7 @@ import {
   Plus, Edit2, Trash2, X, Search, AlertTriangle, CheckCircle2, Loader2,
   TrendingUp, TrendingDown, Wallet, Car, BarChart2,
   Settings as SettingsIcon, LogOut, ChevronRight, ChevronLeft,
+  BookOpen, ArrowUpRight, ArrowDownLeft,
 } from 'lucide-react';
 import { SettingsTab } from './SettingsTab';
 import { supabase } from './supabase';
@@ -50,6 +51,10 @@ interface Expense {
 }
 interface CartItem { product: Product; quantity: number; price: number; }
 interface ApPayment { amount: number; payment_date: string; }
+interface LedgerEntry {
+  id: string; date: string; type: 'sale' | 'payment';
+  description: string; debit: number; credit: number; balance: number;
+}
 
 type Tab = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'purchases' | 'expenses' | 'reports' | 'settings';
 
@@ -955,6 +960,7 @@ function ApCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: stri
   const [payAmount, setPayAmount] = useState('');
   const [payMode, setPayMode] = useState('cash');
   const [payingSaving, setPayingSaving] = useState(false);
+  const [ledgerCust, setLedgerCust] = useState<Customer | null>(null);
 
   const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search) || (c.vehicle_number || '').toLowerCase().includes(search.toLowerCase()));
 
@@ -1019,6 +1025,7 @@ function ApCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: stri
                       {c.outstanding_amount > 0 && (
                         <button onClick={() => openPay(c)} className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded font-medium hover:bg-orange-200">Collect</button>
                       )}
+                      <button onClick={() => setLedgerCust(c)} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-medium hover:bg-blue-200 flex items-center gap-1"><BookOpen size={11} />Ledger</button>
                       <button onClick={() => openEdit(c)} className="text-slate-600 hover:text-slate-800"><Edit2 size={14} /></button>
                     </div>
                   </td>
@@ -1066,6 +1073,68 @@ function ApCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: stri
           </div>
         </div>
       )}
+      {ledgerCust && <ApLedgerModal bunkId={bunkId} customer={ledgerCust} onClose={() => setLedgerCust(null)} />}
+    </div>
+  );
+}
+
+function ApLedgerModal({ bunkId, customer, onClose }: { bunkId: string; customer: Customer; onClose: () => void }) {
+  const [entries, setEntries] = useState<LedgerEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const [salesRes, paymentsRes] = await Promise.all([
+        supabase.from('ap_sales').select('id, sale_date, total_amount, payment_mode').eq('bunk_id', bunkId).eq('customer_id', customer.id).order('sale_date'),
+        supabase.from('ap_payments').select('id, payment_date, amount, payment_mode').eq('bunk_id', bunkId).eq('customer_id', customer.id).order('payment_date'),
+      ]);
+      const raw: { date: string; type: 'sale' | 'payment'; id: string; amount: number; mode: string }[] = [
+        ...(salesRes.data || []).map((s: { id: string; sale_date: string; total_amount: number; payment_mode: string }) => ({ date: s.sale_date, type: 'sale' as const, id: s.id, amount: s.total_amount, mode: s.payment_mode })),
+        ...(paymentsRes.data || []).map((p: { id: string; payment_date: string; amount: number; payment_mode: string }) => ({ date: p.payment_date, type: 'payment' as const, id: p.id, amount: p.amount, mode: p.payment_mode })),
+      ].sort((a, b) => a.date.localeCompare(b.date));
+      let balance = 0;
+      const ledger: LedgerEntry[] = raw.map(r => {
+        if (r.type === 'sale' && r.mode === 'credit') { balance += r.amount; return { id: r.id, date: r.date, type: 'sale', description: 'Credit Sale', debit: r.amount, credit: 0, balance }; }
+        if (r.type === 'sale') { return { id: r.id, date: r.date, type: 'sale', description: 'Cash/UPI Sale', debit: 0, credit: 0, balance }; }
+        balance -= r.amount; if (balance < 0) balance = 0;
+        return { id: r.id, date: r.date, type: 'payment', description: `Payment (${r.mode})`, debit: 0, credit: r.amount, balance };
+      });
+      setEntries(ledger);
+      setLoading(false);
+    }
+    load();
+  }, [bunkId, customer.id]);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b">
+          <div><h2 className="text-lg font-semibold">{customer.name} — Ledger</h2><p className="text-sm text-orange-600">Outstanding: {inr(customer.outstanding_amount)}</p></div>
+          <button onClick={onClose}><X size={20} /></button>
+        </div>
+        <div className="overflow-y-auto flex-1">
+          {loading ? <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin text-slate-600" size={24} /></div> : entries.length === 0 ? <p className="text-center text-gray-400 py-12">No transactions found.</p> : (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-600 text-xs uppercase sticky top-0">
+                <tr><th className="px-4 py-2 text-left">Date</th><th className="px-4 py-2 text-left">Description</th><th className="px-4 py-2 text-right text-red-600">Debit</th><th className="px-4 py-2 text-right text-green-600">Credit</th><th className="px-4 py-2 text-right">Balance</th></tr>
+              </thead>
+              <tbody>
+                {entries.map(e => (
+                  <tr key={e.id} className="border-t border-gray-100 hover:bg-gray-50">
+                    <td className="px-4 py-2 text-gray-600 whitespace-nowrap">{formatISTDate(e.date)}</td>
+                    <td className="px-4 py-2"><span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${e.type === 'sale' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>{e.type === 'sale' ? <ArrowUpRight size={10} /> : <ArrowDownLeft size={10} />}{e.description}</span></td>
+                    <td className="px-4 py-2 text-right text-red-600 font-medium">{e.debit > 0 ? inr(e.debit) : '—'}</td>
+                    <td className="px-4 py-2 text-right text-green-600 font-medium">{e.credit > 0 ? inr(e.credit) : '—'}</td>
+                    <td className={`px-4 py-2 text-right font-semibold ${e.balance > 0 ? 'text-orange-600' : 'text-gray-500'}`}>{inr(e.balance)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="p-4 border-t flex justify-end"><button onClick={onClose} className="px-5 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50">Close</button></div>
+      </div>
     </div>
   );
 }
