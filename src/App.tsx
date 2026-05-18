@@ -837,16 +837,50 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
     <AppContext.Provider value={{ user, dataLoading, unsavedForm, setUnsavedForm, login, loginCustomer, signup, logout, currentRoute, setCurrentRoute, customerFilter, setCustomerFilter, customers, transactions, morningEntries, expenses, fuelPurchases, users, settings, addCustomer, updateCustomer, deleteCustomer, addTransaction, updateTransaction, deleteTransaction, addMorningEntry, updateMorningEntry, deleteMorningEntry, addExpense, updateExpense, deleteExpense, addFuelPurchase, updateFuelPurchase, deleteFuelPurchase, addUser, deleteUser, updateSettings, changePassword, getCustomerBalance, getCustomerBalanceAsOf, bulkImportCustomers, showAlert, showConfirm, validateInputs, sendWhatsAppAlert, sendWhatsAppReminder }}>
       {children}
-      {typeof alertMessage === 'string' && alertMessage.length > 0 && (
-        <div className={`fixed top-4 left-4 right-4 sm:left-auto sm:right-5 sm:top-5 sm:max-w-sm z-[9999] px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4 ${alertMessage.startsWith('✅') || alertMessage.toLowerCase().includes('success') || alertMessage.toLowerCase().includes('saved') || alertMessage.toLowerCase().includes('updated') || alertMessage.toLowerCase().includes('welcome') ? 'bg-green-800 text-white' : 'bg-gray-900 text-white'}`}>
-          {alertMessage.startsWith('✅') || alertMessage.toLowerCase().includes('success') || alertMessage.toLowerCase().includes('saved') || alertMessage.toLowerCase().includes('updated') || alertMessage.toLowerCase().includes('welcome')
-            ? <CheckCircle2 size={20} className="text-green-300 shrink-0" />
-            : <AlertCircle size={20} className="text-blue-400 shrink-0" />}
-          <p className="font-medium text-sm flex-1">{alertMessage}</p>
-          <button onClick={() => setAlertMessage(null)} className="shrink-0 text-white/60 hover:text-white transition"><X size={16} /></button>
+      {/* Alert Toast */}
+      {typeof alertMessage === 'string' && alertMessage.length > 0 && (() => {
+        const isSuccess = alertMessage.startsWith('✅') || /success|saved|updated|welcome|recorded|submitted|imported|deleted|created|registered/i.test(alertMessage);
+        return (
+          <div className={`fixed top-4 left-4 right-4 sm:left-auto sm:right-5 sm:top-5 sm:max-w-sm z-[9999] px-4 py-3.5 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2 ${isSuccess ? 'bg-[#0a1a0f] border border-emerald-700/30' : 'bg-[#0f0f14] border border-white/8'}`}
+            style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3)' }}>
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isSuccess ? 'bg-emerald-500/15' : 'bg-blue-500/15'}`}>
+              {isSuccess
+                ? <CheckCircle2 size={16} className="text-emerald-400" />
+                : <AlertCircle size={16} className="text-blue-400" />}
+            </div>
+            <p className="font-medium text-sm flex-1 text-white leading-snug">{alertMessage}</p>
+            <button onClick={() => setAlertMessage(null)}
+              className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center hover:bg-white/10 transition"
+              style={{ color: 'rgba(255,255,255,0.4)' }}>
+              <X size={13} />
+            </button>
+          </div>
+        );
+      })()}
+
+      {/* Confirm Dialog */}
+      {confirmDialog && (
+        <div className="fixed inset-0 z-[9999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95"
+            style={{ boxShadow: '0 24px 64px rgba(0,0,0,0.25)' }}>
+            <div className="w-12 h-12 bg-red-50 rounded-2xl flex items-center justify-center mb-4">
+              <AlertCircle size={22} className="text-red-500" />
+            </div>
+            <h3 className="text-base font-black text-gray-900 mb-2">Confirm action</h3>
+            <p className="text-gray-500 text-sm mb-6 leading-relaxed">{confirmDialog.message}</p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmDialog(null)}
+                className="flex-1 px-4 py-2.5 text-gray-600 font-semibold hover:bg-gray-100 rounded-xl transition text-sm">
+                Cancel
+              </button>
+              <button onClick={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }}
+                className="flex-1 px-4 py-2.5 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition shadow-sm text-sm">
+                Confirm
+              </button>
+            </div>
+          </div>
         </div>
       )}
-      {confirmDialog && (<div className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4"><div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl animate-in zoom-in-95"><div className="flex items-center text-red-600 mb-4 gap-2"><AlertCircle size={24} /><h3 className="text-lg font-bold text-gray-900">Confirm Action</h3></div><p className="text-gray-600 mb-8 font-medium">{confirmDialog.message}</p><div className="flex gap-3 justify-end"><button onClick={() => setConfirmDialog(null)} className="px-5 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-xl transition">Cancel</button><button onClick={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }} className="px-5 py-2 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition shadow-md shadow-red-200">Confirm</button></div></div></div>)}
     </AppContext.Provider>
   );
 };
@@ -893,12 +927,16 @@ const LandingScreen = ({ onPrivacy }: { onPrivacy?: () => void }) => {
   const stepLabels = [{ key: 'lang', label: 'Language' }, { key: 'biz', label: 'Business' }, { key: 'login', label: 'Login' }];
 
   return (
-    <div className="min-h-[100dvh] bg-gradient-to-br from-indigo-950 via-purple-950 to-blue-950 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-        <div className="bg-gradient-to-r from-indigo-700 to-purple-700 p-6 text-center text-white">
-          <Briefcase className="w-12 h-12 mx-auto mb-2 text-indigo-200" />
-          <h1 className="text-2xl font-bold">Smart Biz AI</h1>
-          <p className="text-indigo-200 text-sm">Your AI-Powered Business Assistant</p>
+    <div className="min-h-[100dvh] flex items-center justify-center p-4"
+      style={{ background: 'linear-gradient(135deg, #04080f 0%, #0a1628 55%, #0e1f42 100%)' }}>
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="p-6 text-center text-white"
+          style={{ background: 'linear-gradient(135deg, #04080f 0%, #0c1a32 60%, #112040 100%)' }}>
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center mx-auto mb-3 shadow-xl">
+            <span className="text-2xl">⛽</span>
+          </div>
+          <h1 className="text-2xl font-black text-white">Smart Biz AI</h1>
+          <p className="text-white/40 text-sm mt-0.5">Your AI-powered business manager</p>
         </div>
         <div className="flex bg-gray-50 border-b">
           {stepLabels.map((s, i) => (
@@ -1293,7 +1331,18 @@ const Dashboard = () => {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
-        <div><h1 className="text-2xl font-bold text-gray-900">Welcome, {user?.name || 'Staff'}</h1><p className="text-gray-500">Financial Command Center for {settings?.bunkName || 'your business'}.</p></div>
+        <div>
+          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-0.5">{formatISTDate(getTodayIST())}</p>
+          <h1 className="text-2xl font-black text-gray-900 leading-tight">
+            {(() => {
+              const hr = nowIST().getHours();
+              if (hr < 12) return `Good morning, ${user?.name?.split(' ')[0] || 'there'} 🌅`;
+              if (hr < 17) return `Good afternoon, ${user?.name?.split(' ')[0] || 'there'} ☀️`;
+              return `Good evening, ${user?.name?.split(' ')[0] || 'there'} 🌙`;
+            })()}
+          </h1>
+          <p className="text-gray-500 text-sm mt-0.5">{settings?.bunkName || 'your station'} — financial command center</p>
+        </div>
         <div className="flex gap-2">
           <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="p-2 border rounded-xl font-bold text-blue-900 bg-white shadow-sm outline-none focus:ring-2 focus:ring-blue-500">
             {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
@@ -1305,31 +1354,98 @@ const Dashboard = () => {
       </div>
 
       {userRole === 'owner' && (
-        <div className="bg-gradient-to-r from-blue-950 to-blue-900 p-5 rounded-2xl shadow-lg text-white relative overflow-hidden border border-blue-800">
-          <div className="flex justify-between items-start mb-1">
-            <h2 className="text-xs font-bold text-blue-300 uppercase tracking-widest flex items-center"><BarChart3 size={14} className="mr-2" /> Global Business Net Value</h2>
-            <span className="bg-green-500/20 text-green-300 px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center border border-green-500/30 uppercase tracking-widest"><CheckCircle2 size={12} className="mr-1" /> Live Sync</span>
-          </div>
+        <div className="rounded-2xl text-white relative overflow-hidden"
+          style={{ background: 'linear-gradient(135deg, #04080f 0%, #0a1628 55%, #0e1f42 100%)', boxShadow: '0 4px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04)' }}>
+          {/* subtle grid pattern overlay */}
+          <div className="absolute inset-0 opacity-[0.03]"
+            style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '28px 28px' }} />
 
-          <p className="text-2xl md:text-3xl font-black mt-1 tracking-tight">{formatLakhs(bunkNetValue)}</p>
+          <div className="relative p-5">
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                  <BarChart3 size={13} className="text-amber-400" />
+                </div>
+                <span className="text-[11px] font-bold uppercase tracking-widest text-white/40">Business Net Value</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 live-pulse" />
+                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Live</span>
+              </div>
+            </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5 border-t border-blue-800/50 pt-4">
-            <div className="bg-white/5 p-3 rounded-xl cursor-pointer hover:bg-white/10 transition" onClick={() => setCurrentRoute('customers')}>
-              <p className="text-[10px] md:text-xs text-blue-300 uppercase tracking-wider font-bold mb-1">Total Credit</p>
-              <p className="text-base md:text-lg font-bold">{formatLakhs(totalReceivables)}</p>
+            <div className="flex items-end gap-4 mb-6">
+              <div>
+                <p className="text-3xl md:text-4xl font-black tracking-tight num leading-none"
+                  style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {formatLakhs(bunkNetValue)}
+                </p>
+                <p className="text-[11px] mt-1.5" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                  Total net worth including all assets &amp; liabilities
+                </p>
+              </div>
             </div>
-            <div className="bg-white/5 p-3 rounded-xl cursor-pointer hover:bg-white/10 transition border border-dashed border-blue-400/30 hover:border-blue-400" onClick={() => setShowAssets(true)}>
-              <p className="text-[10px] md:text-xs text-blue-300 uppercase tracking-wider font-bold mb-1">Liquid Assets 👆</p>
-              <p className="text-base md:text-lg font-bold">{formatLakhs(strictlyLiquidAssets)}</p>
-            </div>
-            <div className="bg-white/5 p-3 rounded-xl cursor-pointer hover:bg-white/10 transition" onClick={() => setCurrentRoute('fuel')}>
-              <p className="text-[10px] md:text-xs text-blue-300 uppercase tracking-wider font-bold mb-1">Fuel Stock Value</p>
-              <p className="text-base md:text-lg font-bold">{formatLakhs(fuelStockValue)}</p>
-            </div>
-            <div className="bg-red-900/50 p-3 rounded-xl border border-red-500/40">
-              <p className="text-[10px] md:text-xs text-red-300 uppercase tracking-wider font-bold mb-1">OD Drawn {!odEntryIsToday && latestOdEntry ? <span className="normal-case font-normal opacity-60">(as of {latestOdEntry.date})</span> : null}</p>
-              <p className="text-base md:text-lg font-black text-red-200">-{formatRs(odDrawnAmount)}</p>
-              <p className="text-[10px] text-red-400 mt-0.5">Avail: {formatRs(Math.max(0, odAvailableDisplay))} of {formatRs(odLimitDash)} ({odUsedPct.toFixed(0)}% used)</p>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+              {/* Credit Receivables */}
+              <button onClick={() => setCurrentRoute('customers')}
+                className="text-left p-3.5 rounded-xl transition-all hover:scale-[1.02]"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <div className="w-4 h-4 rounded bg-indigo-500/30 flex items-center justify-center">
+                    <Users size={9} className="text-indigo-400" />
+                  </div>
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-white/35">Credit Out</p>
+                </div>
+                <p className="text-base md:text-lg font-black num">{formatLakhs(totalReceivables)}</p>
+              </button>
+
+              {/* Liquid Assets */}
+              <button onClick={() => setShowAssets(true)}
+                className="text-left p-3.5 rounded-xl transition-all hover:scale-[1.02]"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px dashed rgba(99,179,237,0.25)' }}>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <div className="w-4 h-4 rounded bg-blue-500/30 flex items-center justify-center">
+                    <Wallet size={9} className="text-blue-400" />
+                  </div>
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-white/35">Liquid Assets ↗</p>
+                </div>
+                <p className="text-base md:text-lg font-black num">{formatLakhs(strictlyLiquidAssets)}</p>
+              </button>
+
+              {/* Fuel Stock */}
+              <button onClick={() => setCurrentRoute('fuel')}
+                className="text-left p-3.5 rounded-xl transition-all hover:scale-[1.02]"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <div className="w-4 h-4 rounded bg-amber-500/30 flex items-center justify-center">
+                    <Fuel size={9} className="text-amber-400" />
+                  </div>
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-white/35">Fuel Stock</p>
+                </div>
+                <p className="text-base md:text-lg font-black num">{formatLakhs(fuelStockValue)}</p>
+              </button>
+
+              {/* OD Drawn */}
+              <div className="p-3.5 rounded-xl"
+                style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.20)' }}>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <div className="w-4 h-4 rounded bg-red-500/30 flex items-center justify-center">
+                    <TrendingDown size={9} className="text-red-400" />
+                  </div>
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-red-400/70">OD Drawn</p>
+                </div>
+                <p className="text-base md:text-lg font-black text-red-300 num">-{formatRs(odDrawnAmount)}</p>
+                <div className="mt-2">
+                  <div className="flex justify-between text-[9px] text-red-400/60 mb-1">
+                    <span>{odUsedPct.toFixed(0)}% used</span>
+                    <span>{!odEntryIsToday && latestOdEntry ? latestOdEntry.date : 'today'}</span>
+                  </div>
+                  <div className="w-full h-1 rounded-full" style={{ background: 'rgba(239,68,68,0.15)' }}>
+                    <div className="h-1 rounded-full bg-red-500/60" style={{ width: `${Math.min(100, odUsedPct)}%` }} />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1359,73 +1475,219 @@ const Dashboard = () => {
         const allDone = hasDip && hasColls && hasBank;
 
         const step = (done: boolean, label: string, detail?: string) => (
-          <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium ${
-            done ? 'bg-green-50 border-green-200 text-green-700' : 'bg-amber-50 border-amber-200 text-amber-700'
+          <div className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-medium border transition-all ${
+            done
+              ? 'bg-emerald-50 border-emerald-200/60 text-emerald-700'
+              : 'bg-white/70 border-gray-200/60 text-gray-400'
           }`}>
-            {done
-              ? <CheckCircle2 size={14} className="shrink-0 text-green-500" />
-              : <AlertCircle size={14} className="shrink-0 text-amber-500" />}
-            <span>{label}</span>
-            {detail && <span className="ml-auto opacity-60">{detail}</span>}
+            <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${
+              done ? 'bg-emerald-500 text-white' : 'bg-gray-200 text-gray-400'
+            }`}>
+              {done
+                ? <CheckCircle2 size={10} className="text-white" />
+                : <div className="w-1.5 h-1.5 rounded-full bg-gray-400" />}
+            </div>
+            <span className="font-semibold">{label}</span>
+            {detail && <span className="ml-auto text-[10px] font-medium opacity-70 truncate max-w-[80px]">{detail}</span>}
           </div>
         );
 
+        const statusColor = allDone ? '#10b981' : todayEntry ? '#f59e0b' : '#ef4444';
+        const statusBg   = allDone ? 'rgba(16,185,129,0.05)' : todayEntry ? 'rgba(245,158,11,0.05)' : 'rgba(239,68,68,0.05)';
+        const statusBorder = allDone ? 'rgba(16,185,129,0.15)' : todayEntry ? 'rgba(245,158,11,0.18)' : 'rgba(239,68,68,0.18)';
+
         return (
-          <div className={`rounded-xl border p-4 ${
-            allDone ? 'bg-green-50 border-green-200' : todayEntry ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'
-          }`}>
+          <div className="rounded-2xl p-4 shadow-card"
+            style={{ background: statusBg, border: `1px solid ${statusBorder}`, backdropFilter: 'blur(4px)' }}>
             <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Sun size={18} className={allDone ? 'text-green-600' : 'text-amber-600'} />
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: `${statusColor}15` }}>
+                  <Sun size={16} style={{ color: statusColor }} />
+                </div>
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-gray-600">{formatISTDate(getTodayIST())}</p>
-                  <p className={`font-bold text-sm ${ allDone ? 'text-green-700' : todayEntry ? 'text-amber-700' : 'text-red-700' }`}>
-                    {allDone ? '✅ All Steps Complete' : todayEntry ? '⏳ Entry In Progress' : '❗ Entry Not Started'}
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{formatISTDate(getTodayIST())} — Morning Entry</p>
+                  <p className="font-bold text-[13px]" style={{ color: statusColor }}>
+                    {allDone ? '✓ All steps complete' : todayEntry ? '◐ Entry in progress' : '! Entry not started'}
                   </p>
                 </div>
               </div>
               {!allDone && (
                 <button onClick={() => setCurrentRoute('morning')}
-                  className="text-xs font-bold px-3 py-1.5 bg-blue-700 text-white rounded-lg hover:bg-blue-800 transition shadow-sm">
-                  {todayEntry ? 'Continue →' : 'Start Entry →'}
+                  className="text-[12px] font-bold px-3.5 py-1.5 text-white rounded-xl transition shadow-sm"
+                  style={{ background: 'linear-gradient(135deg, #1d4ed8, #3b82f6)' }}>
+                  {todayEntry ? 'Continue →' : 'Start →'}
                 </button>
               )}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {step(!!todayEntry, 'Morning Started')}
-              {step(hasDip ?? false, 'Dip Readings', todayEntry ? `P:${(todayEntry.petrolDip||0).toFixed(0)}L D:${(todayEntry.dieselDip||0).toFixed(0)}L` : undefined)}
+              {step(!!todayEntry, 'Entry started')}
+              {step(hasDip ?? false, 'Dip readings', todayEntry ? `P ${(todayEntry.petrolDip||0).toFixed(0)}L · D ${(todayEntry.dieselDip||0).toFixed(0)}L` : undefined)}
               {step(hasColls ?? false, 'Collections', hasColls && todayEntry ? formatRs((todayEntry.collectionsCash||0)+(todayEntry.balanceCash||0)+(todayEntry.collectionsDigital||0)) : undefined)}
-              {step(hasBank ?? false, 'Bank Balances', hasBank && todayEntry ? `OD: ${formatRs(todayEntry.balanceOd||0)}` : undefined)}
+              {step(hasBank ?? false, 'Bank balances', hasBank && todayEntry ? `OD ${formatRs(todayEntry.balanceOd||0)}` : undefined)}
             </div>
           </div>
         );
       })()}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-        <div onClick={() => { setCustomerFilter('All'); setCurrentRoute('customers'); }} className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 flex items-center cursor-pointer hover:bg-gray-50 transition"><div className="w-10 h-10 rounded-full flex items-center justify-center mr-3 shrink-0 bg-indigo-50 text-indigo-600"><Users size={18} /></div><div><p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Total Customers</p><p className="text-base font-bold text-gray-900">{totalCustomers}</p></div></div>
-        <div onClick={() => setCurrentRoute('morning')} className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 flex items-center cursor-pointer hover:bg-gray-50 transition"><div className="w-10 h-10 rounded-full flex items-center justify-center mr-3 shrink-0 bg-green-50 text-green-600"><Fuel size={18} /></div><div><p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Latest Gross Sales</p><p className="text-base font-bold text-gray-900">{formatRs(latestSalesValue)}</p></div></div>
-        <div onClick={() => setCurrentRoute('ledger')} className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 flex items-center cursor-pointer hover:bg-gray-50 transition"><div className="w-10 h-10 rounded-full flex items-center justify-center mr-3 shrink-0 bg-blue-50 text-blue-600"><Receipt size={18} /></div><div><p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Latest Net Remittance</p><p className="text-base font-bold text-gray-900">{formatRs(yesterdayReceived)}</p></div></div>
-        <div onClick={() => setCurrentRoute('expenses')} className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 flex items-center cursor-pointer hover:bg-gray-50 transition"><div className="w-10 h-10 rounded-full flex items-center justify-center mr-3 shrink-0 bg-purple-50 text-purple-600"><Wallet size={18} /></div><div><p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">MTD Expenses</p><p className="text-base font-bold text-gray-900">{formatRs(mtdExpenses)}</p></div></div>
-        <div onClick={() => { setCustomerFilter('overdue'); setCurrentRoute('customers'); }} className="bg-white rounded-xl p-3 shadow-sm border border-gray-100 flex items-center cursor-pointer hover:bg-gray-50 transition"><div className="w-10 h-10 rounded-full flex items-center justify-center mr-3 shrink-0 bg-red-50 text-red-600"><AlertCircle size={18} /></div><div><p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Overdue Accounts</p><p className="text-base font-bold text-red-600">{overdueCount}</p></div></div>
+      {/* ── Live Tank Gauge ──────────────────────────────────────── */}
+      {latestEntry && (latestEntry.petrolDip > 0 || latestEntry.dieselDip > 0) && (() => {
+        const petrolL = latestEntry.petrolDip || 0;
+        const dieselL = latestEntry.dieselDip || 0;
+        // Reference capacity: use max of all historical entries or a generous floor
+        const maxPetrol = Math.max(...morningEntries.map(e => e.petrolDip || 0), 15000);
+        const maxDiesel = Math.max(...morningEntries.map(e => e.dieselDip || 0), 30000);
+        const petrolPct = Math.min(100, (petrolL / maxPetrol) * 100);
+        const dieselPct = Math.min(100, (dieselL / maxDiesel) * 100);
+        const petrolStatus = petrolL < 2000 ? { color: '#ef4444', label: 'Critical', bg: '#fef2f2' } : petrolL < 5000 ? { color: '#f59e0b', label: 'Low', bg: '#fffbeb' } : { color: '#10b981', label: 'Good', bg: '#f0fdf4' };
+        const dieselStatus = dieselL < 3000 ? { color: '#ef4444', label: 'Critical', bg: '#fef2f2' } : dieselL < 8000 ? { color: '#f59e0b', label: 'Low', bg: '#fffbeb' } : { color: '#10b981', label: 'Good', bg: '#f0fdf4' };
+        return (
+          <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center">
+                  <Fuel size={14} className="text-amber-600" />
+                </div>
+                <div>
+                  <p className="font-bold text-[13px] text-gray-900">Live Tank Stock</p>
+                  <p className="text-[10px] text-gray-400">From {formatISTDate(latestEntry.date)} morning dip</p>
+                </div>
+              </div>
+              <button onClick={() => setCurrentRoute('morning')} className="text-[11px] font-bold text-blue-600 hover:bg-blue-50 px-2.5 py-1 rounded-lg transition">Update →</button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Petrol Gauge */}
+              <div className="rounded-xl p-4 border" style={{ background: petrolStatus.bg, borderColor: `${petrolStatus.color}20` }}>
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: petrolStatus.color }}>⛽ Petrol</p>
+                    <p className="text-2xl font-black num text-gray-900">{petrolL.toLocaleString('en-IN')} <span className="text-sm font-bold text-gray-500">L</span></p>
+                  </div>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full text-white" style={{ background: petrolStatus.color }}>{petrolStatus.label}</span>
+                </div>
+                <div className="w-full h-2.5 rounded-full bg-gray-200/80 overflow-hidden">
+                  <div className="h-2.5 rounded-full transition-all duration-500"
+                    style={{ width: `${petrolPct}%`, background: `linear-gradient(90deg, ${petrolStatus.color}80, ${petrolStatus.color})` }} />
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1.5 font-medium">{petrolPct.toFixed(0)}% of typical max · {formatRs(petrolL * (settings?.petrolRate || 0))} value</p>
+              </div>
+              {/* Diesel Gauge */}
+              <div className="rounded-xl p-4 border" style={{ background: dieselStatus.bg, borderColor: `${dieselStatus.color}20` }}>
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5" style={{ color: dieselStatus.color }}>🛢 Diesel</p>
+                    <p className="text-2xl font-black num text-gray-900">{dieselL.toLocaleString('en-IN')} <span className="text-sm font-bold text-gray-500">L</span></p>
+                  </div>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full text-white" style={{ background: dieselStatus.color }}>{dieselStatus.label}</span>
+                </div>
+                <div className="w-full h-2.5 rounded-full bg-gray-200/80 overflow-hidden">
+                  <div className="h-2.5 rounded-full transition-all duration-500"
+                    style={{ width: `${dieselPct}%`, background: `linear-gradient(90deg, ${dieselStatus.color}80, ${dieselStatus.color})` }} />
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1.5 font-medium">{dieselPct.toFixed(0)}% of typical max · {formatRs(dieselL * (settings?.dieselRate || 0))} value</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Quick KPI Cards ──────────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {/* Customers */}
+        <button onClick={() => { setCustomerFilter('All'); setCurrentRoute('customers'); }}
+          className="bg-white rounded-2xl p-4 text-left shadow-card border border-black/[0.04] card-interactive group">
+          <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center mb-3 group-hover:bg-indigo-100 transition-colors">
+            <Users size={17} className="text-indigo-600" />
+          </div>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-0.5">Customers</p>
+          <p className="text-2xl font-black text-gray-900 num">{totalCustomers}</p>
+        </button>
+
+        {/* Latest Sales */}
+        <button onClick={() => setCurrentRoute('morning')}
+          className="bg-white rounded-2xl p-4 text-left shadow-card border border-black/[0.04] card-interactive group">
+          <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center mb-3 group-hover:bg-emerald-100 transition-colors">
+            <Fuel size={17} className="text-emerald-600" />
+          </div>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-0.5">Latest Sales</p>
+          <p className="text-lg font-black text-gray-900 num leading-tight">{formatRs(latestSalesValue)}</p>
+        </button>
+
+        {/* Net Remittance */}
+        <button onClick={() => setCurrentRoute('ledger')}
+          className="bg-white rounded-2xl p-4 text-left shadow-card border border-black/[0.04] card-interactive group">
+          <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center mb-3 group-hover:bg-blue-100 transition-colors">
+            <Receipt size={17} className="text-blue-600" />
+          </div>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-0.5">Net Remittance</p>
+          <p className="text-lg font-black text-gray-900 num leading-tight">{formatRs(yesterdayReceived)}</p>
+        </button>
+
+        {/* MTD Expenses */}
+        <button onClick={() => setCurrentRoute('expenses')}
+          className="bg-white rounded-2xl p-4 text-left shadow-card border border-black/[0.04] card-interactive group">
+          <div className="w-9 h-9 rounded-xl bg-violet-50 flex items-center justify-center mb-3 group-hover:bg-violet-100 transition-colors">
+            <Wallet size={17} className="text-violet-600" />
+          </div>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-0.5">MTD Expenses</p>
+          <p className="text-lg font-black text-gray-900 num leading-tight">{formatRs(mtdExpenses)}</p>
+        </button>
+
+        {/* Overdue */}
+        <button onClick={() => { setCustomerFilter('overdue'); setCurrentRoute('customers'); }}
+          className={`rounded-2xl p-4 text-left shadow-card border card-interactive group ${
+            overdueCount > 0
+              ? 'bg-red-50 border-red-100'
+              : 'bg-white border-black/[0.04]'
+          }`}>
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3 transition-colors ${
+            overdueCount > 0 ? 'bg-red-100 group-hover:bg-red-200' : 'bg-gray-50 group-hover:bg-gray-100'
+          }`}>
+            <AlertCircle size={17} className={overdueCount > 0 ? 'text-red-600' : 'text-gray-400'} />
+          </div>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-0.5">Overdue</p>
+          <p className={`text-2xl font-black num ${overdueCount > 0 ? 'text-red-600' : 'text-gray-900'}`}>
+            {overdueCount}
+          </p>
+        </button>
       </div>
 
       {userRole === 'owner' && (
         <>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-5 flex flex-col">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="lg:col-span-2 bg-white rounded-2xl shadow-card border border-black/[0.04] p-5 flex flex-col">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-base text-gray-800 flex items-center"><TrendingUp className="mr-2 text-blue-600" size={18} /> Sales Performance</h3>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => setChartPage(p => Math.min(totalChartPages - 1, p + 1))} disabled={chartPage >= totalChartPages - 1} className="p-1 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-30 transition"><ChevronLeft size={16} /></button>
-                  <button onClick={() => setChartPage(p => Math.max(0, p - 1))} disabled={chartPage === 0} className="p-1 rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-30 transition"><ChevronRight size={16} /></button>
+                <div>
+                  <h3 className="font-bold text-[14px] text-gray-800 flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-blue-50 flex items-center justify-center">
+                      <TrendingUp size={13} className="text-blue-600" />
+                    </div>
+                    Sales Performance
+                  </h3>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button onClick={() => setChartPage(p => Math.min(totalChartPages - 1, p + 1))} disabled={chartPage >= totalChartPages - 1} className="w-7 h-7 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200 flex items-center justify-center disabled:opacity-30 transition"><ChevronLeft size={13} /></button>
+                  <button onClick={() => setChartPage(p => Math.max(0, p - 1))} disabled={chartPage === 0} className="w-7 h-7 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200 flex items-center justify-center disabled:opacity-30 transition"><ChevronRight size={13} /></button>
                 </div>
               </div>
               {/* Bar chart on sm+, compact stats on mobile */}
-              <div className="hidden sm:flex flex-1 items-end gap-1.5 h-40 mt-2 border-b border-gray-100 pb-2">
-                {chartData.length === 0 ? <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 text-sm"><BarChart3 size={32} className="mb-2 opacity-20" /> No data for this period</div> : chartData.map((d) => (
-                  <div key={d.label} className="relative flex-1 bg-gradient-to-t from-blue-500 to-blue-300 rounded-t-sm group transition-all hover:opacity-80 flex flex-col justify-end" style={{ height: `${Math.max(5, (d.value / maxChartVal) * 100)}%` }} title={`${d.label}: ${formatRs(d.value)}`}>
-                    <div className="absolute opacity-0 group-hover:opacity-100 -top-8 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-[10px] py-1 px-2 rounded whitespace-nowrap z-10 transition-opacity pointer-events-none">{formatLakhs(d.value)}</div>
-                    <span className="text-[8px] text-center text-blue-900 font-bold mb-1 opacity-0 group-hover:opacity-100 truncate w-full px-1">{d.label}</span>
+              <div className="hidden sm:flex flex-1 items-end gap-1 h-40 mt-2 border-b border-gray-100 pb-2">
+                {chartData.length === 0 ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center text-gray-300">
+                    <BarChart3 size={32} className="mb-2 opacity-30" />
+                    <span className="text-sm font-medium">No data for this period</span>
+                  </div>
+                ) : chartData.map((d) => (
+                  <div key={d.label} className="relative flex-1 rounded-t-md group transition-all hover:opacity-75 flex flex-col justify-end"
+                    style={{
+                      height: `${Math.max(4, (d.value / maxChartVal) * 100)}%`,
+                      background: 'linear-gradient(to top, #2563eb, #60a5fa)',
+                    }}
+                    title={`${d.label}: ${formatRs(d.value)}`}>
+                    <div className="absolute opacity-0 group-hover:opacity-100 -top-9 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[10px] py-1 px-2 rounded-lg whitespace-nowrap z-10 transition-all pointer-events-none shadow-lg">
+                      {formatLakhs(d.value)}
+                      <div className="text-[8px] text-white/60 text-center">{d.label}</div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1438,11 +1700,20 @@ const Dashboard = () => {
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 flex flex-col justify-between">
+            <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] p-5 flex flex-col justify-between">
               <div>
                 <div className="flex justify-between items-start mb-4">
-                  <h3 className="font-bold text-base text-gray-800 flex items-center"><Calendar className="mr-2 text-purple-600" size={18} /> Financial Analytics</h3>
-                  {periodMarginPct !== 0 && <span className="text-[10px] font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded border border-green-200">{periodMarginPct.toFixed(1)}% Margin</span>}
+                  <h3 className="font-bold text-[14px] text-gray-800 flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-lg bg-violet-50 flex items-center justify-center">
+                      <Calendar size={13} className="text-violet-600" />
+                    </div>
+                    Financial Analytics
+                  </h3>
+                  {periodMarginPct !== 0 && (
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${periodMarginPct > 0 ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-red-600 bg-red-50 border-red-200'}`}>
+                      {periodMarginPct.toFixed(1)}%
+                    </span>
+                  )}
                 </div>
                 <div className="space-y-3 text-sm">
                   <div className="flex justify-between items-center"><span className="text-gray-500">Avg. Daily Sales</span><span className="font-bold text-gray-900">{formatRs(avgDailySalesRs)}</span></div>
@@ -1460,17 +1731,43 @@ const Dashboard = () => {
                   <div className="flex justify-between items-center"><span className="text-gray-500">Total Expenses</span><span className="font-bold text-orange-600">{formatRs(pTotalExpRs)}</span></div>
                 </div>
               </div>
-              <div className={`mt-5 p-3 rounded-xl border ${pPeriodNetProfit < 0 ? 'bg-red-50 border-red-100' : 'bg-green-50 border-green-100'}`}>
-                <p className="text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-600">Period Net Profit/Loss</p>
-                <p className={`text-xl font-black ${pPeriodNetProfit < 0 ? 'text-red-700' : 'text-green-700'}`}>{formatRs(pPeriodNetProfit)}</p>
+              <div className={`mt-5 p-4 rounded-xl border ${pPeriodNetProfit < 0 ? 'bg-red-50 border-red-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Period Net Profit / Loss</p>
+                <p className={`text-2xl font-black num ${pPeriodNetProfit < 0 ? 'text-red-700' : 'text-emerald-700'}`}>
+                  {pPeriodNetProfit > 0 ? '+' : ''}{formatRs(pPeriodNetProfit)}
+                </p>
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex items-center"><div className="bg-gray-100 p-3 rounded-full mr-4"><BookOpen className="text-gray-600" /></div><div><p className="text-xs text-gray-500 font-bold uppercase tracking-wide">Opening Credit</p><p className="text-xl font-bold">{formatRs(pOpeningCreditBal)}</p></div></div>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex items-center"><div className="bg-orange-50 p-3 rounded-full mr-4"><TrendingUp className="text-orange-500" /></div><div><p className="text-xs text-gray-500 font-bold uppercase tracking-wide">Credit Given</p><p className="text-xl font-bold text-orange-600">{formatRs(pCreditGiven)}</p></div></div>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex items-center"><div className="bg-green-50 p-3 rounded-full mr-4"><TrendingDown className="text-green-500" /></div><div><p className="text-xs text-gray-500 font-bold uppercase tracking-wide">Credit Received</p><p className="text-xl font-bold text-green-600">{formatRs(pCreditRecv)}</p></div></div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] p-4 flex items-center gap-4">
+              <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center shrink-0">
+                <BookOpen size={18} className="text-slate-600" />
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-0.5">Opening Credit</p>
+                <p className="text-lg font-black text-gray-900 num">{formatRs(pOpeningCreditBal)}</p>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] p-4 flex items-center gap-4">
+              <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center shrink-0">
+                <TrendingUp size={18} className="text-amber-600" />
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-0.5">Credit Given</p>
+                <p className="text-lg font-black text-amber-600 num">{formatRs(pCreditGiven)}</p>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] p-4 flex items-center gap-4">
+              <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center shrink-0">
+                <TrendingDown size={18} className="text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-0.5">Credit Received</p>
+                <p className="text-lg font-black text-emerald-600 num">{formatRs(pCreditRecv)}</p>
+              </div>
+            </div>
           </div>
         </>
       )}
@@ -1599,14 +1896,33 @@ const CustomerList = () => {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h2 className="text-xl md:text-2xl font-bold text-gray-900">Customer Management</h2>
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-          <div className="relative w-full sm:w-48 shrink-0">
-            <Search size={16} className="absolute left-3 top-3 text-gray-400" />
-            <input type="text" placeholder="Search..." value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setCustPage(0); }} className="w-full pl-9 pr-3 py-2 bg-white border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+        <div>
+          <h2 className="text-2xl font-black text-gray-900">Customers</h2>
+          <p className="text-sm text-gray-400 mt-0.5">{customers.length} accounts</p>
+        </div>
+        <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full sm:w-auto">
+          <div className="relative w-full sm:w-52 shrink-0">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input type="text" placeholder="Search name, phone, vehicle…"
+              value={searchTerm}
+              onChange={e => { setSearchTerm(e.target.value); setCustPage(0); }}
+              className="w-full pl-9 pr-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm" />
           </div>
-          <div className="relative w-full sm:w-40 shrink-0"><Filter size={16} className="absolute left-3 top-3 text-gray-400" /><select value={customerFilter} onChange={e => { setCustomerFilter(e.target.value); setCustPage(0); }} className="w-full pl-9 pr-3 py-2 bg-white border rounded-lg text-base sm:text-sm focus:ring-2 focus:ring-blue-500 outline-none appearance-none"><option value="All">All Accounts</option><option value="overdue">⚠️ Overdue Only</option><optgroup label="Categories">{CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}</optgroup></select></div>
-          <button onClick={openAdd} className="w-full sm:w-auto justify-center bg-blue-800 text-white px-3 py-2 rounded-lg font-medium flex items-center hover:bg-blue-900 shadow-sm text-sm shrink-0"><Plus size={18} className="mr-2" /> Add Customer</button>
+          <div className="relative w-full sm:w-44 shrink-0">
+            <Filter size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <select value={customerFilter}
+              onChange={e => { setCustomerFilter(e.target.value); setCustPage(0); }}
+              className="w-full pl-9 pr-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none appearance-none shadow-sm">
+              <option value="All">All Accounts</option>
+              <option value="overdue">⚠️ Overdue Only</option>
+              <optgroup label="Categories">{CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}</optgroup>
+            </select>
+          </div>
+          <button onClick={openAdd}
+            className="w-full sm:w-auto justify-center text-white px-4 py-2.5 rounded-xl font-semibold flex items-center gap-2 text-sm shrink-0 shadow-sm"
+            style={{ background: 'linear-gradient(135deg, #1d4ed8, #3b82f6)' }}>
+            <Plus size={16} /> Add Customer
+          </button>
         </div>
       </div>
 
@@ -1675,10 +1991,20 @@ const CustomerList = () => {
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+      <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] overflow-hidden flex flex-col">
         <div className="overflow-x-auto flex-1">
           <table className="w-full text-left cursor-pointer">
-            <thead className="bg-gray-50 border-b"><tr><th className="p-4 text-sm font-medium text-gray-500 whitespace-nowrap">Customer Details</th><th className="p-4 text-sm font-medium text-gray-500 whitespace-nowrap">Category</th><th className="p-4 text-sm font-medium text-gray-500 text-center whitespace-nowrap">WhatsApp</th><th className="p-4 text-sm font-medium text-gray-500 whitespace-nowrap">Outstanding</th><th className="p-4 text-sm font-medium text-gray-500 whitespace-nowrap">Limit</th><th className="p-4 text-sm font-medium text-gray-500 whitespace-nowrap">Portal PIN</th><th className="p-4 text-sm font-medium text-gray-500 text-center whitespace-nowrap">Actions</th></tr></thead>
+            <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+              <tr>
+                <th className="px-4 py-3 text-gray-500 whitespace-nowrap">Customer</th>
+                <th className="px-4 py-3 text-gray-500 whitespace-nowrap">Category</th>
+                <th className="px-4 py-3 text-gray-500 text-center whitespace-nowrap">WA Bot</th>
+                <th className="px-4 py-3 text-gray-500 whitespace-nowrap">Outstanding</th>
+                <th className="px-4 py-3 text-gray-500 whitespace-nowrap">Limit</th>
+                <th className="px-4 py-3 text-gray-500 whitespace-nowrap">PIN</th>
+                <th className="px-4 py-3 text-gray-500 text-center whitespace-nowrap">Actions</th>
+              </tr>
+            </thead>
             <tbody className="divide-y divide-gray-100">
               {paginatedCustomers.length === 0 ? (<tr><td colSpan={7} className="p-10 text-center text-gray-400 flex flex-col items-center"><SearchX size={32} className="mb-2 opacity-50" />No customers found.</td></tr>) : paginatedCustomers.map((c, idx) => {
                 const bal = getCustomerBalance(c.id); const isOver = bal > c.creditLimit;
@@ -1699,6 +2025,19 @@ const CustomerList = () => {
                   } catch { displayVehicles = c.vehicleNumbers; }
                 }
 
+                // Credit aging: find last credit sale, compute days overdue
+                const lastCreditTx = cTxs.find(t => t.type === 'credit_sale');
+                const daysSinceCredit = lastCreditTx
+                  ? Math.floor((new Date().getTime() - new Date(lastCreditTx.date).getTime()) / 86400000)
+                  : null;
+                const agingBadge = bal > 0 && daysSinceCredit !== null
+                  ? daysSinceCredit <= 7
+                    ? { cls: 'bg-emerald-50 text-emerald-700', label: `${daysSinceCredit}d` }
+                    : daysSinceCredit <= 30
+                    ? { cls: 'bg-amber-50 text-amber-700 border border-amber-200', label: `${daysSinceCredit}d` }
+                    : { cls: 'bg-red-50 text-red-700 border border-red-200', label: `${daysSinceCredit}d!` }
+                  : null;
+
                 return (
                   <React.Fragment key={c.id || `cust-${idx}`}>
                     <tr onClick={() => { setExpandedCustId(isExpanded ? null : c.id); }} className="hover:bg-gray-50 transition-colors">
@@ -1711,9 +2050,17 @@ const CustomerList = () => {
                           </span>
                         )}
                       </td>
-                      <td className="p-4 whitespace-nowrap"><span className={`font-bold ${isOver ? 'text-red-600' : 'text-gray-900'}`}>{formatRs(bal)}</span></td>
-                      <td className="p-4 text-sm whitespace-nowrap">{formatRs(c.creditLimit)}</td>
-                      <td className="p-4 text-sm font-mono bg-gray-100 rounded px-2 whitespace-nowrap">{c.pin}</td>
+                      <td className="p-4 whitespace-nowrap">
+                        <span className={`font-black text-sm ${isOver ? 'text-red-600' : 'text-gray-900'}`}>{formatRs(bal)}</span>
+                        {agingBadge && (
+                          <span className={`ml-2 text-[9px] font-black px-1.5 py-0.5 rounded-full ${agingBadge.cls}`} title="Days since last credit sale">
+                            {agingBadge.label}
+                          </span>
+                        )}
+                        {isOver && <p className="text-[9px] text-red-500 font-bold mt-0.5">Over limit</p>}
+                      </td>
+                      <td className="p-4 text-sm whitespace-nowrap text-gray-600">{formatRs(c.creditLimit)}</td>
+                      <td className="p-4"><span className="text-xs font-mono bg-gray-100 px-2 py-1 rounded-lg text-gray-600">{c.pin}</span></td>
                       <td className="p-4 flex justify-center gap-1 whitespace-nowrap" onClick={e => e.stopPropagation()}>
                         <button onClick={() => sendWhatsAppReminder(c)} className="p-1.5 text-green-600 hover:bg-green-100 rounded-lg transition" title="Send WhatsApp Reminder"><MessageCircle size={18} /></button>
                         <button onClick={() => openEdit(c)} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition" title="Edit Customer"><Edit2 size={18} /></button>
@@ -1813,11 +2160,11 @@ const CustomerList = () => {
             </tbody>
           </table>
         </div>
-        <div className="p-4 border-t bg-gray-50 flex justify-between items-center text-sm mt-auto">
-          <span className="text-gray-500">Showing page {custPage + 1} of {Math.max(1, totalCustPages)}</span>
+        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex justify-between items-center mt-auto">
+          <span className="text-xs text-gray-500">Page {custPage + 1} / {Math.max(1, totalCustPages)}</span>
           <div className="flex gap-2">
-            <button onClick={() => setCustPage(p => Math.max(0, p - 1))} disabled={custPage === 0} className="px-3 py-1 bg-white border rounded hover:bg-gray-100 disabled:opacity-50 transition">Previous</button>
-            <button onClick={() => setCustPage(p => Math.min(totalCustPages - 1, p + 1))} disabled={custPage >= totalCustPages - 1} className="px-3 py-1 bg-white border rounded hover:bg-gray-100 disabled:opacity-50 transition">Next</button>
+            <button onClick={() => setCustPage(p => Math.max(0, p - 1))} disabled={custPage === 0} className="px-3 py-1.5 text-xs font-semibold bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 transition shadow-sm">← Prev</button>
+            <button onClick={() => setCustPage(p => Math.min(totalCustPages - 1, p + 1))} disabled={custPage >= totalCustPages - 1} className="px-3 py-1.5 text-xs font-semibold bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 transition shadow-sm">Next →</button>
           </div>
         </div>
       </div>
@@ -1978,8 +2325,16 @@ const CreditLedger = () => {
     <div className="flex flex-col lg:flex-row gap-6">
       {/* LEFT PANEL — Transaction Form (sticky on desktop) */}
       <div className="lg:w-1/3 lg:sticky lg:top-0 lg:self-start lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto pr-2 pb-10 space-y-4">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
-          <div className="flex border-b mb-6 text-sm"><button disabled={!!editId && tab !== 'sale'} className={`flex-1 pb-2 font-bold transition-colors ${tab === 'sale' ? 'text-blue-800 border-b-2 border-blue-800' : 'text-gray-400 hover:text-gray-600 disabled:opacity-50'}`} onClick={() => setTab('sale')}>+ Sale / Advance</button><button disabled={!!editId && tab !== 'payment'} className={`flex-1 pb-2 font-bold transition-colors ${tab === 'payment' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-400 hover:text-gray-600 disabled:opacity-50'}`} onClick={() => setTab('payment')}>+ Payment</button></div>
+        <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] p-5">
+          <h3 className="font-black text-[14px] text-gray-900 mb-4">Record Transaction</h3>
+          <div className="flex p-1 bg-gray-100 rounded-xl mb-5 gap-1">
+            <button disabled={!!editId && tab !== 'sale'}
+              className={`flex-1 py-2 text-[12px] font-bold rounded-lg transition-all ${tab === 'sale' ? 'bg-white text-blue-800 shadow-sm' : 'text-gray-400 hover:text-gray-600 disabled:opacity-40'}`}
+              onClick={() => setTab('sale')}>Credit / Advance</button>
+            <button disabled={!!editId && tab !== 'payment'}
+              className={`flex-1 py-2 text-[12px] font-bold rounded-lg transition-all ${tab === 'payment' ? 'bg-white text-emerald-700 shadow-sm' : 'text-gray-400 hover:text-gray-600 disabled:opacity-40'}`}
+              onClick={() => setTab('payment')}>Payment In</button>
+          </div>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div><label className="block text-sm font-medium mb-1 text-gray-500">1. Select Date</label><input type="date" required className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-base font-bold" value={txDate} onChange={e => setTxDate(e.target.value)} /></div>
             <div><label className="block text-sm font-medium mb-1 text-gray-500">2. Select Category</label><select className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-base" value={selCategory} onChange={e => { setSelCategory(e.target.value); setSelCust(''); setSelVehicle(''); }}><option value="">All Categories</option>{CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}</select></div>
@@ -2012,30 +2367,37 @@ const CreditLedger = () => {
 
       {/* RIGHT PANEL — Ledger History (independently scrollable on desktop) */}
       <div className="lg:w-2/3 flex flex-col min-h-0">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col" style={{ maxHeight: 'calc(100vh - 8rem)' }}>
-          <div className="p-4 border-b bg-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-            <h3 className="font-bold text-gray-800 text-xl">Daily Ledger History</h3>
-            <div className="relative w-full sm:w-64">
-              <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
-              <input type="text" placeholder="Search customer, veh..." value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setLedgerPage(0); setExpandedDate(null); }} className="w-full pl-9 pr-3 py-2 bg-white border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm" />
+        <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] overflow-hidden flex flex-col" style={{ maxHeight: 'calc(100vh - 8rem)' }}>
+          <div className="px-5 py-4 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div>
+              <h3 className="font-bold text-[15px] text-gray-900">Daily Ledger History</h3>
+              <p className="text-[11px] text-gray-400 mt-0.5">{Object.keys(groupedTransactions).length} days with transactions</p>
+            </div>
+            <div className="relative w-full sm:w-60">
+              <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
+              <input type="text" placeholder="Search customer, vehicle…" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setLedgerPage(0); setExpandedDate(null); }} className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none" />
             </div>
           </div>
 
-          <div className="space-y-4 mt-2 flex-1 p-4 pt-0 overflow-y-auto">
+          <div className="space-y-3 mt-3 flex-1 px-4 pb-4 overflow-y-auto">
             {paginatedDates.length === 0 ? (
-              <div className="bg-white p-10 flex flex-col items-center justify-center text-gray-400 rounded-xl border border-gray-100">
-                <SearchX size={48} className="mb-4 opacity-20" />
-                <p className="text-sm font-medium">No transactions found matching your search.</p>
+              <div className="py-16 flex flex-col items-center justify-center text-gray-300">
+                <SearchX size={48} className="mb-4" />
+                <p className="text-sm font-semibold text-gray-400">No transactions found</p>
               </div>
             ) : paginatedDates.map(date => {
               const dayData = groupedTransactions[date]; const isExpanded = expandedDate === date || !!searchTerm;
               return (
-                <div key={date} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                  <div onClick={() => setExpandedDate(isExpanded ? null : date)} className="p-4 bg-gray-50 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 cursor-pointer hover:bg-gray-100 transition-colors">
-                    <h4 className="font-bold text-gray-900 flex items-center">{formatISTDate(date)} {date === getTodayIST() && <span className="ml-2 text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded">TODAY</span>} {isExpanded ? <ChevronDown size={16} className="ml-2 text-gray-400" /> : <ChevronRight size={16} className="ml-2 text-gray-400" />}</h4>
+                <div key={date} className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
+                  <div onClick={() => setExpandedDate(isExpanded ? null : date)} className="px-4 py-3.5 bg-gray-50/80 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 cursor-pointer hover:bg-gray-100/80 transition-colors">
+                    <h4 className="font-bold text-[13px] text-gray-900 flex items-center gap-2">
+                      {formatISTDate(date)}
+                      {date === getTodayIST() && <span className="text-[9px] font-black bg-blue-600 text-white px-2 py-0.5 rounded-full">TODAY</span>}
+                      {isExpanded ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
+                    </h4>
                     <div className="flex gap-4 w-full sm:w-auto">
-                      <div className="flex-1 sm:flex-none text-right"><span className="text-[10px] font-bold text-gray-500 block uppercase tracking-wider">Credit Given</span><span className="font-bold text-orange-600">{formatRs(dayData.totalCredit)}</span></div>
-                      <div className="flex-1 sm:flex-none text-right"><span className="text-[10px] font-bold text-gray-500 block uppercase tracking-wider">Payments Rec.</span><span className="font-bold text-green-600">{formatRs(dayData.totalReceived)}</span></div>
+                      <div className="flex-1 sm:flex-none text-right"><span className="text-[9px] font-bold text-gray-400 block uppercase tracking-wider mb-0.5">Credit</span><span className="font-black text-orange-600 text-sm num">{formatRs(dayData.totalCredit)}</span></div>
+                      <div className="flex-1 sm:flex-none text-right"><span className="text-[9px] font-bold text-gray-400 block uppercase tracking-wider mb-0.5">Payments</span><span className="font-black text-green-600 text-sm num">{formatRs(dayData.totalReceived)}</span></div>
                     </div>
                   </div>
                   {isExpanded && (
@@ -2086,11 +2448,11 @@ const CreditLedger = () => {
               )
             })}
           </div>
-          <div className="p-4 border-t bg-gray-50 flex justify-between items-center text-sm mt-auto">
-            <span className="text-gray-500 font-medium">Page {ledgerPage + 1} of {Math.max(1, totalLedgerPages)}</span>
+          <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex justify-between items-center mt-auto">
+            <span className="text-xs text-gray-500">Page {ledgerPage + 1} / {Math.max(1, totalLedgerPages)}</span>
             <div className="flex gap-2">
-              <button onClick={() => { setLedgerPage(p => Math.max(0, p - 1)); setExpandedDate(null); }} disabled={ledgerPage === 0} className="px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 disabled:opacity-50 font-bold transition shadow-sm">Previous</button>
-              <button onClick={() => { setLedgerPage(p => Math.min(totalLedgerPages - 1, p + 1)); setExpandedDate(null); }} disabled={ledgerPage >= totalLedgerPages - 1} className="px-4 py-2 bg-white border rounded-lg hover:bg-gray-50 disabled:opacity-50 font-bold transition shadow-sm">Next</button>
+              <button onClick={() => { setLedgerPage(p => Math.max(0, p - 1)); setExpandedDate(null); }} disabled={ledgerPage === 0} className="px-3 py-1.5 text-xs font-semibold bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 transition shadow-sm">← Prev</button>
+              <button onClick={() => { setLedgerPage(p => Math.min(totalLedgerPages - 1, p + 1)); setExpandedDate(null); }} disabled={ledgerPage >= totalLedgerPages - 1} className="px-3 py-1.5 text-xs font-semibold bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 transition shadow-sm">Next →</button>
             </div>
           </div>
         </div>
@@ -2300,14 +2662,51 @@ const MorningEntryForm = () => {
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="bg-blue-900 p-6 text-white flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-          <div><h2 className="text-xl md:text-2xl font-bold">{editId ? `Editing Entry` : 'Inventory Reconciliation'}</h2><div className="flex gap-2 mt-4 w-48">{[0, 1, 2, 3, 4].map(i => (<div key={i} className={`h-2 flex-1 rounded-full ${step >= i ? 'bg-blue-400' : 'bg-blue-800 border border-blue-700'}`}></div>))}</div></div>
+      <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] overflow-hidden">
+        {/* Wizard header */}
+        <div className="px-6 py-5 text-white flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4"
+          style={{ background: 'linear-gradient(135deg, #04080f 0%, #0a1628 60%, #0e1f42 100%)' }}>
+          <div>
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/20 flex items-center justify-center">
+                <Sun size={16} className="text-amber-400" />
+              </div>
+              <h2 className="text-lg font-black text-white">
+                {editId ? 'Edit Morning Entry' : 'Morning Reconciliation'}
+              </h2>
+            </div>
+            {/* Step progress */}
+            <div className="flex items-center gap-1.5">
+              {['Nozzle', 'Dip', 'Collections', 'Balances', 'Review'].map((label, i) => (
+                <div key={i} className="flex items-center gap-1">
+                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${
+                    step === i
+                      ? 'bg-blue-500 text-white'
+                      : step > i
+                      ? 'bg-white/15 text-white/70'
+                      : 'bg-white/5 text-white/25'
+                  }`}>
+                    {step > i ? '✓' : `${i + 1}`}
+                    <span className="hidden sm:inline">{label}</span>
+                  </div>
+                  {i < 4 && <div className={`w-4 h-px rounded-full ${step > i ? 'bg-white/30' : 'bg-white/10'}`} />}
+                </div>
+              ))}
+            </div>
+          </div>
           <div className="flex flex-col items-end gap-2">
-            {editId && <button onClick={resetForm} className="bg-red-500 hover:bg-red-600 px-3 py-1 rounded text-sm font-bold shadow transition-colors">Cancel Edit</button>}
-            <div className="bg-blue-800 rounded flex items-center p-1 border border-blue-700">
-              <span className="text-xs font-bold px-2 uppercase tracking-widest text-blue-300">Date</span>
-              <input type="date" value={entryDate} onChange={e => { setEntryDate(e.target.value); if (!editId) setStep(0); }} className="bg-transparent border-none text-sm font-bold outline-none text-white" />
+            {editId && (
+              <button onClick={resetForm}
+                className="bg-red-500/80 hover:bg-red-500 px-3 py-1.5 rounded-xl text-xs font-bold shadow transition-all">
+                Cancel Edit
+              </button>
+            )}
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
+              style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Date</span>
+              <input type="date" value={entryDate}
+                onChange={e => { setEntryDate(e.target.value); if (!editId) setStep(0); }}
+                className="bg-transparent border-none text-sm font-bold outline-none text-white" />
             </div>
           </div>
         </div>
@@ -2497,11 +2896,11 @@ const MorningEntryForm = () => {
             </tbody>
           </table>
         </div>
-        <div className="p-4 border-t bg-gray-50 flex justify-between items-center text-sm">
-          <span className="text-gray-500">Showing page {mePage + 1} of {Math.max(1, totalMePages)}</span>
+        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex justify-between items-center">
+          <span className="text-xs text-gray-500">Page {mePage + 1} / {Math.max(1, totalMePages)}</span>
           <div className="flex gap-2">
-            <button onClick={() => setMePage(p => Math.max(0, p - 1))} disabled={mePage === 0} className="px-3 py-1 bg-white border rounded hover:bg-gray-100 disabled:opacity-50 transition shadow-sm">Previous</button>
-            <button onClick={() => setMePage(p => Math.min(totalMePages - 1, p + 1))} disabled={mePage >= totalMePages - 1} className="px-3 py-1 bg-white border rounded hover:bg-gray-100 disabled:opacity-50 transition shadow-sm">Next</button>
+            <button onClick={() => setMePage(p => Math.max(0, p - 1))} disabled={mePage === 0} className="px-3 py-1.5 text-xs font-semibold bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 transition shadow-sm">← Prev</button>
+            <button onClick={() => setMePage(p => Math.min(totalMePages - 1, p + 1))} disabled={mePage >= totalMePages - 1} className="px-3 py-1.5 text-xs font-semibold bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 transition shadow-sm">Next →</button>
           </div>
         </div>
       </div>
@@ -2547,42 +2946,140 @@ const ExpenseModule = () => {
 
   if (dataLoading) return <div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
 
+  const EXPENSE_CATS: { label: string; color: string }[] = [
+    { label: 'Salaries', color: 'bg-violet-100 text-violet-700' },
+    { label: 'Electricity/Water', color: 'bg-blue-100 text-blue-700' },
+    { label: 'Maintenance', color: 'bg-orange-100 text-orange-700' },
+    { label: 'Bank Charges', color: 'bg-slate-100 text-slate-700' },
+    { label: 'Miscellaneous', color: 'bg-gray-100 text-gray-700' },
+  ];
+  const catColor = (cat: string) => EXPENSE_CATS.find(c => c.label === cat)?.color || 'bg-gray-100 text-gray-600';
+
   return (
-    <div className="flex flex-col lg:flex-row gap-6 lg:h-[calc(100dvh-100px)]">
-      <div className="lg:w-1/3 lg:overflow-y-auto pr-2 pb-10 space-y-6 relative">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6"><div className="flex justify-between items-center mb-4 border-b pb-2"><h3 className="text-lg font-bold">Record Expense</h3>{editId && <button type="button" onClick={resetForm} className="text-red-500 text-sm font-bold">Cancel</button>}</div><form onSubmit={handleSubmit} className="space-y-4"><div><label className="block text-sm font-medium mb-1">Date</label><input type="date" required className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div><div><label className="block text-sm font-medium mb-1">Category</label><select className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-base" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}><option>Salaries</option><option>Electricity/Water</option><option>Maintenance</option><option>Bank Charges</option><option>Miscellaneous</option></select></div><div><label className="block text-sm font-medium mb-1">Amount (Rs)</label><input type="number" required className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} placeholder="0" /></div><div><label className="block text-sm font-medium mb-1">Vendor / Description</label><input type="text" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} /></div><button type="submit" disabled={isSubmitting} className="w-full bg-blue-800 text-white py-3 rounded-xl font-bold shadow hover:bg-blue-900 transition disabled:opacity-50">{isSubmitting ? 'Processing...' : (editId ? 'Update Expense' : 'Save Expense')}</button></form></div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6"><h3 className="font-bold text-gray-700 mb-2">Monthly Budget Tracker</h3><div className="flex justify-between text-sm mb-1"><span className="font-medium">{formatRs(currentMonthExpenses)} this month</span><span className="text-gray-500">{formatRs(budget)} limit</span></div><div className="w-full bg-gray-200 rounded-full h-2.5"><div className={`h-2.5 rounded-full ${budgetPct > 90 ? 'bg-red-600' : 'bg-green-600'}`} style={{ width: `${budgetPct}%` }}></div></div></div>
+    <div className="flex flex-col lg:flex-row gap-5 lg:h-[calc(100dvh-100px)]">
+      {/* ── LEFT: Form + Budget ─────────────────────────────────────── */}
+      <div className="lg:w-80 shrink-0 lg:overflow-y-auto pb-10 space-y-4">
+
+        {/* Form card */}
+        <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] overflow-hidden">
+          <div className="px-5 pt-5 pb-4 border-b border-gray-100 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-violet-50 flex items-center justify-center">
+                <Receipt size={15} className="text-violet-600" />
+              </div>
+              <h3 className="font-bold text-[15px] text-gray-900">{editId ? 'Update Expense' : 'Record Expense'}</h3>
+            </div>
+            {editId && <button type="button" onClick={resetForm} className="text-xs font-bold text-red-500 hover:bg-red-50 px-2 py-1 rounded-lg transition">✕ Cancel</button>}
+          </div>
+          <form onSubmit={handleSubmit} className="p-5 space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Date</label>
+              <input type="date" required className="w-full border border-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-violet-500 focus:border-transparent outline-none text-sm font-medium bg-gray-50" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Category</label>
+              <select className="w-full border border-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-violet-500 outline-none bg-gray-50 text-sm font-medium" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
+                <option>Salaries</option><option>Electricity/Water</option><option>Maintenance</option><option>Bank Charges</option><option>Miscellaneous</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Amount (₹)</label>
+              <input type="number" required className="w-full border border-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-violet-500 outline-none text-sm font-bold bg-gray-50" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} placeholder="0" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Vendor / Note</label>
+              <input type="text" className="w-full border border-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-violet-500 outline-none text-sm bg-gray-50" value={form.vendor} onChange={e => setForm({ ...form, vendor: e.target.value })} placeholder="e.g. EB Office, Staff Name…" />
+            </div>
+            <button type="submit" disabled={isSubmitting}
+              className="w-full py-3 rounded-xl font-bold text-sm text-white shadow-sm transition disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, #7c3aed, #6d28d9)' }}>
+              {isSubmitting ? 'Saving…' : (editId ? '✓ Update Expense' : '+ Save Expense')}
+            </button>
+          </form>
+        </div>
+
+        {/* Budget Tracker card */}
+        <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] p-5">
+          <div className="flex items-center gap-2.5 mb-4">
+            <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center">
+              <Activity size={13} className="text-emerald-600" />
+            </div>
+            <h3 className="font-bold text-[13px] text-gray-800">Monthly Budget</h3>
+          </div>
+          <div className="flex justify-between text-xs font-semibold mb-2">
+            <span className="text-gray-600">{formatRs(currentMonthExpenses)} <span className="text-gray-400 font-normal">spent</span></span>
+            <span className={budgetPct > 90 ? 'text-red-600' : 'text-gray-500'}>{budget > 0 ? `${budgetPct.toFixed(0)}% of ${formatRs(budget)}` : 'No budget set'}</span>
+          </div>
+          <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+            <div className={`h-2 rounded-full transition-all ${budgetPct > 90 ? 'bg-red-500' : budgetPct > 70 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${budgetPct}%` }} />
+          </div>
+          {budget > 0 && budgetPct > 90 && (
+            <p className="text-[11px] text-red-500 font-semibold mt-2 flex items-center gap-1"><AlertCircle size={11} /> Budget limit almost reached!</p>
+          )}
+        </div>
       </div>
-      <div className="lg:w-2/3 lg:overflow-y-auto pl-2 pb-10 relative flex flex-col h-full">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full">
-          <div className="p-4 border-b bg-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-            <h3 className="font-bold text-gray-700 text-lg">Expense History</h3>
-            <div className="relative w-full sm:w-64">
-              <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
-              <input type="text" placeholder="Search expenses..." value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setExpPage(0); }} className="w-full pl-9 pr-3 py-2 bg-white border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm" />
+
+      {/* ── RIGHT: History Table ─────────────────────────────────────── */}
+      <div className="flex-1 lg:overflow-y-auto pb-10 flex flex-col min-h-0">
+        <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] overflow-hidden flex flex-col flex-1">
+          <div className="px-5 py-4 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div>
+              <h3 className="font-bold text-[15px] text-gray-900">Expense History</h3>
+              <p className="text-[11px] text-gray-400 mt-0.5">{filteredExpenses.length} records</p>
+            </div>
+            <div className="relative w-full sm:w-60">
+              <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
+              <input type="text" placeholder="Search expenses…" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setExpPage(0); }} className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-violet-400 outline-none" />
             </div>
           </div>
           <div className="overflow-x-auto flex-1">
             <table className="w-full text-left text-sm">
-              <thead className="bg-white border-b"><tr><th className="p-3 text-gray-500 whitespace-nowrap">Date</th><th className="p-3 text-gray-500 whitespace-nowrap">Category</th><th className="p-3 text-gray-500 whitespace-nowrap">Details</th><th className="p-3 text-gray-500 text-right whitespace-nowrap">Amount</th>{userRole === 'owner' && <th className="p-3 text-gray-500 text-center whitespace-nowrap">Actions</th>}</tr></thead>
+              <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                <tr>
+                  <th className="px-4 py-3 text-gray-500 whitespace-nowrap">Date</th>
+                  <th className="px-4 py-3 text-gray-500 whitespace-nowrap">Category</th>
+                  <th className="px-4 py-3 text-gray-500 whitespace-nowrap">Details</th>
+                  <th className="px-4 py-3 text-gray-500 text-right whitespace-nowrap">Amount</th>
+                  {userRole === 'owner' && <th className="px-4 py-3 text-gray-500 text-center whitespace-nowrap">Actions</th>}
+                </tr>
+              </thead>
               <tbody className="divide-y divide-gray-100">
-                {paginatedExpenses.length === 0 ? (<tr><td colSpan={5} className="p-10 flex flex-col items-center justify-center text-gray-400"><SearchX size={32} className="mb-2 opacity-50" />No expenses found.</td></tr>) : paginatedExpenses.map((e, idx) => (
-                  <tr key={e.id || `exp-${idx}`} className={`hover:bg-gray-50 ${editId === e.id ? 'bg-blue-50' : ''}`}>
-                    <td className="p-3 whitespace-nowrap font-medium">{formatISTDate(e.date)}</td>
-                    <td className="p-3 font-medium whitespace-nowrap">{e.category}</td>
-                    <td className="p-3 text-gray-500 min-w-[150px]">{e.vendor}</td>
-                    <td className="p-3 text-right font-bold text-gray-900 whitespace-nowrap">{formatRs(e.amount)}</td>
-                    {userRole === 'owner' && (<td className="p-3 flex justify-center gap-2"><button onClick={() => openEdit(e)} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition"><Edit2 size={16} /></button><button onClick={() => showConfirm("Delete this expense?", () => deleteExpense(e.id))} className="text-red-500 hover:bg-red-100 p-1.5 rounded transition"><Trash2 size={16} /></button></td>)}
+                {paginatedExpenses.length === 0 ? (
+                  <tr><td colSpan={5} className="py-16 text-center">
+                    <div className="flex flex-col items-center text-gray-300">
+                      <SearchX size={36} className="mb-3" />
+                      <p className="font-semibold text-gray-400">No expenses found</p>
+                      <p className="text-xs text-gray-300 mt-1">Try a different search term</p>
+                    </div>
+                  </td></tr>
+                ) : paginatedExpenses.map((e, idx) => (
+                  <tr key={e.id || `exp-${idx}`} className={`hover:bg-gray-50 transition-colors ${editId === e.id ? 'bg-violet-50' : ''}`}>
+                    <td className="px-4 py-3.5 whitespace-nowrap">
+                      <span className="text-xs font-semibold text-gray-700 bg-gray-100 px-2 py-1 rounded-lg">{formatISTDate(e.date)}</span>
+                    </td>
+                    <td className="px-4 py-3.5 whitespace-nowrap">
+                      <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${catColor(e.category)}`}>{e.category}</span>
+                    </td>
+                    <td className="px-4 py-3.5 text-gray-500 text-sm min-w-[140px]">{e.vendor || '—'}</td>
+                    <td className="px-4 py-3.5 text-right font-black text-gray-900 whitespace-nowrap num">{formatRs(e.amount)}</td>
+                    {userRole === 'owner' && (
+                      <td className="px-4 py-3.5">
+                        <div className="flex justify-center gap-1.5">
+                          <button onClick={() => openEdit(e)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Edit"><Edit2 size={14} /></button>
+                          <button onClick={() => showConfirm("Delete this expense?", () => deleteExpense(e.id))} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition" title="Delete"><Trash2 size={14} /></button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <div className="p-4 border-t bg-gray-50 flex justify-between items-center text-sm mt-auto">
-            <span className="text-gray-500">Showing page {expPage + 1} of {Math.max(1, totalExpPages)}</span>
+          <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex justify-between items-center mt-auto">
+            <span className="text-xs text-gray-500">Page {expPage + 1} / {Math.max(1, totalExpPages)}</span>
             <div className="flex gap-2">
-              <button onClick={() => setExpPage(p => Math.max(0, p - 1))} disabled={expPage === 0} className="px-3 py-1 bg-white border rounded hover:bg-gray-100 disabled:opacity-50 transition shadow-sm">Previous</button>
-              <button onClick={() => setExpPage(p => Math.min(totalExpPages - 1, p + 1))} disabled={expPage >= totalExpPages - 1} className="px-3 py-1 bg-white border rounded hover:bg-gray-100 disabled:opacity-50 transition shadow-sm">Next</button>
+              <button onClick={() => setExpPage(p => Math.max(0, p - 1))} disabled={expPage === 0} className="px-3 py-1.5 text-xs font-semibold bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 transition shadow-sm">← Prev</button>
+              <button onClick={() => setExpPage(p => Math.min(totalExpPages - 1, p + 1))} disabled={expPage >= totalExpPages - 1} className="px-3 py-1.5 text-xs font-semibold bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 transition shadow-sm">Next →</button>
             </div>
           </div>
         </div>
@@ -2666,71 +3163,146 @@ const FuelStockModule = () => {
   if (dataLoading) return <div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 lg:h-[calc(100dvh-100px)]">
-      <div className="lg:w-1/3 lg:overflow-y-auto pr-2 pb-10 space-y-6 relative">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
-          <div className="flex justify-between items-center mb-4 border-b pb-2"><div className="flex items-center"><Truck className="text-blue-800 mr-2" /><h3 className="text-lg font-bold">Log Fuel Receipt</h3></div>{editId && <button type="button" onClick={resetForm} className="text-red-500 text-sm font-bold">Cancel</button>}</div>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div><label className="block text-sm font-medium mb-1">Date Received</label><input type="date" required className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></div>
-            <div className={`bg-orange-50 p-3 rounded-xl border border-orange-100 ${editId && dL > 0 ? 'opacity-50 pointer-events-none' : ''}`}>
-              <h4 className="font-bold text-orange-800 mb-2 text-sm">Petrol Details</h4>
-              <div className="grid grid-cols-2 gap-3"><div><label className="block text-xs font-medium mb-1">Litres</label><input type="number" className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-base bg-white" value={form.petrolLitres} onChange={e => setForm({ ...form, petrolLitres: e.target.value })} placeholder="0" /></div><div><label className="block text-xs font-medium mb-1">Rate (Rs/L)</label><input type="number" step="0.01" className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-orange-500 outline-none text-base bg-white" value={form.petrolRate} onChange={e => setForm({ ...form, petrolRate: e.target.value })} placeholder="0.00" /></div></div>
+    <div className="flex flex-col lg:flex-row gap-5 lg:h-[calc(100dvh-100px)]">
+      {/* ── LEFT: Log Fuel Receipt ──────────────────────────────────── */}
+      <div className="lg:w-80 shrink-0 lg:overflow-y-auto pb-10">
+        <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] overflow-hidden">
+          <div className="px-5 pt-5 pb-4 border-b border-gray-100 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center">
+                <Truck size={15} className="text-blue-600" />
+              </div>
+              <h3 className="font-bold text-[15px] text-gray-900">{editId ? 'Update Receipt' : 'Log Fuel Receipt'}</h3>
             </div>
-            <div className={`bg-blue-50 p-3 rounded-xl border border-blue-100 ${editId && pL > 0 ? 'opacity-50 pointer-events-none' : ''}`}>
-              <h4 className="font-bold text-blue-800 mb-2 text-sm">Diesel Details</h4>
-              <div className="grid grid-cols-2 gap-3"><div><label className="block text-xs font-medium mb-1">Litres</label><input type="number" className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base bg-white" value={form.dieselLitres} onChange={e => setForm({ ...form, dieselLitres: e.target.value })} placeholder="0" /></div><div><label className="block text-xs font-medium mb-1">Rate (Rs/L)</label><input type="number" step="0.01" className="w-full border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base bg-white" value={form.dieselRate} onChange={e => setForm({ ...form, dieselRate: e.target.value })} placeholder="0.00" /></div></div>
-            </div>
-            <div className="bg-gray-50 p-3 rounded-lg flex justify-between items-center border"><span className="text-sm font-medium text-gray-500">Gross Invoice Value</span><span className="font-bold text-gray-900 text-lg">{formatRs(totalInvoiceValue)}</span></div>
+            {editId && <button type="button" onClick={resetForm} className="text-xs font-bold text-red-500 hover:bg-red-50 px-2 py-1 rounded-lg transition">✕ Cancel</button>}
+          </div>
+          <form onSubmit={handleSubmit} className="p-5 space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Supplier / Invoice No.</label>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Date Received</label>
+              <input type="date" required className="w-full border border-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm font-medium bg-gray-50" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
+            </div>
+
+            {/* Petrol Block */}
+            <div className={`rounded-xl border p-4 transition-opacity ${editId && dL > 0 ? 'opacity-40 pointer-events-none' : ''}`}
+              style={{ background: 'linear-gradient(135deg, #fff7ed, #fef3c7)', borderColor: '#fed7aa' }}>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-6 h-6 rounded-lg bg-orange-100 flex items-center justify-center">
+                  <Fuel size={11} className="text-orange-600" />
+                </div>
+                <h4 className="font-bold text-orange-900 text-xs uppercase tracking-wider">Petrol</h4>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className="block text-[10px] font-bold text-orange-700 uppercase mb-1">Litres</label><input type="number" className="w-full border border-orange-200 p-2 rounded-lg focus:ring-2 focus:ring-orange-400 outline-none text-sm bg-white font-bold" value={form.petrolLitres} onChange={e => setForm({ ...form, petrolLitres: e.target.value })} placeholder="0" /></div>
+                <div><label className="block text-[10px] font-bold text-orange-700 uppercase mb-1">Rate ₹/L</label><input type="number" step="0.01" className="w-full border border-orange-200 p-2 rounded-lg focus:ring-2 focus:ring-orange-400 outline-none text-sm bg-white font-bold" value={form.petrolRate} onChange={e => setForm({ ...form, petrolRate: e.target.value })} placeholder="0.00" /></div>
+              </div>
+              {pL > 0 && pR > 0 && <p className="text-xs text-orange-700 font-bold mt-2 text-right">{formatRs(pL * pR)}</p>}
+            </div>
+
+            {/* Diesel Block */}
+            <div className={`rounded-xl border p-4 transition-opacity ${editId && pL > 0 ? 'opacity-40 pointer-events-none' : ''}`}
+              style={{ background: 'linear-gradient(135deg, #eff6ff, #dbeafe)', borderColor: '#bfdbfe' }}>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-6 h-6 rounded-lg bg-blue-100 flex items-center justify-center">
+                  <Fuel size={11} className="text-blue-600" />
+                </div>
+                <h4 className="font-bold text-blue-900 text-xs uppercase tracking-wider">Diesel</h4>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className="block text-[10px] font-bold text-blue-700 uppercase mb-1">Litres</label><input type="number" className="w-full border border-blue-200 p-2 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none text-sm bg-white font-bold" value={form.dieselLitres} onChange={e => setForm({ ...form, dieselLitres: e.target.value })} placeholder="0" /></div>
+                <div><label className="block text-[10px] font-bold text-blue-700 uppercase mb-1">Rate ₹/L</label><input type="number" step="0.01" className="w-full border border-blue-200 p-2 rounded-lg focus:ring-2 focus:ring-blue-400 outline-none text-sm bg-white font-bold" value={form.dieselRate} onChange={e => setForm({ ...form, dieselRate: e.target.value })} placeholder="0.00" /></div>
+              </div>
+              {dL > 0 && dR > 0 && <p className="text-xs text-blue-700 font-bold mt-2 text-right">{formatRs(dL * dR)}</p>}
+            </div>
+
+            {/* Invoice Total */}
+            <div className="flex justify-between items-center px-4 py-3 rounded-xl bg-gray-900 text-white">
+              <span className="text-xs font-bold text-white/60 uppercase tracking-wide">Total Invoice</span>
+              <span className="font-black text-lg num">{formatRs(totalInvoiceValue)}</span>
+            </div>
+
+            {/* Supplier + Invoice */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Supplier &amp; Invoice No.</label>
               <div className="flex gap-2">
-                <input type="text" placeholder="Vendor" className="w-1/2 border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.supplier} onChange={e => setForm({ ...form, supplier: e.target.value })} />
-                <input type="text" placeholder="Inv No." required className="w-1/2 border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.invoice} onChange={e => setForm({ ...form, invoice: e.target.value })} />
+                <input type="text" placeholder="Vendor name" className="w-1/2 border border-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-blue-400 outline-none text-sm bg-gray-50" value={form.supplier} onChange={e => setForm({ ...form, supplier: e.target.value })} />
+                <input type="text" placeholder="Invoice No. *" required className="w-1/2 border border-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-blue-400 outline-none text-sm bg-gray-50 font-bold" value={form.invoice} onChange={e => setForm({ ...form, invoice: e.target.value })} />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Payment Mode</label>
-              <select className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-base" value={form.mode} onChange={e => setForm({ ...form, mode: e.target.value })}>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Payment Mode</label>
+              <select className="w-full border border-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-blue-400 outline-none bg-gray-50 text-sm font-medium" value={form.mode} onChange={e => setForm({ ...form, mode: e.target.value })}>
                 <option>Bank Transfer</option><option>Cash</option><option>Credit</option>
               </select>
             </div>
-            <button type="submit" disabled={isSubmitting} className="w-full bg-blue-800 text-white py-3 rounded-xl font-bold shadow hover:bg-blue-900 transition disabled:opacity-50">{isSubmitting ? 'Processing...' : (editId ? 'Update Receipt' : 'Save Full Receipt')}</button>
+            <button type="submit" disabled={isSubmitting}
+              className="w-full py-3 rounded-xl font-bold text-sm text-white shadow-sm transition disabled:opacity-50"
+              style={{ background: 'linear-gradient(135deg, #1d4ed8, #3b82f6)' }}>
+              {isSubmitting ? 'Saving…' : (editId ? '✓ Update Receipt' : '+ Save Full Receipt')}
+            </button>
           </form>
         </div>
       </div>
 
-      <div className="lg:w-2/3 lg:overflow-y-auto pl-2 pb-10 relative flex flex-col h-full">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full">
-          <div className="p-4 border-b bg-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-            <h3 className="font-bold text-gray-700 text-lg">Fuel Deliveries</h3>
-            <div className="relative w-full sm:w-64">
-              <Search size={16} className="absolute left-3 top-2.5 text-gray-400" />
-              <input type="text" placeholder="Search supplier, invoice..." value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setFuelPage(0); }} className="w-full pl-9 pr-3 py-2 bg-white border rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm" />
+      {/* ── RIGHT: Deliveries Table ─────────────────────────────────── */}
+      <div className="flex-1 lg:overflow-y-auto pb-10 flex flex-col min-h-0">
+        <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] overflow-hidden flex flex-col flex-1">
+          <div className="px-5 py-4 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div>
+              <h3 className="font-bold text-[15px] text-gray-900">Fuel Deliveries</h3>
+              <p className="text-[11px] text-gray-400 mt-0.5">{sortedInvoices.length} invoices logged</p>
+            </div>
+            <div className="relative w-full sm:w-60">
+              <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
+              <input type="text" placeholder="Search supplier, invoice…" value={searchTerm} onChange={e => { setSearchTerm(e.target.value); setFuelPage(0); }} className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-400 outline-none" />
             </div>
           </div>
           <div className="overflow-x-auto flex-1">
             <table className="w-full text-left text-sm">
-              <thead className="bg-white border-b"><tr><th className="p-3 text-gray-500 whitespace-nowrap">Date</th><th className="p-3 text-gray-500 whitespace-nowrap">Invoice</th><th className="p-3 text-gray-500 text-right whitespace-nowrap">Total Litres</th><th className="p-3 text-gray-500 text-right whitespace-nowrap">Invoice Value</th>{userRole === 'owner' && <th className="p-3 text-gray-500 text-center whitespace-nowrap">Actions</th>}</tr></thead>
+              <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                <tr>
+                  <th className="px-4 py-3 text-gray-500 whitespace-nowrap">Date</th>
+                  <th className="px-4 py-3 text-gray-500 whitespace-nowrap">Invoice</th>
+                  <th className="px-4 py-3 text-gray-500 text-right whitespace-nowrap">Total Litres</th>
+                  <th className="px-4 py-3 text-gray-500 text-right whitespace-nowrap">Invoice Value</th>
+                  {userRole === 'owner' && <th className="px-4 py-3 text-gray-500 text-center whitespace-nowrap">Actions</th>}
+                </tr>
+              </thead>
               <tbody className="divide-y divide-gray-100">
-                {paginatedInvoices.length === 0 ? (<tr><td colSpan={5} className="p-10 flex flex-col items-center justify-center text-gray-400"><SearchX size={32} className="mb-2 opacity-50" />No receipts found.</td></tr>) : paginatedInvoices.map((inv, idx) => (
+                {paginatedInvoices.length === 0 ? (
+                  <tr><td colSpan={5} className="py-16 text-center">
+                    <div className="flex flex-col items-center text-gray-300">
+                      <SearchX size={36} className="mb-3" />
+                      <p className="font-semibold text-gray-400">No receipts found</p>
+                    </div>
+                  </td></tr>
+                ) : paginatedInvoices.map((inv, idx) => (
                   <React.Fragment key={`inv-${idx}`}>
-                    <tr className="bg-gray-50">
-                      <td className="p-3 whitespace-nowrap font-bold">{formatISTDate(inv.date)}</td>
-                      <td className="p-3 whitespace-nowrap"><span className="font-bold text-gray-900">{inv.invoice}</span> <span className="text-xs text-gray-500 ml-1">({inv.supplier})</span></td>
-                      <td className="p-3 text-right font-bold text-gray-900">{inv.totalLitres} L</td>
-                      <td className="p-3 text-right font-black text-blue-900">{formatRs(inv.totalAmount)}</td>
-                      <td className="p-3"></td>
+                    <tr className="bg-blue-50/40">
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className="text-xs font-bold text-gray-700 bg-white px-2 py-1 rounded-lg border border-gray-200">{formatISTDate(inv.date)}</span>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <p className="font-black text-gray-900">{inv.invoice}</p>
+                        <p className="text-[10px] text-gray-400">{inv.supplier}</p>
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-gray-900 num">{inv.totalLitres.toLocaleString('en-IN')} L</td>
+                      <td className="px-4 py-3 text-right font-black text-blue-700 num">{formatRs(inv.totalAmount)}</td>
+                      <td className="px-4 py-3"></td>
                     </tr>
                     {inv.items.map((f: FuelPurchase) => (
-                      <tr key={f.id} className="hover:bg-gray-50">
-                        <td className="p-3 pl-8 text-xs text-gray-400">↳ Item</td>
-                        <td className="p-3"><span className={`px-2 py-1 rounded text-xs font-bold ${f.product === 'Petrol' ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'}`}>{f.product}</span></td>
-                        <td className="p-3 text-right text-gray-600">{f.litres} L <span className="text-xs text-gray-400">(@ {f.rate}/L)</span></td>
-                        <td className="p-3 text-right text-gray-600">{formatRs(f.amount)}</td>
+                      <tr key={f.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 pl-8 text-[11px] text-gray-400">↳</td>
+                        <td className="px-4 py-3">
+                          <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${f.product === 'Petrol' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{f.product}</span>
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-700 num text-sm">{f.litres.toLocaleString('en-IN')} L <span className="text-[10px] text-gray-400">@ ₹{f.rate}/L</span></td>
+                        <td className="px-4 py-3 text-right text-gray-600 num">{formatRs(f.amount)}</td>
                         {userRole === 'owner' && (
-                          <td className="p-3 flex justify-center gap-2">
-                            <button onClick={() => openEdit(f)} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition"><Edit2 size={14} /></button>
-                            <button onClick={() => showConfirm("Delete this item from invoice?", () => deleteFuelPurchase(f.id))} className="text-red-500 hover:bg-red-100 p-1.5 rounded transition"><Trash2 size={14} /></button>
+                          <td className="px-4 py-3">
+                            <div className="flex justify-center gap-1.5">
+                              <button onClick={() => openEdit(f)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"><Edit2 size={13} /></button>
+                              <button onClick={() => showConfirm("Delete this item from invoice?", () => deleteFuelPurchase(f.id))} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition"><Trash2 size={13} /></button>
+                            </div>
                           </td>
                         )}
                       </tr>
@@ -2740,11 +3312,11 @@ const FuelStockModule = () => {
               </tbody>
             </table>
           </div>
-          <div className="p-4 border-t bg-gray-50 flex justify-between items-center text-sm mt-auto">
-            <span className="text-gray-500">Showing page {fuelPage + 1} of {Math.max(1, totalFuelPages)}</span>
+          <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50 flex justify-between items-center mt-auto">
+            <span className="text-xs text-gray-500">Page {fuelPage + 1} / {Math.max(1, totalFuelPages)}</span>
             <div className="flex gap-2">
-              <button onClick={() => setFuelPage(p => Math.max(0, p - 1))} disabled={fuelPage === 0} className="px-3 py-1 bg-white border rounded hover:bg-gray-100 disabled:opacity-50 transition shadow-sm">Previous</button>
-              <button onClick={() => setFuelPage(p => Math.min(totalFuelPages - 1, p + 1))} disabled={fuelPage >= totalFuelPages - 1} className="px-3 py-1 bg-white border rounded hover:bg-gray-100 disabled:opacity-50 transition shadow-sm">Next</button>
+              <button onClick={() => setFuelPage(p => Math.max(0, p - 1))} disabled={fuelPage === 0} className="px-3 py-1.5 text-xs font-semibold bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 transition shadow-sm">← Prev</button>
+              <button onClick={() => setFuelPage(p => Math.min(totalFuelPages - 1, p + 1))} disabled={fuelPage >= totalFuelPages - 1} className="px-3 py-1.5 text-xs font-semibold bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 transition shadow-sm">Next →</button>
             </div>
           </div>
         </div>
@@ -2794,8 +3366,8 @@ const MonthlyReports = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Monthly Reports</h2>
-          <p className="text-gray-500 text-sm">Financial summary for the selected month.</p>
+          <h2 className="text-2xl font-black text-gray-900">Monthly Reports</h2>
+          <p className="text-gray-400 text-sm mt-0.5">Full P&amp;L statement for the selected month.</p>
         </div>
         <div className="flex items-center gap-3">
           <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-blue-900 bg-white shadow-sm" />
@@ -2803,38 +3375,59 @@ const MonthlyReports = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* P&L Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {[
-          { label: 'Gross Sales', value: grossSalesRs, color: 'text-blue-700', bg: 'bg-blue-50 border-blue-100' },
-          { label: 'Credit Sales', value: creditSales, color: 'text-orange-700', bg: 'bg-orange-50 border-orange-100' },
-          { label: 'Payments Received', value: paymentsRec, color: 'text-green-700', bg: 'bg-green-50 border-green-100' },
-          { label: 'Fuel Cost', value: fuelCost, color: 'text-red-700', bg: 'bg-red-50 border-red-100' },
-          { label: 'Total Expenses', value: totalExpenses, color: 'text-purple-700', bg: 'bg-purple-50 border-purple-100' },
-          { label: 'Net Profit', value: netProfit, color: netProfit >= 0 ? 'text-green-700' : 'text-red-700', bg: netProfit >= 0 ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100' },
+          { label: 'Gross Sales',       value: grossSalesRs,  icon: '📈', iconBg: 'bg-blue-50',   valueColor: 'text-blue-700',    positive: true },
+          { label: 'Credit Given',      value: creditSales,   icon: '🧾', iconBg: 'bg-amber-50',  valueColor: 'text-amber-700',   positive: null },
+          { label: 'Payments Received', value: paymentsRec,   icon: '💰', iconBg: 'bg-emerald-50',valueColor: 'text-emerald-700', positive: true },
+          { label: 'Fuel Cost',         value: fuelCost,      icon: '⛽', iconBg: 'bg-orange-50', valueColor: 'text-orange-700',  positive: false },
+          { label: 'Expenses',          value: totalExpenses, icon: '📋', iconBg: 'bg-violet-50', valueColor: 'text-violet-700',  positive: false },
+          { label: 'Net Profit / Loss', value: netProfit,     icon: netProfit >= 0 ? '✅' : '⚠️', iconBg: netProfit >= 0 ? 'bg-emerald-50' : 'bg-red-50', valueColor: netProfit >= 0 ? 'text-emerald-700' : 'text-red-700', positive: netProfit >= 0 },
         ].map(card => (
-          <div key={card.label} className={`rounded-xl border p-5 ${card.bg}`}>
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">{card.label}</p>
-            <p className={`text-2xl font-black ${card.color}`}>{formatRs(card.value)}</p>
+          <div key={card.label} className="bg-white rounded-2xl p-4 shadow-card border border-black/[0.04]">
+            <div className={`w-8 h-8 ${card.iconBg} rounded-xl flex items-center justify-center mb-3 text-[14px]`}>
+              {card.icon}
+            </div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-1">{card.label}</p>
+            <p className={`text-xl font-black num ${card.valueColor}`}>{formatRs(card.value)}</p>
           </div>
         ))}
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-        <h3 className="font-bold text-gray-800 mb-4 flex items-center"><TrendingUp size={18} className="mr-2 text-blue-500" /> Top 5 Customers by Credit</h3>
-        {topCustomers.length === 0 ? <p className="text-gray-400 text-sm italic">No credit transactions this month.</p> : (
+      {/* Top Customers */}
+      <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] p-5">
+        <h3 className="font-bold text-[14px] text-gray-800 mb-4 flex items-center gap-2">
+          <div className="w-6 h-6 rounded-lg bg-amber-50 flex items-center justify-center">
+            <TrendingUp size={13} className="text-amber-600" />
+          </div>
+          Top 5 Customers by Credit
+        </h3>
+        {topCustomers.length === 0 ? (
+          <p className="text-gray-400 text-sm italic py-4 text-center">No credit transactions this month.</p>
+        ) : (
           <div className="space-y-2">
-            {topCustomers.map((c, i) => (
-              <div key={i} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                <span className="font-medium text-gray-800">#{i + 1} {c.name}</span>
-                <span className="font-bold text-orange-600">{formatRs(c.credit)}</span>
-              </div>
-            ))}
+            {topCustomers.map((c, i) => {
+              const medals = ['🥇', '🥈', '🥉'];
+              return (
+                <div key={i} className="flex justify-between items-center p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition">
+                  <span className="font-semibold text-gray-800 flex items-center gap-2">
+                    <span className="text-[15px]">{medals[i] || `${i + 1}.`}</span>
+                    {c.name}
+                  </span>
+                  <span className="font-black text-amber-600 num">{formatRs(c.credit)}</span>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-4 border-b bg-gray-50"><h3 className="font-bold text-gray-800">Daily Entry Summary</h3></div>
+      {/* Daily Entry Summary Table */}
+      <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] overflow-hidden">
+        <div className="px-5 py-4 border-b" style={{ background: '#f8fafc' }}>
+          <h3 className="font-bold text-[14px] text-gray-800">Daily Entry Summary</h3>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="bg-white border-b"><tr><th className="p-3 text-gray-500">Date</th><th className="p-3 text-gray-500 text-right">Petrol (L)</th><th className="p-3 text-gray-500 text-right">Diesel (L)</th><th className="p-3 text-gray-500 text-right">Gross Sales</th><th className="p-3 text-gray-500 text-right">Variance</th></tr></thead>
@@ -2959,151 +3552,255 @@ const SettingsModule = () => {
   const ownerCount = users.filter(u => String(u.role).toLowerCase() === 'owner').length;
 
   return (
-    <div className="space-y-5 pb-10 max-w-3xl mx-auto">
+    <div className="space-y-4 pb-10 max-w-3xl mx-auto">
 
-      {/* Business & Rate Settings */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
-        <div className="flex items-center mb-4 border-b pb-2"><Settings className="text-gray-400 mr-2" /><h3 className="text-lg font-bold">Business &amp; Rate Settings</h3></div>
-        <form onSubmit={handleSave} className="space-y-4">
+      {/* ── Business & Rate Settings ──────────────────────────────── */}
+      <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] overflow-hidden">
+        <div className="px-6 pt-5 pb-4 border-b border-gray-100 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #1d4ed8, #3b82f6)' }}>
+            <Settings size={17} className="text-white" />
+          </div>
+          <div>
+            <h3 className="font-bold text-[15px] text-gray-900">Business &amp; Rate Settings</h3>
+            <p className="text-[11px] text-gray-400">Fuel rates, OD limit, and monthly budget</p>
+          </div>
+        </div>
+        <form onSubmit={handleSave} className="p-6 space-y-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><label className="block text-sm font-medium mb-1">Business Name</label><input type="text" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.bunkName} onChange={e => setForm({ ...form, bunkName: e.target.value })} /></div>
-            <div><label className="block text-sm font-medium mb-1">Fuel Brand / Company</label><select className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-base" value={form.fuelCompany || 'Generic'} onChange={e => setForm({ ...form, fuelCompany: e.target.value })}><option value="Generic">Independent / Generic</option><option>HPCL</option><option>IOCL</option><option>BPCL</option><option>Reliance</option><option>Nayara</option><option>Shell</option></select></div>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div><label className="block text-sm font-medium mb-1">Petrol Rate (Rs/L)</label><input type="number" step="0.01" className="w-full border p-3 rounded-lg font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.petrolRate || ''} onChange={e => setForm({ ...form, petrolRate: e.target.value })} placeholder="0.00" /></div>
-            <div><label className="block text-sm font-medium mb-1">Diesel Rate (Rs/L)</label><input type="number" step="0.01" className="w-full border p-3 rounded-lg font-bold text-blue-900 focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.dieselRate || ''} onChange={e => setForm({ ...form, dieselRate: e.target.value })} placeholder="0.00" /></div>
-            <div><label className="block text-sm font-medium mb-1">OD Limit (Rs)</label><input type="number" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.odLimit || ''} onChange={e => setForm({ ...form, odLimit: e.target.value })} placeholder="3000000" /></div>
-            <div><label className="block text-sm font-medium mb-1">Monthly Budget (Rs)</label><input type="number" className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={form.monthlyBudget || ''} onChange={e => setForm({ ...form, monthlyBudget: e.target.value })} placeholder="0" /></div>
-          </div>
-          <button type="submit" disabled={isSubmitting} className="w-full bg-blue-800 text-white py-3 rounded-xl font-bold shadow hover:bg-blue-900 transition disabled:opacity-50">{isSubmitting ? 'Saving...' : 'Update Settings'}</button>
-        </form>
-      </div>
-
-      {/* Language Preference */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
-        <div className="flex items-center mb-4 border-b pb-2">
-          <span className="text-xl mr-2">🌐</span>
-          <h3 className="text-lg font-bold">Language / భాష / भाषा</h3>
-        </div>
-        <p className="text-sm text-gray-500 mb-4">Choose the language for WhatsApp bot replies.</p>
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { code: 'en', label: '🇮🇳 English' },
-            { code: 'te', label: '🇮🇳 తెలుగు' },
-            { code: 'hi', label: '🇮🇳 हिंदी' },
-          ].map(l => (
-            <button key={l.code}
-              onClick={async () => {
-                const { data: { session } } = await supabase.auth.getSession();
-                if (!session?.user) return showAlert('Not authenticated.');
-                const { data: prof } = await supabase.from('profiles').select('bunk_id').eq('id', session.user.id).maybeSingle();
-                const bid = prof?.bunk_id || user?.bunkId;
-                if (!bid) return showAlert('Could not find bunk. Try re-logging in.');
-                const { error } = await supabase.from('bunks').update({ language: l.code }).eq('id', bid);
-                if (error) return showAlert('Failed to update language: ' + error.message);
-                showAlert(`✅ Language updated! The bot will now reply in ${l.label.split(' ')[1] || l.label}.`);
-              }}
-              className={`py-3 px-2 rounded-xl border-2 font-semibold text-sm transition-all hover:border-indigo-400 hover:bg-indigo-50 ${
-                settings?.language === l.code ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-700'
-              }`}>
-              {l.label}
-            </button>
-          ))}
-        </div>
-        <p className="text-xs text-gray-400 mt-3">⚠️ This only changes the WhatsApp bot language. The webapp is always in English.</p>
-      </div>
-
-      {/* WhatsApp Bot Status */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
-        <div className="flex items-center mb-4 border-b pb-2"><MessageCircle className="text-green-500 mr-2" /><h3 className="text-lg font-bold">WhatsApp Bot Status</h3></div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="flex justify-between items-center p-3 bg-green-50 rounded-lg border border-green-100">
-            <span className="text-sm font-medium text-gray-700">Bot Number</span>
-            <span className="font-bold text-green-800">+{((import.meta as any).env?.VITE_WHATSAPP_NUMBER || '917093578438').replace(/^(\d{2})(\d{5})(\d{5})$/, '$1 $2 $3')}</span>
-          </div>
-          <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg border">
-            <span className="text-sm font-medium text-gray-700">Bot Status</span>
-            <span className="flex items-center gap-1.5 font-bold text-green-700"><span className="w-2 h-2 bg-green-500 rounded-full inline-block animate-pulse"></span>Deployed</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Security */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
-        <div className="flex items-center mb-4 border-b pb-2"><Settings className="text-gray-400 mr-2" /><h3 className="text-lg font-bold">Security — Change Password</h3></div>
-        <form onSubmit={handleChangePassword} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium mb-1">New Password (min 6 chars)</label><input type="password" required minLength={6} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={newPass} onChange={e => setNewPass(e.target.value)} placeholder="Enter new password" /></div>
-            <div><label className="block text-xs font-medium mb-1">Confirm New Password</label><input type="password" required minLength={6} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} placeholder="Confirm new password" /></div>
-          </div>
-          <button type="submit" disabled={isChangingPass} className="w-full bg-gray-800 text-white py-3 rounded-xl font-bold shadow hover:bg-gray-900 transition disabled:opacity-50">{isChangingPass ? 'Changing...' : 'Change Password'}</button>
-        </form>
-      </div>
-
-      {/* Data Management */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
-        <div className="flex items-center mb-4 border-b pb-2"><Download className="text-gray-400 mr-2" /><h3 className="text-lg font-bold">Data Management</h3></div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="bg-blue-50 border border-blue-100 rounded-lg p-5 flex flex-col items-center justify-center text-center">
-            <UploadCloud className="w-10 h-10 text-blue-400 mb-3" />
-            <h4 className="font-bold text-blue-900 mb-1">Need to Import Data?</h4>
-            <p className="text-xs text-blue-700 mb-4">Bulk data migration is handled securely by your development team.</p>
-            <button type="button" onClick={() => showConfirm("Contact your developer to execute a secure database migration script directly into Supabase.", () => { })} className="px-5 bg-blue-800 text-white py-2 rounded-lg font-bold text-sm hover:bg-blue-900 shadow transition">Request Data Migration</button>
-          </div>
-          <button onClick={handleExportData} className="flex flex-col items-center justify-center p-5 bg-gray-50 border rounded-xl hover:bg-blue-50 hover:border-blue-200 transition group min-h-[140px]">
-            <Download className="text-gray-400 group-hover:text-blue-600 mb-2" size={24} />
-            <span className="text-sm font-bold text-gray-700 group-hover:text-blue-800">Export Full Database to CSV</span>
-            <span className="text-xs text-gray-400 mt-1">All customers &amp; transactions</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Staff Management */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 md:p-6">
-        <div className="flex items-center justify-between mb-4 border-b pb-2">
-          <div className="flex items-center"><Users className="text-gray-400 mr-2" /><h3 className="text-lg font-bold">Staff Management</h3></div>
-          <div className="flex gap-2 text-xs font-bold">
-            <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded">{ownerCount} Owner{ownerCount !== 1 ? 's' : ''}</span>
-            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded">{users.filter(u => String(u.role).toLowerCase() === 'supervisor').length} Supervisor{users.filter(u => String(u.role).toLowerCase() === 'supervisor').length !== 1 ? 's' : ''}</span>
-          </div>
-        </div>
-        <div className="mb-5">
-          <h4 className="text-sm font-bold text-gray-500 mb-2">Current Staff</h4>
-          <div className="space-y-2">
-            {users.length === 0 ? <p className="text-sm text-gray-500">No staff found.</p> : users.map((u, idx) => {
-              const canDelete = String(u.role).toLowerCase() !== 'owner' || ownerCount > 1;
-              return (
-                <div key={u.id || `staff-${idx}`} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg border">
-                  <div><p className="font-bold text-sm">{u.name}</p><p className="text-xs text-gray-500">{u.email}</p></div>
-                  <div className="flex items-center gap-3">
-                    <span className={`px-2 py-1 text-xs rounded uppercase font-bold ${String(u.role).toLowerCase() === 'owner' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>{u.role}</span>
-                    {canDelete && (<button onClick={() => showConfirm(`Revoke access for ${u.name}?`, () => deleteUser(u.id))} className="text-red-500 hover:bg-red-100 p-1.5 rounded transition"><Trash2 size={16} /></button>)}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-        <form onSubmit={handleAddStaff} className="space-y-4 pt-4 border-t">
-          <h4 className="text-sm font-bold text-gray-500">Add New Staff Member</h4>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium mb-1">Name</label><input type="text" required className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={staffForm.name} onChange={e => setStaffForm({ ...staffForm, name: e.target.value })} /></div>
-            <div><label className="block text-xs font-medium mb-1">Email / Login ID</label><input type="email" required className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={staffForm.email} onChange={e => setStaffForm({ ...staffForm, email: e.target.value })} /></div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><label className="block text-xs font-medium mb-1">Temporary Password</label><input type="password" required minLength={6} className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-base" value={staffForm.password} onChange={e => setStaffForm({ ...staffForm, password: e.target.value })} /></div>
             <div>
-              <label className="block text-xs font-medium mb-1">Role</label>
-              <select className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-base" value={staffForm.role} onChange={e => setStaffForm({ ...staffForm, role: e.target.value })}>
-                <option value="supervisor">Supervisor</option>
-                <option value="owner">Owner (Full Access)</option>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Business Name</label>
+              <input type="text" className="w-full border border-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-gray-50 font-medium" value={form.bunkName} onChange={e => setForm({ ...form, bunkName: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Fuel Brand / Company</label>
+              <select className="w-full border border-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50 text-sm font-medium" value={form.fuelCompany || 'Generic'} onChange={e => setForm({ ...form, fuelCompany: e.target.value })}>
+                <option value="Generic">Independent / Generic</option>
+                <option>HPCL</option><option>IOCL</option><option>BPCL</option><option>Reliance</option><option>Nayara</option><option>Shell</option>
               </select>
             </div>
           </div>
-          <button type="submit" disabled={isSubmittingStaff} className="w-full bg-gray-800 text-white py-3 rounded-xl font-bold shadow hover:bg-gray-900 transition disabled:opacity-50">
-            {isSubmittingStaff ? 'Processing...' : 'Create Account'}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-[10px] font-bold text-orange-600 mb-1.5 uppercase tracking-wide">⛽ Petrol ₹/L</label>
+              <input type="number" step="0.01" className="w-full border border-orange-200 p-2.5 rounded-xl focus:ring-2 focus:ring-orange-400 outline-none text-sm bg-orange-50 font-black text-orange-900" value={form.petrolRate || ''} onChange={e => setForm({ ...form, petrolRate: e.target.value })} placeholder="0.00" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-blue-600 mb-1.5 uppercase tracking-wide">🛢 Diesel ₹/L</label>
+              <input type="number" step="0.01" className="w-full border border-blue-200 p-2.5 rounded-xl focus:ring-2 focus:ring-blue-400 outline-none text-sm bg-blue-50 font-black text-blue-900" value={form.dieselRate || ''} onChange={e => setForm({ ...form, dieselRate: e.target.value })} placeholder="0.00" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 mb-1.5 uppercase tracking-wide">OD Limit ₹</label>
+              <input type="number" className="w-full border border-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-blue-400 outline-none text-sm bg-gray-50 font-bold" value={form.odLimit || ''} onChange={e => setForm({ ...form, odLimit: e.target.value })} placeholder="30,00,000" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 mb-1.5 uppercase tracking-wide">Monthly Budget ₹</label>
+              <input type="number" className="w-full border border-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-blue-400 outline-none text-sm bg-gray-50 font-bold" value={form.monthlyBudget || ''} onChange={e => setForm({ ...form, monthlyBudget: e.target.value })} placeholder="0" />
+            </div>
+          </div>
+          <button type="submit" disabled={isSubmitting}
+            className="w-full py-3 rounded-xl font-bold text-sm text-white shadow-sm transition disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg, #1d4ed8, #3b82f6)' }}>
+            {isSubmitting ? 'Saving…' : '✓ Update Settings'}
           </button>
         </form>
+      </div>
+
+      {/* ── Language Preference ──────────────────────────────────── */}
+      <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] overflow-hidden">
+        <div className="px-6 pt-5 pb-4 border-b border-gray-100 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center text-[18px]">🌐</div>
+          <div>
+            <h3 className="font-bold text-[15px] text-gray-900">Language / భాష / भाषा</h3>
+            <p className="text-[11px] text-gray-400">WhatsApp bot reply language</p>
+          </div>
+        </div>
+        <div className="p-6">
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { code: 'en', label: '🇮🇳 English', sub: 'English' },
+              { code: 'te', label: '🇮🇳 తెలుగు', sub: 'Telugu' },
+              { code: 'hi', label: '🇮🇳 हिंदी', sub: 'Hindi' },
+            ].map(l => (
+              <button key={l.code}
+                onClick={async () => {
+                  const { data: { session } } = await supabase.auth.getSession();
+                  if (!session?.user) return showAlert('Not authenticated.');
+                  const { data: prof } = await supabase.from('profiles').select('bunk_id').eq('id', session.user.id).maybeSingle();
+                  const bid = prof?.bunk_id || user?.bunkId;
+                  if (!bid) return showAlert('Could not find bunk. Try re-logging in.');
+                  const { error } = await supabase.from('bunks').update({ language: l.code }).eq('id', bid);
+                  if (error) return showAlert('Failed to update language: ' + error.message);
+                  showAlert(`✅ Language updated! The bot will now reply in ${l.sub}.`);
+                }}
+                className={`py-3.5 px-3 rounded-xl border-2 font-semibold text-sm transition-all ${
+                  settings?.language === l.code
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm'
+                    : 'border-gray-200 text-gray-600 hover:border-indigo-300 hover:bg-indigo-50/50'
+                }`}>
+                {l.label}
+                {settings?.language === l.code && <div className="text-[10px] font-bold text-indigo-500 mt-1">✓ Active</div>}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-gray-400 mt-4 flex items-center gap-1.5">
+            <AlertCircle size={11} /> This only changes the WhatsApp bot language. Webapp is always in English.
+          </p>
+        </div>
+      </div>
+
+      {/* ── WhatsApp Bot Status ──────────────────────────────────── */}
+      <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] overflow-hidden">
+        <div className="px-6 pt-5 pb-4 border-b border-gray-100 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-green-50 flex items-center justify-center">
+            <MessageCircle size={17} className="text-green-600" />
+          </div>
+          <div>
+            <h3 className="font-bold text-[15px] text-gray-900">WhatsApp Bot</h3>
+            <p className="text-[11px] text-gray-400">Live connection status</p>
+          </div>
+          <div className="ml-auto flex items-center gap-1.5 text-[11px] font-bold text-green-600 bg-green-50 border border-green-200 px-3 py-1.5 rounded-full">
+            <span className="w-2 h-2 bg-green-500 rounded-full live-pulse" />
+            Deployed
+          </div>
+        </div>
+        <div className="p-6">
+          <div className="flex items-center justify-between p-4 rounded-xl border border-green-100 bg-green-50">
+            <div>
+              <p className="text-[10px] font-bold text-green-600 uppercase tracking-widest mb-1">Bot Number</p>
+              <p className="font-black text-green-900 text-lg num">+{((import.meta as any).env?.VITE_WHATSAPP_NUMBER || '917093578438').replace(/^(\d{2})(\d{5})(\d{5})$/, '$1 $2 $3')}</p>
+            </div>
+            <div className="text-3xl">💬</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Security ─────────────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] overflow-hidden">
+        <div className="px-6 pt-5 pb-4 border-b border-gray-100 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center">
+            <Settings size={17} className="text-slate-600" />
+          </div>
+          <div>
+            <h3 className="font-bold text-[15px] text-gray-900">Security</h3>
+            <p className="text-[11px] text-gray-400">Change your login password</p>
+          </div>
+        </div>
+        <form onSubmit={handleChangePassword} className="p-6 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">New Password (min 6 chars)</label>
+              <input type="password" required minLength={6} className="w-full border border-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-gray-50" value={newPass} onChange={e => setNewPass(e.target.value)} placeholder="New password" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Confirm New Password</label>
+              <input type="password" required minLength={6} className="w-full border border-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-gray-50" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} placeholder="Confirm password" />
+            </div>
+          </div>
+          <button type="submit" disabled={isChangingPass}
+            className="w-full py-3 rounded-xl font-bold text-sm text-white bg-gray-900 hover:bg-gray-800 transition disabled:opacity-50">
+            {isChangingPass ? 'Changing…' : '🔐 Change Password'}
+          </button>
+        </form>
+      </div>
+
+      {/* ── Data Management ──────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] overflow-hidden">
+        <div className="px-6 pt-5 pb-4 border-b border-gray-100 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center">
+            <Download size={17} className="text-blue-600" />
+          </div>
+          <div>
+            <h3 className="font-bold text-[15px] text-gray-900">Data Management</h3>
+            <p className="text-[11px] text-gray-400">Import or export all your data</p>
+          </div>
+        </div>
+        <div className="p-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="rounded-xl border-2 border-dashed border-blue-200 bg-blue-50/60 p-5 flex flex-col items-center text-center">
+              <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center mb-3">
+                <UploadCloud size={20} className="text-blue-500" />
+              </div>
+              <h4 className="font-bold text-blue-900 text-sm mb-1">Import Data</h4>
+              <p className="text-[11px] text-blue-600 mb-4 leading-relaxed">Bulk data migration is handled securely by your development team</p>
+              <button type="button" onClick={() => showConfirm("Contact your developer to execute a secure database migration script directly into Supabase.", () => { })}
+                className="px-4 py-2 rounded-xl font-bold text-xs text-white transition"
+                style={{ background: 'linear-gradient(135deg, #1d4ed8, #3b82f6)' }}>
+                Request Migration
+              </button>
+            </div>
+            <button onClick={handleExportData}
+              className="rounded-xl border-2 border-dashed border-gray-200 bg-gray-50/60 hover:bg-blue-50/60 hover:border-blue-200 p-5 flex flex-col items-center text-center transition group">
+              <div className="w-10 h-10 rounded-xl bg-gray-100 group-hover:bg-blue-100 flex items-center justify-center mb-3 transition">
+                <Download size={20} className="text-gray-400 group-hover:text-blue-600 transition" />
+              </div>
+              <h4 className="font-bold text-gray-700 group-hover:text-blue-900 text-sm mb-1 transition">Export to CSV</h4>
+              <p className="text-[11px] text-gray-400 group-hover:text-blue-600 transition">All customers &amp; transactions</p>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Staff Management ─────────────────────────────────────── */}
+      <div className="bg-white rounded-2xl shadow-card border border-black/[0.04] overflow-hidden">
+        <div className="px-6 pt-5 pb-4 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-purple-50 flex items-center justify-center">
+              <Users size={17} className="text-purple-600" />
+            </div>
+            <div>
+              <h3 className="font-bold text-[15px] text-gray-900">Staff Management</h3>
+              <p className="text-[11px] text-gray-400">Manage team access and roles</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <span className="text-[10px] font-black bg-purple-100 text-purple-800 px-2.5 py-1 rounded-full">{ownerCount} Owner{ownerCount !== 1 ? 's' : ''}</span>
+            <span className="text-[10px] font-black bg-blue-100 text-blue-800 px-2.5 py-1 rounded-full">{users.filter(u => String(u.role).toLowerCase() === 'supervisor').length} Supervisor{users.filter(u => String(u.role).toLowerCase() === 'supervisor').length !== 1 ? 's' : ''}</span>
+          </div>
+        </div>
+        <div className="p-6">
+          {/* Current staff list */}
+          <div className="mb-6 space-y-2">
+            {users.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-4">No staff accounts yet.</p>
+            ) : users.map((u, idx) => {
+              const canDelete = String(u.role).toLowerCase() !== 'owner' || ownerCount > 1;
+              const isOwner = String(u.role).toLowerCase() === 'owner';
+              return (
+                <div key={u.id || `staff-${idx}`} className="flex items-center justify-between p-3.5 rounded-xl border border-gray-100 bg-gray-50/60 hover:bg-gray-100/60 transition">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black ${isOwner ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                      {(u.name || 'U').slice(0, 1).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm text-gray-900">{u.name}</p>
+                      <p className="text-[11px] text-gray-400">{u.email}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-full uppercase ${isOwner ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>{u.role}</span>
+                    {canDelete && (<button onClick={() => showConfirm(`Revoke access for ${u.name}?`, () => deleteUser(u.id))} className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition"><Trash2 size={15} /></button>)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {/* Add staff form */}
+          <div className="border-t border-gray-100 pt-5">
+            <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-4">Add New Team Member</p>
+            <form onSubmit={handleAddStaff} className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div><label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Name</label><input type="text" required className="w-full border border-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-gray-50" value={staffForm.name} onChange={e => setStaffForm({ ...staffForm, name: e.target.value })} /></div>
+                <div><label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Email / Login</label><input type="email" required className="w-full border border-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-gray-50" value={staffForm.email} onChange={e => setStaffForm({ ...staffForm, email: e.target.value })} /></div>
+                <div><label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Temp Password</label><input type="password" required minLength={6} className="w-full border border-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-gray-50" value={staffForm.password} onChange={e => setStaffForm({ ...staffForm, password: e.target.value })} /></div>
+                <div><label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Role</label><select className="w-full border border-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50 text-sm font-medium" value={staffForm.role} onChange={e => setStaffForm({ ...staffForm, role: e.target.value })}><option value="supervisor">Supervisor</option><option value="owner">Owner (Full Access)</option></select></div>
+              </div>
+              <button type="submit" disabled={isSubmittingStaff}
+                className="w-full py-3 rounded-xl font-bold text-sm text-white bg-gray-900 hover:bg-gray-800 transition disabled:opacity-50">
+                {isSubmittingStaff ? 'Creating…' : '+ Create Staff Account'}
+              </button>
+            </form>
+          </div>
+        </div>
       </div>
 
       {/* Danger Zone — always last, full-width */}
@@ -3452,31 +4149,118 @@ const AppContent = () => {
     { id: 'settings', label: 'Settings', icon: Settings, roles: ['owner'] },
   ];
 
+  // Bottom-nav tabs (mobile-first navigation)
+  const BOTTOM_TABS = [
+    { id: 'dashboard', label: 'Home',     icon: BarChart3 },
+    { id: 'ledger',    label: 'Ledger',   icon: BookOpen  },
+    { id: 'morning',   label: 'Morning',  icon: Sun       },
+    { id: 'customers', label: 'Customers',icon: Users     },
+  ];
+
   return (
-    <div className="flex h-[100dvh] bg-gray-100 font-sans text-gray-900">
-      {isSidebarOpen && (<div className="fixed inset-0 bg-black/60 z-20 md:hidden transition-opacity" onClick={() => setIsSidebarOpen(false)} />)}
-      <aside className={`fixed inset-y-0 left-0 w-64 bg-blue-950 text-white flex flex-col shadow-2xl z-30 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}>
-        <div className="p-6 border-b border-blue-900/50 flex justify-between items-center">
-          <div><div className="flex items-center space-x-3 text-indigo-400 mb-1"><Briefcase size={20} className="shrink-0" /><span className="font-black text-xl text-white tracking-tight truncate max-w-[150px]">{settings?.bunkName || 'Business Manager'}</span></div><p className="text-blue-300 text-xs">Powered by Smart Biz AI</p></div>
-          <button className="md:hidden text-gray-400 hover:text-white" onClick={() => setIsSidebarOpen(false)}><X size={24} /></button>
+    <div className="flex h-[100dvh] bg-[#f0f4f8] font-sans text-gray-900">
+      {/* Sidebar backdrop (mobile) */}
+      {isSidebarOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] z-20 md:hidden transition-opacity"
+          onClick={() => setIsSidebarOpen(false)} />
+      )}
+
+      {/* ── Sidebar ─────────────────────────────────────────────── */}
+      <aside className={`fixed inset-y-0 left-0 w-60 bg-sidebar-gradient flex flex-col shadow-sidebar z-30 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:relative md:translate-x-0`}
+        style={{ background: 'linear-gradient(160deg, #04080f 0%, #080f1c 65%, #0b1629 100%)' }}>
+
+        {/* Logo / Brand */}
+        <div className="px-4 py-5 flex justify-between items-center"
+          style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+          <div>
+            <div className="flex items-center gap-2.5 mb-0.5">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shrink-0 shadow-lg">
+                <span className="text-[15px] leading-none">⛽</span>
+              </div>
+              <span className="font-black text-[15px] text-white tracking-tight truncate max-w-[130px]">
+                {settings?.bunkName || 'FuelDesk'}
+              </span>
+            </div>
+            <p className="text-[10px] tracking-widest uppercase ml-[42px]"
+              style={{ color: 'rgba(255,255,255,0.22)' }}>Smart Biz AI</p>
+          </div>
+          <button className="md:hidden p-1.5 rounded-lg hover:bg-white/5 transition"
+            style={{ color: 'rgba(255,255,255,0.35)' }}
+            onClick={() => setIsSidebarOpen(false)}>
+            <X size={18} />
+          </button>
         </div>
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          {navItems.filter(i => i.roles.includes(userRole)).map(item => (
-            <button key={item.id} onClick={() => handleNavClick(item.id)} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors ${currentRoute === item.id ? 'bg-blue-800 text-white font-medium shadow-inner' : 'text-blue-200 hover:bg-blue-900/50 hover:text-white'}`}><item.icon size={20} className={currentRoute === item.id ? 'text-blue-400' : 'opacity-70'} /><span>{item.label}</span></button>
-          ))}
+
+        {/* Nav items */}
+        <nav className="flex-1 px-2.5 py-3 space-y-0.5 overflow-y-auto scrollbar-thin">
+          {navItems.filter(i => i.roles.includes(userRole)).map(item => {
+            const isActive = currentRoute === item.id;
+            return (
+              <button key={item.id} onClick={() => handleNavClick(item.id)}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-[13px] font-medium ${
+                  isActive ? 'bg-white/10 text-white' : 'hover:bg-white/[0.04] hover:text-white/80'
+                }`}
+                style={{ color: isActive ? '#fff' : 'rgba(255,255,255,0.45)' }}>
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-all ${
+                  isActive ? 'bg-blue-500/90 text-white' : 'text-white/30'
+                }`} style={!isActive ? { background: 'rgba(255,255,255,0.05)' } : {}}>
+                  <item.icon size={14} strokeWidth={isActive ? 2.5 : 1.8} />
+                </div>
+                <span>{item.label}</span>
+                {isActive && (
+                  <div className="ml-auto w-1 h-4 rounded-full bg-blue-400 shrink-0" />
+                )}
+              </button>
+            );
+          })}
         </nav>
-        <div className="p-4 border-t border-blue-900/50">
-          <div className="bg-blue-900/50 p-4 rounded-xl mb-4"><p className="text-sm font-bold truncate">{user.name}</p><p className="text-xs text-blue-300 uppercase tracking-wide mt-1">{userRole}</p></div>
-          <button onClick={handleLogout} disabled={isLoggingOut} className="w-full flex items-center justify-center space-x-2 text-blue-300 hover:text-white py-2 transition disabled:opacity-50">{isLoggingOut ? <Loader2 size={18} className="animate-spin" /> : <LogOut size={18} />} <span>{isLoggingOut ? 'Signing Out...' : 'Sign Out'}</span></button>
+
+        {/* User profile + logout */}
+        <div className="px-2.5 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+          <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl mb-1"
+            style={{ background: 'rgba(255,255,255,0.04)' }}>
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-xs font-black text-white shrink-0">
+              {user.name?.charAt(0)?.toUpperCase() || 'U'}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold text-white truncate">{user.name}</p>
+              <p className="text-[10px] uppercase tracking-wider"
+                style={{ color: 'rgba(255,255,255,0.32)' }}>{userRole}</p>
+            </div>
+          </div>
+          <button onClick={handleLogout} disabled={isLoggingOut}
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-[12px] font-medium transition disabled:opacity-50 hover:bg-white/5"
+            style={{ color: 'rgba(255,255,255,0.35)' }}>
+            {isLoggingOut ? <Loader2 size={14} className="animate-spin" /> : <LogOut size={14} />}
+            <span>{isLoggingOut ? 'Signing out…' : 'Sign out'}</span>
+          </button>
         </div>
       </aside>
+
+      {/* ── Main content ─────────────────────────────────────────── */}
       <main className="flex-1 flex flex-col h-[100dvh] overflow-hidden relative">
-        <header className="md:hidden bg-blue-950 text-white p-4 flex justify-between items-center shadow-md z-10 sticky top-0 shrink-0">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-1 hover:bg-blue-900 rounded transition text-blue-200 hover:text-white"><Menu size={24} /></button>
-          <div className="flex items-center space-x-2 text-indigo-400 font-black text-lg text-white"><Briefcase className="w-5 h-5 shrink-0" /><span className="truncate max-w-[150px]">{settings?.bunkName || 'Manager'}</span></div>
-          <button onClick={handleLogout} disabled={isLoggingOut} className="text-blue-200 hover:text-white disabled:opacity-50">{isLoggingOut ? <Loader2 size={20} className="animate-spin" /> : <LogOut size={20} />}</button>
+
+        {/* Mobile top header */}
+        <header className="md:hidden text-white px-4 py-3 flex justify-between items-center z-10 sticky top-0 shrink-0"
+          style={{ background: 'linear-gradient(160deg, #04080f 0%, #080f1c 100%)', boxShadow: '0 1px 0 rgba(255,255,255,0.04), 0 4px 12px rgba(0,0,0,0.3)' }}>
+          <button onClick={() => setIsSidebarOpen(true)}
+            className="p-2 rounded-xl transition"
+            style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.7)' }}>
+            <Menu size={20} />
+          </button>
+          <div className="flex items-center gap-2 font-black text-[15px] text-white">
+            <span>⛽</span>
+            <span className="truncate max-w-[140px]">{settings?.bunkName || 'FuelDesk'}</span>
+          </div>
+          <button onClick={handleLogout} disabled={isLoggingOut}
+            className="p-2 rounded-xl transition disabled:opacity-50"
+            style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.7)' }}>
+            {isLoggingOut ? <Loader2 size={18} className="animate-spin" /> : <LogOut size={18} />}
+          </button>
         </header>
-        <div className="flex-1 overflow-auto p-4 md:p-6 lg:p-8">
+
+        {/* Page content */}
+        <div className="flex-1 overflow-auto p-4 md:p-6 lg:p-8 pb-20 md:pb-8">
           <div className="max-w-7xl mx-auto pb-10">
             {currentRoute === 'dashboard' && <Dashboard />}
             {currentRoute === 'customers' && <CustomerList />}
@@ -3489,6 +4273,32 @@ const AppContent = () => {
             {currentRoute === 'settings' && <SettingsModule />}
           </div>
         </div>
+
+        {/* ── Bottom Navigation (mobile only) ───────────────────── */}
+        <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white z-20 flex items-center"
+          style={{ boxShadow: '0 -1px 0 rgba(0,0,0,0.06), 0 -4px 12px rgba(0,0,0,0.06)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          {BOTTOM_TABS.map(tab => {
+            const isActive = currentRoute === tab.id;
+            return (
+              <button key={tab.id} onClick={() => handleNavClick(tab.id)}
+                className="flex-1 flex flex-col items-center pt-2.5 pb-2 gap-0.5 relative transition-colors">
+                {isActive && (
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-blue-600" />
+                )}
+                <tab.icon size={20} strokeWidth={isActive ? 2.5 : 1.6}
+                  className={isActive ? 'text-blue-600' : 'text-gray-400'} />
+                <span className={`text-[10px] font-semibold tracking-wide ${isActive ? 'text-blue-600' : 'text-gray-400'}`}>
+                  {tab.label}
+                </span>
+              </button>
+            );
+          })}
+          <button onClick={() => setIsSidebarOpen(true)}
+            className="flex-1 flex flex-col items-center pt-2.5 pb-2 gap-0.5 text-gray-400 transition-colors">
+            <Menu size={20} strokeWidth={1.6} />
+            <span className="text-[10px] font-semibold tracking-wide">More</span>
+          </button>
+        </nav>
       </main>
     </div>
   );

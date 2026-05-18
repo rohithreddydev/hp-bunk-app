@@ -5,7 +5,54 @@ export default {
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      fontFamily: {
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+      },
+      colors: {
+        // Deep petroleum-black sidebar palette
+        ink: {
+          950: '#04080f',
+          900: '#080f1c',
+          800: '#0c1627',
+          700: '#101f36',
+          600: '#152847',
+          500: '#1e3a6e',
+        },
+        // Amber / petrol brand accent
+        petrol: {
+          50:  '#fffbeb',
+          100: '#fef3c7',
+          200: '#fde68a',
+          300: '#fcd34d',
+          400: '#fbbf24',
+          500: '#f59e0b',
+          600: '#d97706',
+          700: '#b45309',
+        },
+        // Surface / background
+        canvas: '#f0f4f8',
+      },
+      boxShadow: {
+        'card':       '0 1px 3px 0 rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.05)',
+        'card-hover': '0 4px 12px -2px rgb(0 0 0 / 0.10), 0 2px 4px -2px rgb(0 0 0 / 0.07)',
+        'card-lift':  '0 8px 24px -4px rgb(0 0 0 / 0.13), 0 4px 8px -4px rgb(0 0 0 / 0.08)',
+        'sidebar':    '2px 0 20px 0 rgb(0 0 0 / 0.25)',
+        'bottom-nav': '0 -1px 3px 0 rgb(0 0 0 / 0.08)',
+      },
+      borderRadius: {
+        '2xl': '1rem',
+        '3xl': '1.25rem',
+      },
+      backgroundImage: {
+        'sidebar-gradient': 'linear-gradient(160deg, #04080f 0%, #080f1c 60%, #0a1830 100%)',
+        'card-shine':       'linear-gradient(135deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0) 60%)',
+        'networth-dark':    'linear-gradient(135deg, #04080f 0%, #0a1628 50%, #0e1f42 100%)',
+      },
+      animation: {
+        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+      },
+    },
   },
   plugins: [],
 }
