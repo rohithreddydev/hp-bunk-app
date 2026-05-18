@@ -10,7 +10,8 @@ import {
   LayoutDashboard, Package, ShoppingCart, Users, Truck, Receipt,
   Plus, Edit2, Trash2, X, Search, AlertTriangle, CheckCircle2,
   Loader2, TrendingUp, TrendingDown, Wallet, BarChart3,
-  Settings as SettingsIcon, LogOut,
+  Settings as SettingsIcon, LogOut, FileText, Calendar, BookOpen,
+  ChevronRight, DollarSign, CreditCard, ArrowUpRight, ArrowDownLeft,
 } from 'lucide-react';
 import { SettingsTab } from './SettingsTab';
 import { supabase } from './supabase';
@@ -57,8 +58,9 @@ interface Expense {
   amount: number; expense_date: string; payment_mode: string; notes: string; created_at: string;
 }
 interface CartItem { product: Product; quantity: number; price: number; }
+interface LedgerEntry { date: string; type: 'sale' | 'payment'; amount: number; label: string; mode?: string; running_balance?: number; }
 
-type Tab = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers' | 'purchases' | 'expenses' | 'settings';
+type Tab = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers' | 'purchases' | 'expenses' | 'reports' | 'settings';
 
 export function KiranaApp({ bunkId, onLogout, user }: { bunkId: string; onLogout: () => void; user: { name: string; email: string; role: string } }) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -115,6 +117,7 @@ export function KiranaApp({ bunkId, onLogout, user }: { bunkId: string; onLogout
     { id: 'suppliers', label: 'Suppliers', icon: <Truck size={16} /> },
     { id: 'purchases', label: 'Purchases', icon: <BarChart3 size={16} /> },
     { id: 'expenses', label: 'Expenses', icon: <Receipt size={16} /> },
+    { id: 'reports', label: 'Reports', icon: <FileText size={16} /> },
     { id: 'settings', label: 'Settings', icon: <SettingsIcon size={16} /> },
   ];
 
@@ -167,6 +170,7 @@ export function KiranaApp({ bunkId, onLogout, user }: { bunkId: string; onLogout
             {activeTab === 'suppliers' && <KiSuppliers bunkId={bunkId} suppliers={suppliers} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'purchases' && <KiPurchases bunkId={bunkId} purchases={purchases} suppliers={suppliers} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'expenses' && <KiExpenses bunkId={bunkId} expenses={expenses} onRefresh={fetchAll} showToast={showToast} />}
+            {activeTab === 'reports' && <KiReports bunkId={bunkId} />}
             {activeTab === 'settings' && <SettingsTab bunkId={bunkId} user={user} onLogout={onLogout} />}
           </>
         )}
@@ -248,9 +252,29 @@ function KiInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState<ProdForm>(defaultPF());
   const [saving, setSaving] = useState(false);
+  const [adjustProduct, setAdjustProduct] = useState<Product | null>(null);
+  const [adjustMode, setAdjustMode] = useState<'add' | 'remove'>('add');
+  const [adjustQty, setAdjustQty] = useState('');
+  const [adjustReason, setAdjustReason] = useState('Physical count');
+  const [adjustSaving, setAdjustSaving] = useState(false);
   // BUG-FIX: Replace browser confirm() with React state modal (confirm() is blocked on mobile PWA)
   const [confirmState, setConfirmState] = useState<{ msg: string; onYes: () => void } | null>(null);
   const showConfirm = (msg: string, onYes: () => void) => setConfirmState({ msg, onYes });
+
+  async function handleAdjust() {
+    if (!adjustProduct || !adjustQty) return;
+    const qty = parseFloat(adjustQty);
+    if (isNaN(qty) || qty <= 0) { showToast('Enter a valid quantity', 'error'); return; }
+    setAdjustSaving(true);
+    const { data: fresh } = await supabase.from('ki_products').select('current_stock').eq('id', adjustProduct.id).eq('bunk_id', bunkId).single();
+    const base = Number(fresh?.current_stock || 0);
+    const newStock = adjustMode === 'add' ? base + qty : Math.max(0, base - qty);
+    const { error } = await supabase.from('ki_products').update({ current_stock: newStock }).eq('id', adjustProduct.id).eq('bunk_id', bunkId);
+    setAdjustSaving(false);
+    if (error) { showToast(error.message, 'error'); return; }
+    showToast(`Stock adjusted: ${adjustProduct.name} → ${newStock} ${adjustProduct.unit}`);
+    setAdjustProduct(null); setAdjustQty(''); setAdjustReason('Physical count'); onRefresh();
+  }
 
   const filtered = products.filter(p => {
     const match = p.name.toLowerCase().includes(search.toLowerCase()) || (p.brand || '').toLowerCase().includes(search.toLowerCase());
@@ -333,6 +357,7 @@ function KiInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
                   <td className="px-4 py-3 text-center">{p.current_stock <= p.reorder_level ? <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">Low</span> : <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">OK</span>}</td>
                   <td className="px-4 py-3 text-center">
                     <div className="flex items-center justify-center gap-2">
+                      <button onClick={() => { setAdjustProduct(p); setAdjustMode('add'); setAdjustQty(''); }} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-200">± Adjust</button>
                       <button onClick={() => openEdit(p)} className="text-orange-600 hover:text-orange-800"><Edit2 size={14} /></button>
                       <button onClick={() => handleDelete(p)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button>
                     </div>
@@ -356,6 +381,36 @@ function KiInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
             <div className="flex gap-3 justify-end">
               <button onClick={() => setConfirmState(null)} className="px-4 py-2 text-gray-600 font-semibold hover:bg-gray-100 rounded-xl transition text-sm">Cancel</button>
               <button onClick={() => { const fn = confirmState.onYes; setConfirmState(null); fn(); }} className="px-4 py-2 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition text-sm">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {adjustProduct && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
+            <div className="flex items-center justify-between p-5 border-b">
+              <h2 className="text-lg font-semibold">Adjust Stock — {adjustProduct.name}</h2>
+              <button onClick={() => setAdjustProduct(null)}><X size={20} /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <p className="text-sm text-gray-500">Current stock: <span className="font-bold text-gray-800">{adjustProduct.current_stock} {adjustProduct.unit}</span></p>
+              <div className="flex gap-2">
+                <button onClick={() => setAdjustMode('add')} className={`flex-1 py-2 rounded-lg text-sm font-medium border transition ${adjustMode === 'add' ? 'bg-green-600 text-white border-green-600' : 'border-gray-300 text-gray-600'}`}>+ Add</button>
+                <button onClick={() => setAdjustMode('remove')} className={`flex-1 py-2 rounded-lg text-sm font-medium border transition ${adjustMode === 'remove' ? 'bg-red-600 text-white border-red-600' : 'border-gray-300 text-gray-600'}`}>− Remove</button>
+              </div>
+              <div><label className="text-xs text-gray-500 mb-1 block">Quantity ({adjustProduct.unit}) *</label><input type="number" value={adjustQty} onChange={e => setAdjustQty(e.target.value)} placeholder="e.g. 20" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" /></div>
+              <div><label className="text-xs text-gray-500 mb-1 block">Reason</label>
+                <select value={adjustReason} onChange={e => setAdjustReason(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                  {['Physical count', 'Supplier delivery', 'Damage / Wastage', 'Transfer in', 'Transfer out', 'Other'].map(r => <option key={r}>{r}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-3 p-5 border-t">
+              <button onClick={() => setAdjustProduct(null)} className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">Cancel</button>
+              <button onClick={handleAdjust} disabled={adjustSaving} className={`flex-1 text-white py-2 rounded-lg text-sm font-medium disabled:opacity-60 flex items-center justify-center gap-2 ${adjustMode === 'add' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}>
+                {adjustSaving && <Loader2 size={14} className="animate-spin" />}{adjustSaving ? 'Saving…' : 'Confirm'}
+              </button>
             </div>
           </div>
         </div>
@@ -540,6 +595,7 @@ function KiCustomers({ bunkId, customers, sales, onRefresh, showToast }: { bunkI
   const [form, setForm] = useState<CustForm>(defaultCF());
   const [saving, setSaving] = useState(false);
   const [selectedCust, setSelectedCust] = useState<Customer | null>(null);
+  const [ledgerCust, setLedgerCust] = useState<Customer | null>(null);
   const [payAmount, setPayAmount] = useState('');
   const [payMode, setPayMode] = useState('cash');
   const [payingId, setPayingId] = useState('');
@@ -614,6 +670,7 @@ function KiCustomers({ bunkId, customers, sales, onRefresh, showToast }: { bunkI
                   <td className="px-4 py-3 text-right"><span className={`font-semibold ${c.outstanding_amount > 0 ? 'text-orange-600' : 'text-gray-400'}`}>{inr(c.outstanding_amount)}</span></td>
                   <td className="px-4 py-3 text-center">
                     <div className="flex items-center justify-center gap-2">
+                      <button onClick={() => setLedgerCust(c)} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-200">Ledger</button>
                       {c.outstanding_amount > 0 && (
                         <button onClick={() => setSelectedCust(c)} className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-lg hover:bg-green-200">Pay</button>
                       )}
@@ -626,6 +683,8 @@ function KiCustomers({ bunkId, customers, sales, onRefresh, showToast }: { bunkI
           </table>
         </div>
       </div>
+
+      {ledgerCust && <KiLedgerModal bunkId={bunkId} customer={ledgerCust} onClose={() => setLedgerCust(null)} />}
 
       {selectedCust && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -899,6 +958,225 @@ function KiExpenses({ bunkId, expenses, onRefresh, showToast }: { bunkId: string
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Customer Ledger Modal ─────────────────────────────────────────────────────
+function KiLedgerModal({ bunkId, customer, onClose }: { bunkId: string; customer: Customer; onClose: () => void }) {
+  const [entries, setEntries] = useState<LedgerEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      const [{ data: salesData }, { data: paymentsData }] = await Promise.all([
+        supabase.from('ki_sales').select('sale_date, total_amount, payment_mode').eq('customer_id', customer.id).eq('bunk_id', bunkId),
+        supabase.from('ki_payments').select('payment_date, amount, payment_mode').eq('customer_id', customer.id).eq('bunk_id', bunkId),
+      ]);
+      const all: LedgerEntry[] = [
+        ...(salesData || []).map(s => ({ date: s.sale_date, type: 'sale' as const, amount: s.total_amount, label: 'Sale', mode: s.payment_mode })),
+        ...(paymentsData || []).map(p => ({ date: p.payment_date, type: 'payment' as const, amount: p.amount, label: 'Payment', mode: p.payment_mode })),
+      ].sort((a, b) => a.date.localeCompare(b.date));
+      let bal = 0;
+      all.forEach(e => {
+        bal += (e.type === 'sale' && e.mode === 'credit') ? e.amount : e.type === 'payment' ? -e.amount : 0;
+        e.running_balance = bal;
+      });
+      setEntries(all); setLoading(false);
+    }
+    load();
+  }, [bunkId, customer.id]);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">{customer.name} — Ledger</h2>
+            <p className="text-xs text-gray-500">Outstanding: <span className="font-semibold text-orange-600">{inr(customer.outstanding_amount)}</span></p>
+          </div>
+          <button onClick={onClose}><X size={20} /></button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-4">
+          {loading ? <div className="flex justify-center py-8"><Loader2 className="animate-spin text-orange-600" size={24} /></div> : entries.length === 0 ? (
+            <p className="text-center text-gray-400 py-8">No transactions yet.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="text-xs text-gray-500 uppercase bg-gray-50 sticky top-0">
+                <tr><th className="px-3 py-2 text-left">Date</th><th className="px-3 py-2 text-left">Type</th><th className="px-3 py-2 text-right">Amount</th><th className="px-3 py-2 text-right">Balance</th></tr>
+              </thead>
+              <tbody>
+                {entries.map((e, i) => (
+                  <tr key={i} className="border-t border-gray-100">
+                    <td className="px-3 py-2 text-gray-600 text-xs">{e.date}</td>
+                    <td className="px-3 py-2">
+                      {e.type === 'sale'
+                        ? <span className="flex items-center gap-1 text-red-600 text-xs"><ArrowUpRight size={11} />Sale{e.mode === 'credit' ? ' (cr)' : ''}</span>
+                        : <span className="flex items-center gap-1 text-green-600 text-xs"><ArrowDownLeft size={11} />Payment</span>}
+                    </td>
+                    <td className={`px-3 py-2 text-right font-medium text-sm ${e.type === 'payment' ? 'text-green-600' : 'text-red-600'}`}>
+                      {e.type === 'payment' ? '-' : '+'}{inr(e.amount)}
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold text-gray-800 text-sm">{inr(e.running_balance)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="p-4 border-t bg-gray-50 rounded-b-2xl text-right">
+          <span className="text-sm text-gray-600">Outstanding: </span>
+          <span className="font-bold text-orange-600 text-base">{inr(customer.outstanding_amount)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Reports Tab ───────────────────────────────────────────────────────────────
+function KiReports({ bunkId }: { bunkId: string }) {
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear]   = useState(now.getFullYear());
+  const [data, setData]   = useState<{
+    totalSales: number; cashSales: number; creditSales: number; upiSales: number;
+    totalExp: number; totalCollections: number; grossProfit: number;
+    topProducts: { name: string; qty: number; rev: number }[];
+    topCustomers: { name: string; outstanding_amount: number }[];
+    expenseBreakdown: { category: string; total: number }[];
+    txCount: number;
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function loadReport() {
+    setLoading(true);
+    const from = `${year}-${String(month).padStart(2, '0')}-01`;
+    const to   = `${year}-${String(month).padStart(2, '0')}-31`;
+    const [{ data: sales }, { data: expenses }, { data: payments }, { data: saleItems }, { data: products }, { data: topCusts }] = await Promise.all([
+      supabase.from('ki_sales').select('total_amount, payment_mode').eq('bunk_id', bunkId).gte('sale_date', from).lte('sale_date', to),
+      supabase.from('ki_expenses').select('amount, category').eq('bunk_id', bunkId).gte('expense_date', from).lte('expense_date', to),
+      supabase.from('ki_payments').select('amount').eq('bunk_id', bunkId).gte('payment_date', from).lte('payment_date', to),
+      supabase.from('ki_sale_items').select('product_name, quantity, total_price, product_id').eq('bunk_id', bunkId),
+      supabase.from('ki_products').select('id, purchase_price').eq('bunk_id', bunkId),
+      supabase.from('ki_customers').select('name, outstanding_amount').eq('bunk_id', bunkId).order('outstanding_amount', { ascending: false }).limit(5),
+    ]);
+
+    const totalSales       = (sales || []).reduce((a: number, s: { total_amount: number }) => a + s.total_amount, 0);
+    const cashSales        = (sales || []).filter((s: { payment_mode: string }) => s.payment_mode === 'cash').reduce((a: number, s: { total_amount: number }) => a + s.total_amount, 0);
+    const creditSales      = (sales || []).filter((s: { payment_mode: string }) => s.payment_mode === 'credit').reduce((a: number, s: { total_amount: number }) => a + s.total_amount, 0);
+    const upiSales         = (sales || []).filter((s: { payment_mode: string }) => s.payment_mode === 'upi').reduce((a: number, s: { total_amount: number }) => a + s.total_amount, 0);
+    const totalExp         = (expenses || []).reduce((a: number, e: { amount: number }) => a + e.amount, 0);
+    const totalCollections = (payments || []).reduce((a: number, p: { amount: number }) => a + p.amount, 0);
+
+    const purchMap: Record<string, number> = {};
+    (products || []).forEach((p: { id: string; purchase_price: number }) => { purchMap[p.id] = p.purchase_price; });
+    let revenue = 0, cost = 0;
+    (saleItems || []).forEach((i: { total_price: number; quantity: number; product_id: string }) => {
+      revenue += i.total_price; cost += i.quantity * (purchMap[i.product_id] || 0);
+    });
+
+    const prodMap: Record<string, { qty: number; rev: number }> = {};
+    (saleItems || []).forEach((i: { product_name: string; quantity: number; total_price: number }) => {
+      if (!prodMap[i.product_name]) prodMap[i.product_name] = { qty: 0, rev: 0 };
+      prodMap[i.product_name].qty += i.quantity;
+      prodMap[i.product_name].rev += i.total_price;
+    });
+    const topProducts = Object.entries(prodMap).map(([name, d]) => ({ name, ...d })).sort((a, b) => b.rev - a.rev).slice(0, 5);
+
+    const expMap: Record<string, number> = {};
+    (expenses || []).forEach((e: { category: string; amount: number }) => { expMap[e.category] = (expMap[e.category] || 0) + e.amount; });
+    const expenseBreakdown = Object.entries(expMap).map(([category, total]) => ({ category, total })).sort((a, b) => b.total - a.total);
+
+    setData({ totalSales, cashSales, creditSales, upiSales, totalExp, totalCollections, grossProfit: revenue - cost, topProducts, topCustomers: (topCusts || []).filter((c: { outstanding_amount: number }) => c.outstanding_amount > 0), expenseBreakdown, txCount: (sales || []).length });
+    setLoading(false);
+  }
+
+  useEffect(() => { loadReport(); }, [month, year]);
+
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-2">
+          <Calendar size={16} className="text-orange-600" />
+          <select value={month} onChange={e => setMonth(Number(e.target.value))} className="text-sm border-none outline-none bg-transparent">
+            {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+          </select>
+          <input type="number" value={year} onChange={e => setYear(Number(e.target.value))} className="w-16 text-sm border-none outline-none bg-transparent text-center" />
+        </div>
+        <button onClick={loadReport} disabled={loading} className="flex items-center gap-2 bg-orange-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-orange-700 disabled:opacity-60">
+          {loading ? <Loader2 size={14} className="animate-spin" /> : <ChevronRight size={14} />}{loading ? 'Loading…' : 'Load'}
+        </button>
+      </div>
+
+      {loading && <div className="flex justify-center py-12"><Loader2 className="animate-spin text-orange-600" size={32} /></div>}
+
+      {data && !loading && (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              { label: 'Total Sales', value: inr(data.totalSales), sub: `${data.txCount} bills`, color: 'bg-green-50 border-green-200 text-green-700', icon: <TrendingUp size={18} /> },
+              { label: 'Cash + UPI', value: inr(data.cashSales + data.upiSales), sub: `Credit: ${inr(data.creditSales)}`, color: 'bg-blue-50 border-blue-200 text-blue-700', icon: <DollarSign size={18} /> },
+              { label: 'Collections', value: inr(data.totalCollections), sub: 'Credit recovered', color: 'bg-purple-50 border-purple-200 text-purple-700', icon: <CreditCard size={18} /> },
+              { label: 'Expenses', value: inr(data.totalExp), sub: `Gross profit: ${inr(data.grossProfit)}`, color: 'bg-red-50 border-red-200 text-red-700', icon: <TrendingDown size={18} /> },
+            ].map(k => (
+              <div key={k.label} className={`rounded-xl border p-3 ${k.color}`}>
+                <div className="flex items-center justify-between mb-1"><span className="text-xs font-medium opacity-80">{k.label}</span>{k.icon}</div>
+                <p className="text-lg font-bold">{k.value}</p>
+                <p className="text-xs opacity-70 mt-0.5">{k.sub}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2"><TrendingUp size={15} className="text-green-600" /> Top Products</h3>
+              {data.topProducts.length === 0 ? <p className="text-gray-400 text-sm">No sales this period.</p> : (
+                <div className="space-y-2">
+                  {data.topProducts.map((p, i) => (
+                    <div key={p.name} className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-gray-400 w-4">{i + 1}</span>
+                      <div className="flex-1">
+                        <div className="flex justify-between text-sm"><span className="font-medium text-gray-800 truncate">{p.name}</span><span className="text-green-600 font-semibold">{inr(p.rev)}</span></div>
+                        <div className="h-1.5 bg-gray-100 rounded-full mt-1"><div className="h-1.5 bg-green-500 rounded-full" style={{ width: `${Math.min(100, (p.rev / (data.topProducts[0]?.rev || 1)) * 100)}%` }} /></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2"><Users size={15} className="text-orange-600" /> Top Customers (Outstanding)</h3>
+              {data.topCustomers.length === 0 ? <p className="text-gray-400 text-sm">No outstanding balances.</p> : (
+                <div className="space-y-2">
+                  {data.topCustomers.map((c, i) => (
+                    <div key={c.name} className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0">
+                      <div className="flex items-center gap-2"><span className="text-xs font-bold text-gray-400 w-4">{i + 1}</span><span className="text-sm font-medium text-gray-800">{c.name}</span></div>
+                      <span className="font-semibold text-orange-600 text-sm">{inr(c.outstanding_amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {data.expenseBreakdown.length > 0 && (
+              <div className="bg-white rounded-xl border border-gray-200 p-4 lg:col-span-2">
+                <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2"><Receipt size={15} className="text-red-500" /> Expense Breakdown</h3>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  {data.expenseBreakdown.map(e => (
+                    <div key={e.category} className="bg-red-50 rounded-lg p-3">
+                      <p className="text-xs text-red-600 font-medium truncate">{e.category}</p>
+                      <p className="text-base font-bold text-red-700">{inr(e.total)}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
