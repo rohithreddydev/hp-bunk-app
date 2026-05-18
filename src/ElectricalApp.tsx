@@ -7,7 +7,8 @@ import {
   Receipt, BarChart3, Plus, X, Search, AlertTriangle,
   ChevronDown, ChevronRight, Loader2, CheckCircle2,
   TrendingUp, TrendingDown, DollarSign, Edit2, Home,
-  AlertCircle, Filter, Settings, LogOut
+  AlertCircle, Filter, Settings, LogOut, BookOpen,
+  ArrowUpRight, ArrowDownLeft,
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { getTodayIST } from './utils';
@@ -473,6 +474,7 @@ function CustomersTab({ bunkId }: { bunkId: string }) {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [showPayment, setShowPayment] = useState<ElecCustomer | null>(null);
+  const [ledgerCust, setLedgerCust] = useState<ElecCustomer | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -503,13 +505,14 @@ function CustomersTab({ bunkId }: { bunkId: string }) {
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5">{c.phone || 'No phone'}</p>
               </div>
-              <div className="text-right">
+              <div className="text-right flex flex-col items-end gap-1">
                 {c.outstanding_amount > 0 ? (
-                  <div>
+                  <div className="text-right">
                     <p className="font-bold text-red-600">{fmt(c.outstanding_amount)}</p>
                     <button onClick={() => setShowPayment(c)} className="text-xs text-blue-600 underline">Collect</button>
                   </div>
                 ) : <p className="text-xs text-green-600 font-medium">✓ Clear</p>}
+                <button onClick={() => setLedgerCust(c)} className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-medium hover:bg-blue-200 flex items-center gap-1 mt-1"><BookOpen size={10} />Ledger</button>
               </div>
             </div>
           ))}
@@ -519,6 +522,70 @@ function CustomersTab({ bunkId }: { bunkId: string }) {
 
       {showAdd && <CustomerForm bunkId={bunkId} onClose={() => setShowAdd(false)} onSave={load} />}
       {showPayment && <CustPaymentForm bunkId={bunkId} customer={showPayment} onClose={() => setShowPayment(null)} onSave={load} />}
+      {ledgerCust && <ElecLedgerModal bunkId={bunkId} customer={ledgerCust} onClose={() => setLedgerCust(null)} />}
+    </div>
+  );
+}
+
+function ElecLedgerModal({ bunkId, customer, onClose }: { bunkId: string; customer: ElecCustomer; onClose: () => void }) {
+  interface LedgerRow { id: string; date: string; type: 'sale' | 'payment'; description: string; debit: number; credit: number; balance: number; }
+  const [entries, setEntries] = useState<LedgerRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const fmt = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const [salesRes, paymentsRes] = await Promise.all([
+        supabase.from('electrical_sales').select('id, sale_date, total_amount, payment_status').eq('bunk_id', bunkId).eq('customer_id', customer.id).order('sale_date'),
+        supabase.from('electrical_customer_payments').select('id, payment_date, amount, payment_mode').eq('bunk_id', bunkId).eq('customer_id', customer.id).order('payment_date'),
+      ]);
+      const raw: { date: string; type: 'sale' | 'payment'; id: string; amount: number; mode: string }[] = [
+        ...(salesRes.data || []).map((s: { id: string; sale_date: string; total_amount: number; payment_status: string }) => ({ date: s.sale_date, type: 'sale' as const, id: s.id, amount: s.total_amount, mode: s.payment_status })),
+        ...(paymentsRes.data || []).map((p: { id: string; payment_date: string; amount: number; payment_mode: string }) => ({ date: p.payment_date, type: 'payment' as const, id: p.id, amount: p.amount, mode: p.payment_mode })),
+      ].sort((a, b) => a.date.localeCompare(b.date));
+      let balance = 0;
+      const ledger: LedgerRow[] = raw.map(r => {
+        if (r.type === 'sale' && r.mode === 'credit') { balance += r.amount; return { id: r.id, date: r.date, type: 'sale', description: 'Credit Sale', debit: r.amount, credit: 0, balance }; }
+        if (r.type === 'sale') { return { id: r.id, date: r.date, type: 'sale', description: 'Cash/UPI Sale', debit: 0, credit: 0, balance }; }
+        balance -= r.amount; if (balance < 0) balance = 0;
+        return { id: r.id, date: r.date, type: 'payment', description: `Payment (${r.mode})`, debit: 0, credit: r.amount, balance };
+      });
+      setEntries(ledger);
+      setLoading(false);
+    }
+    load();
+  }, [bunkId, customer.id]);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b">
+          <div><h2 className="text-lg font-semibold">{customer.name} — Ledger</h2><p className="text-sm text-red-600">Outstanding: {fmt(customer.outstanding_amount)}</p></div>
+          <button onClick={onClose}><X size={20} /></button>
+        </div>
+        <div className="overflow-y-auto flex-1">
+          {loading ? <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin text-yellow-500" size={24} /></div> : entries.length === 0 ? <p className="text-center text-gray-400 py-12">No transactions found.</p> : (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-600 text-xs uppercase sticky top-0">
+                <tr><th className="px-4 py-2 text-left">Date</th><th className="px-4 py-2 text-left">Description</th><th className="px-4 py-2 text-right text-red-600">Debit</th><th className="px-4 py-2 text-right text-green-600">Credit</th><th className="px-4 py-2 text-right">Balance</th></tr>
+              </thead>
+              <tbody>
+                {entries.map(e => (
+                  <tr key={e.id} className="border-t border-gray-100 hover:bg-gray-50">
+                    <td className="px-4 py-2 text-gray-600 whitespace-nowrap">{e.date}</td>
+                    <td className="px-4 py-2"><span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${e.type === 'sale' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>{e.type === 'sale' ? <ArrowUpRight size={10} /> : <ArrowDownLeft size={10} />}{e.description}</span></td>
+                    <td className="px-4 py-2 text-right text-red-600 font-medium">{e.debit > 0 ? fmt(e.debit) : '—'}</td>
+                    <td className="px-4 py-2 text-right text-green-600 font-medium">{e.credit > 0 ? fmt(e.credit) : '—'}</td>
+                    <td className={`px-4 py-2 text-right font-semibold ${e.balance > 0 ? 'text-red-600' : 'text-gray-500'}`}>{fmt(e.balance)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="p-4 border-t flex justify-end"><button onClick={onClose} className="px-5 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50">Close</button></div>
+      </div>
     </div>
   );
 }

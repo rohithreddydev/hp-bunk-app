@@ -9,6 +9,7 @@ import {
   Plus, Edit2, Trash2, X, Search, AlertTriangle, CheckCircle2,
   Loader2, TrendingUp, TrendingDown, Wallet, CreditCard,
   Settings as SettingsIcon, LogOut, RefreshCw, ArrowDownToLine,
+  BookOpen, ArrowUpRight, ArrowDownLeft,
 } from 'lucide-react';
 import { SettingsTab } from './SettingsTab';
 import { supabase } from './supabase';
@@ -583,6 +584,7 @@ function LPGCommercial({ bunkId, customers, sales, payments, onRefresh, showToas
   const [showPayForm, setShowPayForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
+  const [ledgerCust, setLedgerCust] = useState<CommercialCustomer | null>(null);
 
   const [custForm, setCustForm] = useState({ name: '', phone: '', address: '', business_type: 'hotel', cylinder_type: 'commercial_19kg', credit_limit: '' });
   const [saleForm, setSaleForm] = useState({ customer_id: '', customer_name: '', cylinder_type: 'commercial_19kg', quantity: '', rate_per_cylinder: '', payment_status: 'credit', notes: '' });
@@ -731,6 +733,9 @@ function LPGCommercial({ bunkId, customers, sales, payments, onRefresh, showToas
                 <div>
                   <p className="font-semibold text-gray-800">{c.name}</p>
                   <p className="text-xs text-gray-400">{c.business_type} · {CYLINDER_LABELS[c.cylinder_type] || c.cylinder_type}{c.phone ? ` · ${c.phone}` : ''}</p>
+                  <button onClick={() => setLedgerCust(c)} className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-medium hover:bg-blue-200 flex items-center gap-1 mt-1">
+                    <BookOpen size={10} />Ledger
+                  </button>
                 </div>
                 <div className="text-right">
                   <p className={`text-sm font-bold ${c.outstanding_amount > 0 ? 'text-orange-600' : 'text-green-600'}`}>{inr(c.outstanding_amount)}</p>
@@ -740,6 +745,7 @@ function LPGCommercial({ bunkId, customers, sales, payments, onRefresh, showToas
             ))}
             {filteredCust.length === 0 && <p className="text-center text-gray-400 text-sm py-6">No customers yet</p>}
           </div>
+          {ledgerCust && <LPGLedgerModal bunkId={bunkId} customer={ledgerCust} onClose={() => setLedgerCust(null)} />}
         </div>
       )}
 
@@ -1126,6 +1132,71 @@ function LPGReports({ deliveries, allocations, sales, payments, expenses, custom
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── LPG Ledger Modal ──────────────────────────────────────────────────────────
+function LPGLedgerModal({ bunkId, customer, onClose }: { bunkId: string; customer: CommercialCustomer; onClose: () => void }) {
+  interface LedgerRow { id: string; date: string; type: 'sale' | 'payment'; description: string; debit: number; credit: number; balance: number; }
+  const fmt = (n: number) => `₹${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+  const [rows, setRows] = useState<LedgerRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const [{ data: sales }, { data: payments }] = await Promise.all([
+        supabase.from('lpg_commercial_sales').select('id, date, total_amount, payment_status, cylinder_type, quantity').eq('bunk_id', bunkId).eq('customer_id', customer.id).order('date'),
+        supabase.from('lpg_commercial_payments').select('id, payment_date, amount, payment_mode').eq('bunk_id', bunkId).eq('customer_id', customer.id).order('payment_date'),
+      ]);
+      const merged: Omit<LedgerRow, 'balance'>[] = [
+        ...(sales || []).map((s: any) => ({ id: `s-${s.id}`, date: s.date, type: 'sale' as const, description: `${s.quantity} cyl · ${s.payment_status}`, debit: s.payment_status === 'credit' ? Number(s.total_amount) : 0, credit: s.payment_status !== 'credit' ? Number(s.total_amount) : 0 })),
+        ...(payments || []).map((p: any) => ({ id: `p-${p.id}`, date: p.payment_date, type: 'payment' as const, description: `Payment · ${p.payment_mode}`, debit: 0, credit: Number(p.amount) })),
+      ].sort((a, b) => a.date.localeCompare(b.date));
+      let bal = 0;
+      const withBal: LedgerRow[] = merged.map(r => { bal += r.debit - r.credit; return { ...r, balance: bal }; });
+      setRows(withBal);
+      setLoading(false);
+    })();
+  }, [bunkId, customer.id]);
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+          <div><p className="font-bold text-gray-800">{customer.name}</p><p className="text-xs text-gray-400">LPG Commercial Ledger</p></div>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg"><X size={18} /></button>
+        </div>
+        <div className="overflow-y-auto flex-1">
+          {loading ? <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-blue-500" /></div> : rows.length === 0 ? (
+            <p className="text-center text-gray-400 text-sm py-10">No transactions yet</p>
+          ) : (
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-gray-50"><tr className="text-gray-500">
+                <th className="text-left px-4 py-2">Date</th><th className="text-left px-4 py-2">Details</th>
+                <th className="text-right px-4 py-2 text-red-500">Debit</th><th className="text-right px-4 py-2 text-green-600">Credit</th><th className="text-right px-4 py-2">Balance</th>
+              </tr></thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={r.id} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="px-4 py-2 text-gray-500">{r.date}</td>
+                    <td className="px-4 py-2"><span className={`inline-flex items-center gap-1 ${r.type === 'sale' ? 'text-red-600' : 'text-green-600'}`}>
+                      {r.type === 'sale' ? <ArrowUpRight size={10} /> : <ArrowDownLeft size={10} />}{r.description}
+                    </span></td>
+                    <td className="px-4 py-2 text-right text-red-500">{r.debit > 0 ? fmt(r.debit) : '—'}</td>
+                    <td className="px-4 py-2 text-right text-green-600">{r.credit > 0 ? fmt(r.credit) : '—'}</td>
+                    <td className={`px-4 py-2 text-right font-semibold ${r.balance > 0 ? 'text-orange-600' : 'text-green-600'}`}>{fmt(Math.abs(r.balance))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="p-4 border-t border-gray-100 flex items-center justify-between">
+          <span className="text-xs text-gray-400">{rows.length} transactions</span>
+          <span className={`text-sm font-bold ${customer.outstanding_amount > 0 ? 'text-orange-600' : 'text-green-600'}`}>Outstanding: {fmt(customer.outstanding_amount)}</span>
+        </div>
+      </div>
     </div>
   );
 }
