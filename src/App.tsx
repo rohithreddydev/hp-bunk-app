@@ -1904,10 +1904,16 @@ const CreditLedger = () => {
             const ok = await addTransaction({ customerId: selCust, type: txType, date: txDate, product, quantity: qtyNum, amount: amtNum, vehicleNumber: selVehicle || undefined, remarks: buildRemarks() });
             if (!ok) return;
             showAlert(advNum > 0 ? `Saved! Credit ₹${amtNum.toLocaleString()} + Advance ₹${advNum.toLocaleString()}` : "Credit sale recorded!");
+            if (advNum > 0) {
+              await addTransaction({ customerId: selCust, type: 'advance', date: txDate, amount: advNum, vehicleNumber: selVehicle || undefined, remarks: advanceRemarks || undefined });
+            }
           } else if (advNum > 0) {
             const ok = await addTransaction({ customerId: selCust, type: 'advance', date: txDate, amount: advNum, vehicleNumber: selVehicle || undefined, remarks: advanceRemarks || undefined });
             if (!ok) return;
             showAlert(`Cash advance ₹${advNum.toLocaleString()} recorded!`);
+          } else {
+            showAlert('❌ Please enter a sale amount greater than zero.');
+            return;
           }
         } else {
           const ok = await addTransaction({ customerId: selCust, type: 'payment', date: txDate, amount: amtNum, mode: payMode, vehicleNumber: selVehicle || undefined });
@@ -1931,16 +1937,12 @@ const CreditLedger = () => {
     if (tab === 'payment' && !amount) return showAlert("Please enter a payment amount.");
     const amtNum = Number(amount) || 0; const advNum = Number(advanceAmount) || 0; const qtyNum = Number(qty) || 0;
     if (!validateInputs([amtNum, advNum], [qtyNum])) return;
-    // Credit limit check — warn if this sale would exceed the limit
+    // Credit limit check — warn only, do not block the sale
     if (tab === 'sale' && !editId && amtNum > 0 && (selectedCustomerData?.creditLimit || 0) > 0) {
       const currentBal = getCustomerBalance(selCust);
       const newBal = currentBal + amtNum + advNum;
       if (newBal > (selectedCustomerData?.creditLimit || 0)) {
-        showConfirm(
-          `⚠️ Credit limit exceeded for ${selectedCustomerData?.companyName}.\n\nBalance: ₹${currentBal.toLocaleString('en-IN')} → ₹${newBal.toLocaleString('en-IN')} (Limit: ₹${(selectedCustomerData?.creditLimit || 0).toLocaleString('en-IN')})\n\nProceed anyway?`,
-          () => submitTransaction(amtNum, advNum, qtyNum)
-        );
-        return;
+        showAlert(`⚠️ Credit limit exceeded for ${selectedCustomerData?.companyName} (Limit: ₹${(selectedCustomerData?.creditLimit || 0).toLocaleString('en-IN')}). Sale will still be saved.`);
       }
     }
     submitTransaction(amtNum, advNum, qtyNum);
