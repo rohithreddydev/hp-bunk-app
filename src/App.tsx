@@ -1885,37 +1885,43 @@ const CreditLedger = () => {
       if (advNum > 0 && amtNum > 0) return `advance:${advNum}` + (advanceRemarks ? `|${advanceRemarks}` : '|');
       return advanceRemarks || undefined;
     };
-    if (editId) {
-      const existing = transactions.find(t => t.id === editId);
-      if (!existing) { setIsSubmitting(false); return; }
-      if (existing.type === 'credit_sale' || existing.type === 'opening_balance') {
-        await updateTransaction(editId, { customerId: selCust, product, quantity: qtyNum, amount: amtNum, vehicleNumber: selVehicle, date: txDate, remarks: buildRemarks() });
-      } else if (existing.type === 'advance') {
-        await updateTransaction(editId, { customerId: selCust, amount: advNum, vehicleNumber: selVehicle, remarks: advanceRemarks, date: txDate });
-      } else {
-        await updateTransaction(editId, { customerId: selCust, amount: amtNum, vehicleNumber: selVehicle, mode: payMode, date: txDate });
-      }
-      resetForm(tab === 'payment');
-    } else {
-      if (tab === 'sale') {
-        if (amtNum > 0) {
-          const txType = product === 'Opening Balance' ? 'opening_balance' : 'credit_sale';
-          const ok = await addTransaction({ customerId: selCust, type: txType, date: txDate, product, quantity: qtyNum, amount: amtNum, vehicleNumber: selVehicle || undefined, remarks: buildRemarks() });
-          if (!ok) { setIsSubmitting(false); return; }
-          showAlert(advNum > 0 ? `Saved! Credit ₹${amtNum.toLocaleString()} + Advance ₹${advNum.toLocaleString()}` : "Credit sale recorded!");
-        } else if (advNum > 0) {
-          const ok = await addTransaction({ customerId: selCust, type: 'advance', date: txDate, amount: advNum, vehicleNumber: selVehicle || undefined, remarks: advanceRemarks || undefined });
-          if (!ok) { setIsSubmitting(false); return; }
-          showAlert(`Cash advance ₹${advNum.toLocaleString()} recorded!`);
+    try {
+      if (editId) {
+        const existing = transactions.find(t => t.id === editId);
+        if (!existing) return;
+        if (existing.type === 'credit_sale' || existing.type === 'opening_balance') {
+          await updateTransaction(editId, { customerId: selCust, product, quantity: qtyNum, amount: amtNum, vehicleNumber: selVehicle, date: txDate, remarks: buildRemarks() });
+        } else if (existing.type === 'advance') {
+          await updateTransaction(editId, { customerId: selCust, amount: advNum, vehicleNumber: selVehicle, remarks: advanceRemarks, date: txDate });
+        } else {
+          await updateTransaction(editId, { customerId: selCust, amount: amtNum, vehicleNumber: selVehicle, mode: payMode, date: txDate });
         }
+        resetForm(tab === 'payment');
       } else {
-        const ok = await addTransaction({ customerId: selCust, type: 'payment', date: txDate, amount: amtNum, mode: payMode, vehicleNumber: selVehicle || undefined });
-        if (!ok) { setIsSubmitting(false); return; }
-        showAlert("Payment recorded successfully.");
+        if (tab === 'sale') {
+          if (amtNum > 0) {
+            const txType = product === 'Opening Balance' ? 'opening_balance' : 'credit_sale';
+            const ok = await addTransaction({ customerId: selCust, type: txType, date: txDate, product, quantity: qtyNum, amount: amtNum, vehicleNumber: selVehicle || undefined, remarks: buildRemarks() });
+            if (!ok) return;
+            showAlert(advNum > 0 ? `Saved! Credit ₹${amtNum.toLocaleString()} + Advance ₹${advNum.toLocaleString()}` : "Credit sale recorded!");
+          } else if (advNum > 0) {
+            const ok = await addTransaction({ customerId: selCust, type: 'advance', date: txDate, amount: advNum, vehicleNumber: selVehicle || undefined, remarks: advanceRemarks || undefined });
+            if (!ok) return;
+            showAlert(`Cash advance ₹${advNum.toLocaleString()} recorded!`);
+          }
+        } else {
+          const ok = await addTransaction({ customerId: selCust, type: 'payment', date: txDate, amount: amtNum, mode: payMode, vehicleNumber: selVehicle || undefined });
+          if (!ok) return;
+          showAlert("Payment recorded successfully.");
+        }
+        resetForm(tab === 'payment');
       }
-      resetForm(tab === 'payment');
+    } catch (err: any) {
+      showAlert('❌ Unexpected error: ' + (err?.message || String(err)));
+    } finally {
+      // Always release the button — no more "stuck on Processing..."
+      setIsSubmitting(false);
     }
-    setIsSubmitting(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
