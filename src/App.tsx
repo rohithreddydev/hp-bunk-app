@@ -1931,6 +1931,7 @@ const CreditLedger = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    showAlert(`DEBUG: tab=${tab} amount=${amount} customer=${selCust ? 'set' : 'empty'}`);
     if (!selCust) return showAlert("Please select a customer first.");
     if (tab === 'sale' && !amount && !advanceAmount) return showAlert("Please enter a sale amount or an advance amount.");
     if (tab === 'payment' && !amount) return showAlert("Please enter a payment amount.");
@@ -2005,6 +2006,7 @@ const CreditLedger = () => {
                 </>
               )}
             </div>
+            <div className="bg-yellow-300 text-black text-xs font-bold text-center py-1 rounded mb-1">BUILD v7 — if you see this, new code is live</div>
             <div className="flex gap-2">
               {editId && <button type="button" onClick={() => resetForm(tab === 'payment')} className="w-1/3 border py-3 rounded-xl font-bold transition hover:bg-gray-50">Cancel</button>}
               <button type="submit" disabled={isSubmitting} className={`flex-1 text-white py-3 rounded-xl font-bold shadow-sm transition disabled:opacity-50 ${tab === 'sale' ? 'bg-blue-800 hover:bg-blue-900' : 'bg-green-600 hover:bg-green-700'}`}>{isSubmitting ? 'Processing...' : (editId ? 'Update Record' : 'Save Record')}</button>
