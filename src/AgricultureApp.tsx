@@ -94,13 +94,30 @@ function AgDashboard({ bunkId, products, customers, onRefresh }: { bunkId: strin
   const activeCustomers = customers.filter(c => c.is_active !== false);
   const totalOutstanding = activeCustomers.reduce((a, c) => a + Number(c.outstanding_amount || 0), 0);
   const lowStock = products.filter(p => Number(p.stock_qty) <= Number(p.low_stock_at || 0));
+  const stockValue = products.reduce((a, p) => a + Number(p.stock_qty || 0) * Number(p.purchase_rate || 0), 0);
+
+  const overdueMs = 30 * 24 * 60 * 60 * 1000;
+  const overdueCustomers = activeCustomers.filter(c =>
+    (c.outstanding_amount || 0) > 0 &&
+    (!c.last_payment_date || Date.now() - new Date(c.last_payment_date).getTime() > overdueMs)
+  );
+  const overdueTotal = overdueCustomers.reduce((a, c) => a + Number(c.outstanding_amount || 0), 0);
+
+  const seasonStart = new Date(season.start);
+  const seasonEnd = new Date(season.end);
+  const today = new Date();
+  const daysIntoSeason = Math.max(0, Math.floor((today.getTime() - seasonStart.getTime()) / (1000 * 60 * 60 * 24)));
+  const daysRemaining = Math.max(0, Math.floor((seasonEnd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)));
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold text-gray-800">Today — {getTodayIST()}</h2>
         <div className="flex items-center gap-2">
-          <span className="bg-green-100 text-green-700 text-xs font-medium px-2.5 py-1 rounded-full">{season.emoji} {season.label}</span>
+          <div className="text-right">
+            <span className="bg-green-100 text-green-700 text-xs font-medium px-2.5 py-1 rounded-full">{season.emoji} {season.label}</span>
+            <p className="text-xs text-gray-400 mt-0.5">Day {daysIntoSeason} · {daysRemaining}d left</p>
+          </div>
           <button onClick={onRefresh} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"><RefreshCw size={15} /></button>
         </div>
       </div>
@@ -120,6 +137,15 @@ function AgDashboard({ bunkId, products, customers, onRefresh }: { bunkId: strin
                 <p className="text-xs text-gray-400 mt-0.5">{c.sub}</p>
               </div>
             ))}
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-xs text-gray-500">📦 Inventory Value</p>
+              <p className="text-xl font-bold text-green-700 mt-0.5">{inr(stockValue)}</p>
+              <p className="text-xs text-gray-400 mt-0.5">at purchase rate</p>
+            </div>
+            <Package size={28} className="text-green-200" />
           </div>
 
           {lowStock.length > 0 && (
@@ -155,6 +181,24 @@ function AgDashboard({ bunkId, products, customers, onRefresh }: { bunkId: strin
               <p className="text-sm text-gray-400 py-2">✅ No outstanding dues</p>
             )}
           </div>
+
+          {overdueCustomers.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle size={15} className="text-red-600" />
+                <span className="text-sm font-semibold text-red-800">⚠️ {overdueCustomers.length} farmer{overdueCustomers.length > 1 ? 's' : ''} overdue 30+ days — {inr(overdueTotal)} pending</span>
+              </div>
+              <div className="space-y-1">
+                {overdueCustomers.slice(0, 5).map(c => (
+                  <div key={c.id} className="flex justify-between text-xs">
+                    <span className="text-red-700">{c.name}{c.village ? ` (${c.village})` : ''}</span>
+                    <span className="font-semibold text-red-800">{inr(c.outstanding_amount)}</span>
+                  </div>
+                ))}
+                {overdueCustomers.length > 5 && <p className="text-xs text-red-500">+{overdueCustomers.length - 5} more</p>}
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -169,9 +213,29 @@ function AgInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{ msg: string; onYes: () => void } | null>(null);
+  const [adjustModal, setAdjustModal] = useState<AgProduct | null>(null);
+  const [adjustType, setAdjustType] = useState<'+' | '-'>('+');
+  const [adjustQty, setAdjustQty] = useState('');
+  const [adjustReason, setAdjustReason] = useState('Physical count');
+  const [adjustSaving, setAdjustSaving] = useState(false);
   const blank = { name: '', category: 'Fertilizer', unit: 'bag', purchase_rate: '', selling_rate: '', stock_qty: '', low_stock_at: '5', hsn_code: '' };
   const [form, setForm] = useState(blank);
   const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  async function handleAdjust() {
+    if (!adjustModal) return;
+    const qty = parseFloat(adjustQty) || 0;
+    if (qty <= 0) return;
+    setAdjustSaving(true);
+    const { data: fresh } = await supabase.from('ag_products').select('stock_qty').eq('id', adjustModal.id).eq('bunk_id', bunkId).maybeSingle();
+    const current = fresh ? Number(fresh.stock_qty) : Number(adjustModal.stock_qty);
+    const newQty = adjustType === '+' ? current + qty : Math.max(0, current - qty);
+    const { error } = await supabase.from('ag_products').update({ stock_qty: newQty }).eq('id', adjustModal.id).eq('bunk_id', bunkId);
+    setAdjustSaving(false);
+    if (error) { showToast(error.message, 'error'); return; }
+    showToast(`Stock updated: ${adjustType}${qty} (${adjustReason})`);
+    setAdjustModal(null); setAdjustQty(''); onRefresh();
+  }
 
   const filtered = products.filter(p =>
     (catFilter === 'All' || p.category === catFilter) &&
@@ -271,6 +335,7 @@ function AgInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
                     <td className="px-4 py-2 text-right text-gray-500">{inr(p.purchase_rate)}</td>
                     <td className="px-4 py-2 text-right font-medium">{inr(p.selling_rate)}</td>
                     <td className="px-4 py-2 text-right whitespace-nowrap">
+                      <button onClick={() => { setAdjustModal(p); setAdjustType('+'); setAdjustQty(''); setAdjustReason('Physical count'); }} className="text-green-600 hover:text-green-800 p-1 text-xs font-medium border border-green-200 rounded px-1.5 mr-1">±</button>
                       <button onClick={() => { setEditId(p.id); setForm({ name: p.name, category: p.category, unit: p.unit, purchase_rate: String(p.purchase_rate), selling_rate: String(p.selling_rate), stock_qty: String(p.stock_qty), low_stock_at: String(p.low_stock_at), hsn_code: p.hsn_code || '' }); setShowForm(true); }} className="text-blue-500 hover:text-blue-700 p-1">✏️</button>
                       <button onClick={() => handleDelete(p)} className="text-red-500 hover:text-red-700 p-1"><Trash2 size={13} /></button>
                     </td>
@@ -289,6 +354,39 @@ function AgInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
             <div className="flex gap-3">
               <button onClick={() => setConfirmModal(null)} className="flex-1 px-4 py-2 border rounded-lg">Cancel</button>
               <button onClick={() => { confirmModal.onYes(); setConfirmModal(null); }} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg">Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {adjustModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 space-y-4">
+            <h3 className="font-bold text-gray-800">Adjust Stock — {adjustModal.name}</h3>
+            <p className="text-sm text-gray-500">Current: <strong>{adjustModal.stock_qty} {adjustModal.unit}</strong></p>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Adjust Type</label>
+              <div className="flex gap-2">
+                <button onClick={() => setAdjustType('+')} className={`flex-1 py-2 text-sm font-semibold rounded-lg transition ${adjustType === '+' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>+ Add</button>
+                <button onClick={() => setAdjustType('-')} className={`flex-1 py-2 text-sm font-semibold rounded-lg transition ${adjustType === '-' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>- Remove</button>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Quantity</label>
+              <input type="number" min="0.1" step="0.1" value={adjustQty} onChange={e => setAdjustQty(e.target.value)} autoFocus placeholder="0" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-1 block">Reason</label>
+              <select value={adjustReason} onChange={e => setAdjustReason(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-400">
+                {['Damage', 'Expired', 'Physical count', 'Other'].map(r => <option key={r}>{r}</option>)}
+              </select>
+            </div>
+            {adjustQty && parseFloat(adjustQty) > 0 && (
+              <p className="text-xs text-gray-500">New stock: <strong>{adjustType === '+' ? Number(adjustModal.stock_qty) + parseFloat(adjustQty) : Math.max(0, Number(adjustModal.stock_qty) - parseFloat(adjustQty))} {adjustModal.unit}</strong></p>
+            )}
+            <div className="flex gap-2">
+              <button onClick={handleAdjust} disabled={adjustSaving} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-xl font-semibold text-sm disabled:opacity-50 transition">{adjustSaving ? 'Saving…' : 'Apply Adjustment'}</button>
+              <button onClick={() => setAdjustModal(null)} className="border border-gray-300 text-gray-600 px-4 rounded-xl text-sm hover:bg-gray-50">Cancel</button>
             </div>
           </div>
         </div>
@@ -506,9 +604,25 @@ function AgFarmers({ bunkId, customers, onRefresh, showToast }: { bunkId: string
   const [saving, setSaving] = useState(false);
   const [payments, setPayments] = useState<AgPayment[]>([]);
   const [confirmModal, setConfirmModal] = useState<{ msg: string; onYes: () => void } | null>(null);
+  const [ledgerCustomer, setLedgerCustomer] = useState<AgCustomer | null>(null);
+  const [ledgerSales, setLedgerSales] = useState<AgSale[]>([]);
+  const [ledgerPayments, setLedgerPayments] = useState<AgPayment[]>([]);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
   const blank = { name: '', phone: '', village: '', land_area: '', credit_limit: '0' };
   const [form, setForm] = useState(blank);
   const setF = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  async function openLedger(c: AgCustomer) {
+    setLedgerCustomer(c);
+    setLedgerLoading(true);
+    const [salesRes, payRes] = await Promise.all([
+      supabase.from('ag_sales').select('*').eq('bunk_id', bunkId).eq('customer_id', c.id).order('date', { ascending: false }).limit(20),
+      supabase.from('ag_payments').select('*').eq('bunk_id', bunkId).eq('customer_id', c.id).order('payment_date', { ascending: false }).limit(20),
+    ]);
+    setLedgerSales(salesRes.data || []);
+    setLedgerPayments(payRes.data || []);
+    setLedgerLoading(false);
+  }
 
   const active = customers.filter(c => c.is_active !== false);
   const filtered = active.filter(c =>
@@ -625,6 +739,7 @@ function AgFarmers({ bunkId, customers, onRefresh, showToast }: { bunkId: string
                 <div className="flex gap-2 mt-3 flex-wrap">
                   <button onClick={() => { setEditId(c.id); setForm({ name: c.name, phone: c.phone || '', village: c.village || '', land_area: c.land_area || '', credit_limit: String(c.credit_limit || 0) }); setShowForm(true); }} className="border border-gray-200 text-gray-600 px-3 py-1 rounded-lg text-xs hover:bg-gray-50">✏️ Edit</button>
                   {(c.outstanding_amount || 0) > 0 && <button onClick={() => { setPayModal(c); setPayAmount(''); setPayNote(''); }} className="bg-green-100 hover:bg-green-200 text-green-700 px-3 py-1 rounded-lg text-xs font-medium">💳 Collect Payment</button>}
+                  <button onClick={() => openLedger(c)} className="border border-blue-200 text-blue-600 px-3 py-1 rounded-lg text-xs hover:bg-blue-50">📒 View Ledger</button>
                   <button onClick={() => deactivateFarmer(c)} className="border border-red-200 text-red-500 px-3 py-1 rounded-lg text-xs hover:bg-red-50">Deactivate</button>
                 </div>
               </div>
@@ -648,6 +763,58 @@ function AgFarmers({ bunkId, customers, onRefresh, showToast }: { bunkId: string
                 <div className="flex gap-2">
                   <button onClick={handlePayment} disabled={saving} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-xl font-semibold text-sm disabled:opacity-50">{saving ? 'Saving…' : 'Record Payment'}</button>
                   <button onClick={() => setPayModal(null)} className="border border-gray-300 text-gray-600 px-4 rounded-xl text-sm hover:bg-gray-50">Cancel</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {ledgerCustomer && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+              <div className="bg-white rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh]">
+                <div className="p-5 border-b border-gray-100 flex justify-between items-start">
+                  <div>
+                    <h3 className="font-bold text-gray-800">📒 Ledger — {ledgerCustomer.name}</h3>
+                    <p className="text-xs text-gray-500">{[ledgerCustomer.village, ledgerCustomer.phone].filter(Boolean).join(' · ')}</p>
+                  </div>
+                  <button onClick={() => setLedgerCustomer(null)} className="text-gray-400 hover:text-gray-600 text-xl font-bold">×</button>
+                </div>
+                <div className="overflow-y-auto flex-1 p-4">
+                  {ledgerLoading ? (
+                    <p className="text-center py-8 text-gray-400 text-sm">Loading…</p>
+                  ) : (() => {
+                    const totalSold = ledgerSales.reduce((a, s) => a + Number(s.total || 0), 0);
+                    const totalPaid = ledgerPayments.reduce((a, p) => a + Number(p.amount || 0), 0);
+                    const balance = totalSold - totalPaid;
+                    type LedgerEntry = { date: string; type: 'sale' | 'payment'; label: string; amount: number; mode: string; id: string; };
+                    const entries: LedgerEntry[] = [
+                      ...ledgerSales.map(s => ({ date: s.date, type: 'sale' as const, label: `Sale: ${s.items?.length || 0} item(s)${s.items?.length ? ' — ' + s.items.slice(0, 2).map(i => i.name).join(', ') : ''}`, amount: s.total, mode: s.payment_mode, id: s.id })),
+                      ...ledgerPayments.map(p => ({ date: p.payment_date, type: 'payment' as const, label: `Payment received`, amount: p.amount, mode: p.payment_mode, id: p.id })),
+                    ].sort((a, b) => b.date.localeCompare(a.date));
+                    return (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-3 gap-2 mb-3">
+                          <div className="bg-red-50 rounded-lg p-2.5 text-center"><p className="text-xs text-gray-500">Total Sold</p><p className="font-bold text-red-600 text-sm">{inr(totalSold)}</p></div>
+                          <div className="bg-green-50 rounded-lg p-2.5 text-center"><p className="text-xs text-gray-500">Total Paid</p><p className="font-bold text-green-600 text-sm">{inr(totalPaid)}</p></div>
+                          <div className="bg-amber-50 rounded-lg p-2.5 text-center"><p className="text-xs text-gray-500">Balance</p><p className="font-bold text-amber-700 text-sm">{inr(balance)}</p></div>
+                        </div>
+                        {entries.length === 0 && <p className="text-center py-6 text-gray-400 text-sm">No transactions yet</p>}
+                        {entries.map(e => (
+                          <div key={e.id} className={`flex justify-between items-start p-3 rounded-xl ${e.type === 'sale' ? 'bg-red-50 border border-red-100' : 'bg-green-50 border border-green-100'}`}>
+                            <div>
+                              <p className="text-xs font-semibold text-gray-700">{e.label}</p>
+                              <p className="text-xs text-gray-400 mt-0.5">{e.date} · {e.mode}</p>
+                            </div>
+                            <span className={`text-sm font-bold ${e.type === 'sale' ? 'text-red-600' : 'text-green-600'}`}>
+                              {e.type === 'sale' ? '-' : '+'}{inr(e.amount)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+                <div className="p-4 border-t border-gray-100">
+                  <button onClick={() => setLedgerCustomer(null)} className="w-full border border-gray-300 text-gray-600 py-2 rounded-xl text-sm hover:bg-gray-50">Close</button>
                 </div>
               </div>
             </div>
@@ -995,6 +1162,366 @@ function AgSettings({ bunkId, onLogout, showToast }: { bunkId: string; onLogout:
   );
 }
 
+// ── Onboarding Wizard ──────────────────────────────────────────────────────
+interface OnboardingProduct { name: string; unit: string; category: string; purchase_rate: number; selling_rate: number; stock_qty: number; included: boolean; }
+interface OnboardingFarmer { name: string; phone: string; village: string; outstanding: number; included: boolean; }
+
+const ONBOARDING_FERTILIZERS: OnboardingProduct[] = [
+  { name: 'Urea 50kg', unit: 'bag', category: 'Fertilizer', purchase_rate: 240, selling_rate: 266, stock_qty: 0, included: true },
+  { name: 'DAP 50kg', unit: 'bag', category: 'Fertilizer', purchase_rate: 1200, selling_rate: 1350, stock_qty: 0, included: true },
+  { name: 'MOP 50kg', unit: 'bag', category: 'Fertilizer', purchase_rate: 700, selling_rate: 800, stock_qty: 0, included: true },
+  { name: 'NPK 50kg', unit: 'bag', category: 'Fertilizer', purchase_rate: 1100, selling_rate: 1250, stock_qty: 0, included: true },
+  { name: 'SSP 50kg', unit: 'bag', category: 'Fertilizer', purchase_rate: 320, selling_rate: 380, stock_qty: 0, included: true },
+  { name: 'Zinc Sulphate 5kg', unit: 'bag', category: 'Fertilizer', purchase_rate: 180, selling_rate: 220, stock_qty: 0, included: true },
+  { name: 'Boron 1kg', unit: 'packet', category: 'Fertilizer', purchase_rate: 120, selling_rate: 150, stock_qty: 0, included: true },
+];
+const ONBOARDING_SEEDS: OnboardingProduct[] = [
+  { name: 'Paddy Seeds (BPT) 5kg', unit: 'packet', category: 'Seeds', purchase_rate: 200, selling_rate: 250, stock_qty: 0, included: true },
+  { name: 'Cotton Seeds 450g', unit: 'packet', category: 'Seeds', purchase_rate: 750, selling_rate: 900, stock_qty: 0, included: true },
+  { name: 'Maize Seeds 5kg', unit: 'packet', category: 'Seeds', purchase_rate: 350, selling_rate: 420, stock_qty: 0, included: true },
+  { name: 'Groundnut Seeds 10kg', unit: 'kg', category: 'Seeds', purchase_rate: 80, selling_rate: 100, stock_qty: 0, included: true },
+  { name: 'Chilli Seeds 100g', unit: 'packet', category: 'Seeds', purchase_rate: 150, selling_rate: 200, stock_qty: 0, included: true },
+  { name: 'Tomato Seeds 50g', unit: 'packet', category: 'Seeds', purchase_rate: 80, selling_rate: 110, stock_qty: 0, included: true },
+  { name: 'Sunflower Seeds 5kg', unit: 'packet', category: 'Seeds', purchase_rate: 300, selling_rate: 380, stock_qty: 0, included: true },
+];
+const ONBOARDING_PESTICIDES: OnboardingProduct[] = [
+  { name: 'Chlorpyrifos 500ml', unit: 'bottle', category: 'Pesticide', purchase_rate: 180, selling_rate: 220, stock_qty: 0, included: true },
+  { name: 'Imidacloprid 100ml', unit: 'bottle', category: 'Pesticide', purchase_rate: 150, selling_rate: 190, stock_qty: 0, included: true },
+  { name: 'Profenofos 1L', unit: 'bottle', category: 'Pesticide', purchase_rate: 350, selling_rate: 420, stock_qty: 0, included: true },
+  { name: 'Acephate 75g', unit: 'packet', category: 'Pesticide', purchase_rate: 80, selling_rate: 100, stock_qty: 0, included: true },
+  { name: 'Pendimethalin 1L', unit: 'bottle', category: 'Herbicide', purchase_rate: 280, selling_rate: 340, stock_qty: 0, included: true },
+  { name: '2,4-D 500ml', unit: 'bottle', category: 'Herbicide', purchase_rate: 120, selling_rate: 150, stock_qty: 0, included: true },
+  { name: 'Glyphosate 1L', unit: 'bottle', category: 'Herbicide', purchase_rate: 200, selling_rate: 250, stock_qty: 0, included: true },
+];
+const ONBOARDING_OTHERS: OnboardingProduct[] = [
+  { name: 'Neemicide 1L', unit: 'bottle', category: 'Bio-product', purchase_rate: 150, selling_rate: 190, stock_qty: 0, included: true },
+  { name: 'Trichoderma 500g', unit: 'packet', category: 'Bio-product', purchase_rate: 80, selling_rate: 100, stock_qty: 0, included: true },
+  { name: 'Sprayer Hand 16L', unit: 'piece', category: 'Tool', purchase_rate: 800, selling_rate: 1000, stock_qty: 0, included: true },
+  { name: 'PP Bags 100nos', unit: 'piece', category: 'Other', purchase_rate: 150, selling_rate: 200, stock_qty: 0, included: true },
+];
+
+function ProductTable({ rows, setRows }: { rows: OnboardingProduct[]; setRows: (r: OnboardingProduct[]) => void }) {
+  const [customRow, setCustomRow] = useState({ name: '', unit: 'bag', category: 'Other', purchase_rate: '', selling_rate: '', stock_qty: '' });
+
+  function updateRow(i: number, field: keyof OnboardingProduct, val: string | number | boolean) {
+    const updated = rows.map((r, idx) => idx === i ? { ...r, [field]: val } : r);
+    setRows(updated);
+  }
+
+  function addCustom() {
+    if (!customRow.name.trim()) return;
+    setRows([...rows, {
+      name: customRow.name.trim(),
+      unit: customRow.unit,
+      category: customRow.category,
+      purchase_rate: parseFloat(customRow.purchase_rate) || 0,
+      selling_rate: parseFloat(customRow.selling_rate) || 0,
+      stock_qty: parseFloat(customRow.stock_qty) || 0,
+      included: true,
+    }]);
+    setCustomRow({ name: '', unit: 'bag', category: 'Other', purchase_rate: '', selling_rate: '', stock_qty: '' });
+  }
+
+  const stockValue = rows.filter(r => r.included).reduce((a, r) => a + r.stock_qty * r.purchase_rate, 0);
+
+  return (
+    <div className="space-y-2">
+      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+        <table className="w-full text-xs">
+          <thead className="bg-green-50 text-gray-600 uppercase text-xs">
+            <tr>
+              <th className="px-2 py-2 text-center w-8">Inc.</th>
+              <th className="px-2 py-2 text-left">Product</th>
+              <th className="px-2 py-2 text-right w-20">Qty</th>
+              <th className="px-2 py-2 text-right w-20">Buy ₹</th>
+              <th className="px-2 py-2 text-right w-20">Sell ₹</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} className={`border-t border-gray-100 ${r.included ? '' : 'opacity-40'}`}>
+                <td className="px-2 py-1.5 text-center">
+                  <input type="checkbox" checked={r.included} onChange={e => updateRow(i, 'included', e.target.checked)} className="accent-green-600" />
+                </td>
+                <td className="px-2 py-1.5">
+                  <input value={r.name} onChange={e => updateRow(i, 'name', e.target.value)} className="w-full border-0 text-xs text-gray-800 font-medium bg-transparent focus:outline-none focus:ring-1 focus:ring-green-400 rounded px-1" />
+                </td>
+                <td className="px-2 py-1.5">
+                  <input type="number" min="0" value={r.stock_qty || ''} onChange={e => updateRow(i, 'stock_qty', parseFloat(e.target.value) || 0)} placeholder="0" className="w-full border border-gray-200 rounded px-1 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-green-400" />
+                </td>
+                <td className="px-2 py-1.5">
+                  <input type="number" min="0" value={r.purchase_rate || ''} onChange={e => updateRow(i, 'purchase_rate', parseFloat(e.target.value) || 0)} className="w-full border border-gray-200 rounded px-1 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-green-400" />
+                </td>
+                <td className="px-2 py-1.5">
+                  <input type="number" min="0" value={r.selling_rate || ''} onChange={e => updateRow(i, 'selling_rate', parseFloat(e.target.value) || 0)} className="w-full border border-gray-200 rounded px-1 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-green-400" />
+                </td>
+              </tr>
+            ))}
+            <tr className="border-t-2 border-green-200 bg-green-50">
+              <td className="px-2 py-1.5 text-center text-green-500 font-bold">+</td>
+              <td className="px-2 py-1.5">
+                <input value={customRow.name} onChange={e => setCustomRow(c => ({ ...c, name: e.target.value }))} placeholder="Add custom…" className="w-full border border-green-300 rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-green-400" />
+              </td>
+              <td className="px-2 py-1.5">
+                <input type="number" min="0" value={customRow.stock_qty} onChange={e => setCustomRow(c => ({ ...c, stock_qty: e.target.value }))} placeholder="0" className="w-full border border-green-300 rounded px-1 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-green-400" />
+              </td>
+              <td className="px-2 py-1.5">
+                <input type="number" min="0" value={customRow.purchase_rate} onChange={e => setCustomRow(c => ({ ...c, purchase_rate: e.target.value }))} placeholder="0" className="w-full border border-green-300 rounded px-1 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-green-400" />
+              </td>
+              <td className="px-2 py-1.5">
+                <div className="flex gap-1">
+                  <input type="number" min="0" value={customRow.selling_rate} onChange={e => setCustomRow(c => ({ ...c, selling_rate: e.target.value }))} placeholder="0" className="w-full border border-green-300 rounded px-1 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-green-400" />
+                  <button onClick={addCustom} className="bg-green-600 text-white px-1.5 rounded text-xs hover:bg-green-700">Add</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-green-700 font-medium text-right">Total inventory value: {inr(stockValue)}</p>
+    </div>
+  );
+}
+
+function AgricultureOnboarding({ bunkId, onComplete }: { bunkId: string; onComplete: () => void }) {
+  const [step, setStep] = useState(1);
+  const TOTAL_STEPS = 7;
+  const [fertilizers, setFertilizers] = useState<OnboardingProduct[]>(ONBOARDING_FERTILIZERS.map(r => ({ ...r })));
+  const [seeds, setSeeds] = useState<OnboardingProduct[]>(ONBOARDING_SEEDS.map(r => ({ ...r })));
+  const [pesticides, setPesticides] = useState<OnboardingProduct[]>(ONBOARDING_PESTICIDES.map(r => ({ ...r })));
+  const [others, setOthers] = useState<OnboardingProduct[]>(ONBOARDING_OTHERS.map(r => ({ ...r })));
+  const [farmers, setFarmers] = useState<OnboardingFarmer[]>([
+    { name: '', phone: '', village: '', outstanding: 0, included: true },
+    { name: '', phone: '', village: '', outstanding: 0, included: true },
+    { name: '', phone: '', village: '', outstanding: 0, included: true },
+    { name: '', phone: '', village: '', outstanding: 0, included: true },
+    { name: '', phone: '', village: '', outstanding: 0, included: true },
+  ]);
+  const [saving, setSaving] = useState(false);
+
+  const allProducts = [...fertilizers, ...seeds, ...pesticides, ...others];
+  const includedProducts = allProducts.filter(p => p.included);
+  const includedFarmers = farmers.filter(f => f.included && f.name.trim());
+
+  const countByCategory = (cat: string) => includedProducts.filter(p => p.category === cat).length;
+  const totalInventoryValue = includedProducts.reduce((a, p) => a + p.stock_qty * p.purchase_rate, 0);
+
+  function updateFarmer(i: number, field: keyof OnboardingFarmer, val: string | number | boolean) {
+    setFarmers(prev => prev.map((f, idx) => idx === i ? { ...f, [field]: val } : f));
+  }
+
+  async function handleLaunch() {
+    setSaving(true);
+    try {
+      if (includedProducts.length > 0) {
+        const productRows = includedProducts.map(p => ({
+          bunk_id: bunkId,
+          name: p.name,
+          category: p.category,
+          unit: p.unit,
+          purchase_rate: p.purchase_rate,
+          selling_rate: p.selling_rate,
+          stock_qty: p.stock_qty,
+          low_stock_at: 5,
+          hsn_code: '',
+        }));
+        await supabase.from('ag_products').insert(productRows);
+      }
+      if (includedFarmers.length > 0) {
+        const farmerRows = includedFarmers.map(f => ({
+          bunk_id: bunkId,
+          name: f.name.trim(),
+          phone: f.phone.trim(),
+          village: f.village.trim(),
+          land_area: '',
+          credit_limit: 0,
+          outstanding_amount: f.outstanding || 0,
+          is_active: true,
+        }));
+        await supabase.from('ag_customers').insert(farmerRows);
+      }
+      onComplete();
+    } catch {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-green-50 flex flex-col">
+      <div className="bg-green-700 text-white px-4 py-4 shadow">
+        <h1 className="font-bold text-lg">🌾 Agro Shop AI</h1>
+        <p className="text-green-200 text-xs mt-0.5">Store Setup</p>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-2xl mx-auto px-4 py-4">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-xs text-green-700 font-semibold">Step {step} of {TOTAL_STEPS}</span>
+            <div className="flex-1 bg-green-200 rounded-full h-1.5">
+              <div className="bg-green-600 h-1.5 rounded-full transition-all" style={{ width: `${(step / TOTAL_STEPS) * 100}%` }} />
+            </div>
+          </div>
+
+          {step === 1 && (
+            <div className="bg-white rounded-2xl p-8 text-center shadow-sm space-y-4">
+              <div className="text-6xl">🌾</div>
+              <h2 className="text-2xl font-bold text-gray-800">Welcome to Agro Shop AI</h2>
+              <p className="text-gray-500">Let's set up your store in 5 minutes. We'll add your inventory, farmers, and you're ready to go.</p>
+              <button onClick={() => setStep(2)} className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-semibold text-base transition mt-4">
+                Let's Start →
+              </button>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="space-y-3">
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">Fertilizers</h2>
+                <p className="text-sm text-gray-500">Toggle items you stock, fill in quantities and rates.</p>
+              </div>
+              <ProductTable rows={fertilizers} setRows={setFertilizers} />
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="space-y-3">
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">Seeds</h2>
+                <p className="text-sm text-gray-500">Select seeds you carry and add stock details.</p>
+              </div>
+              <ProductTable rows={seeds} setRows={setSeeds} />
+            </div>
+          )}
+
+          {step === 4 && (
+            <div className="space-y-3">
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">Pesticides & Herbicides</h2>
+                <p className="text-sm text-gray-500">Add the pesticides and herbicides you stock.</p>
+              </div>
+              <ProductTable rows={pesticides} setRows={setPesticides} />
+            </div>
+          )}
+
+          {step === 5 && (
+            <div className="space-y-3">
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">Other Items</h2>
+                <p className="text-sm text-gray-500">Bio-products, tools, and any other items.</p>
+              </div>
+              <ProductTable rows={others} setRows={setOthers} />
+            </div>
+          )}
+
+          {step === 6 && (
+            <div className="space-y-3">
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">Add Your Regular Farmers</h2>
+                <p className="text-sm text-gray-500">Add up to 5 farmers. You can add more later.</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-green-50 text-gray-600 uppercase">
+                    <tr>
+                      <th className="px-2 py-2 text-center w-8">Inc.</th>
+                      <th className="px-2 py-2 text-left">Name</th>
+                      <th className="px-2 py-2 text-left">Phone</th>
+                      <th className="px-2 py-2 text-left">Village</th>
+                      <th className="px-2 py-2 text-right">Outstanding ₹</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {farmers.map((f, i) => (
+                      <tr key={i} className={`border-t border-gray-100 ${f.included ? '' : 'opacity-40'}`}>
+                        <td className="px-2 py-1.5 text-center">
+                          <input type="checkbox" checked={f.included} onChange={e => updateFarmer(i, 'included', e.target.checked)} className="accent-green-600" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input value={f.name} onChange={e => updateFarmer(i, 'name', e.target.value)} placeholder="Farmer name" className="w-full border border-gray-200 rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-green-400" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input value={f.phone} onChange={e => updateFarmer(i, 'phone', e.target.value)} placeholder="Phone" className="w-full border border-gray-200 rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-green-400" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input value={f.village} onChange={e => updateFarmer(i, 'village', e.target.value)} placeholder="Village" className="w-full border border-gray-200 rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-green-400" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input type="number" min="0" value={f.outstanding || ''} onChange={e => updateFarmer(i, 'outstanding', parseFloat(e.target.value) || 0)} placeholder="0" className="w-full border border-gray-200 rounded px-1 py-0.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-green-400" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {step === 7 && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">Summary & Launch</h2>
+                <p className="text-sm text-gray-500">Review what will be added to your store.</p>
+              </div>
+              <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                    <span className="text-sm text-gray-600">Total products</span>
+                    <span className="font-bold text-green-700">{includedProducts.length}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-xs text-gray-500">Fertilizers</span>
+                    <span className="text-xs font-medium">{countByCategory('Fertilizer')}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-xs text-gray-500">Seeds</span>
+                    <span className="text-xs font-medium">{countByCategory('Seeds')}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-xs text-gray-500">Pesticides</span>
+                    <span className="text-xs font-medium">{countByCategory('Pesticide')}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-xs text-gray-500">Herbicides</span>
+                    <span className="text-xs font-medium">{countByCategory('Herbicide')}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-xs text-gray-500">Bio-products & Others</span>
+                    <span className="text-xs font-medium">{countByCategory('Bio-product') + countByCategory('Tool') + countByCategory('Other')}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-t border-gray-100">
+                    <span className="text-sm text-gray-600">Inventory value (at purchase rate)</span>
+                    <span className="font-bold text-green-700">{inr(totalInventoryValue)}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-t border-gray-100">
+                    <span className="text-sm text-gray-600">Farmers to add</span>
+                    <span className="font-bold text-green-700">{includedFarmers.length}</span>
+                  </div>
+                </div>
+              </div>
+              <button onClick={handleLaunch} disabled={saving} className="w-full bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white py-3.5 rounded-xl font-bold text-base transition">
+                {saving ? 'Setting up your store…' : '🚀 Launch My Store'}
+              </button>
+            </div>
+          )}
+
+          {step > 1 && (
+            <div className="flex gap-3 mt-4">
+              <button onClick={() => setStep(s => s - 1)} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl text-sm font-medium hover:bg-gray-50 transition">
+                ← Back
+              </button>
+              {step < TOTAL_STEPS && (
+                <button onClick={() => setStep(s => s + 1)} className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-xl text-sm font-semibold transition">
+                  Next →
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main App ───────────────────────────────────────────────────────────────
 export function AgricultureApp({ bunkId, onLogout, user }: { bunkId: string; onLogout: () => void; user: { name?: string; phone?: string } }) {
   const [tab, setTab] = useState('dashboard');
@@ -1002,6 +1529,7 @@ export function AgricultureApp({ bunkId, onLogout, user }: { bunkId: string; onL
   const [customers, setCustomers] = useState<AgCustomer[]>([]);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   function showToast(msg: string, type: 'success' | 'error' = 'success') {
     setToast({ msg, type });
@@ -1012,9 +1540,32 @@ export function AgricultureApp({ bunkId, onLogout, user }: { bunkId: string; onL
 
   useEffect(() => {
     if (!bunkId) return;
+    const key = `agOnboardingDone_${bunkId}`;
+    if (localStorage.getItem(key)) return;
+    supabase.from('ag_products').select('id').eq('bunk_id', bunkId).limit(1)
+      .then(({ data }) => {
+        if (!data || data.length === 0) setShowOnboarding(true);
+      });
+  }, [bunkId]);
+
+  useEffect(() => {
+    if (!bunkId) return;
     supabase.from('ag_products').select('*').eq('bunk_id', bunkId).order('category').order('name').then(({ data }) => setProducts(data || []));
     supabase.from('ag_customers').select('*').eq('bunk_id', bunkId).eq('is_active', true).order('name').then(({ data }) => setCustomers(data || []));
   }, [bunkId, refreshKey]);
+
+  if (showOnboarding) {
+    return (
+      <AgricultureOnboarding
+        bunkId={bunkId}
+        onComplete={() => {
+          localStorage.setItem(`agOnboardingDone_${bunkId}`, '1');
+          setShowOnboarding(false);
+          refresh();
+        }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">

@@ -59,6 +59,366 @@ interface CartItem { product: Product; quantity: number; price: number; }
 
 type Tab = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'purchases' | 'expenses' | 'reports' | 'settings';
 
+// ─── HardwareOnboarding wizard ─────────────────────────────────────────────────
+interface OnboardItem {
+  name: string; brand: string; category: string; unit: string;
+  purchase_price: number; selling_price: number; reorder_level: number;
+  stock_qty: number; included: boolean;
+}
+interface OnboardCustomer { name: string; phone: string; outstanding: number; }
+
+const ONBOARD_STEPS = ['Welcome', 'Cement & Concrete', 'Steel & Iron', 'Plumbing & Pipes', 'Electrical & Paints', 'Top Customers', 'Summary & Launch'];
+
+const CEMENT_ITEMS: Omit<OnboardItem, 'included' | 'stock_qty'>[] = [
+  { name: 'OPC Cement 50kg', brand: 'ACC/Ultratech', category: 'Cement & Concrete', unit: 'bag', purchase_price: 310, selling_price: 340, reorder_level: 20 },
+  { name: 'PPC Cement 50kg', brand: 'Dalmia/Shree', category: 'Cement & Concrete', unit: 'bag', purchase_price: 295, selling_price: 325, reorder_level: 20 },
+  { name: 'White Cement 5kg', brand: 'JK White', category: 'Cement & Concrete', unit: 'bag', purchase_price: 150, selling_price: 180, reorder_level: 10 },
+  { name: 'M-Sand (Gravel)', brand: '', category: 'Cement & Concrete', unit: 'brass', purchase_price: 900, selling_price: 1100, reorder_level: 2 },
+  { name: 'River Sand', brand: '', category: 'Cement & Concrete', unit: 'brass', purchase_price: 1400, selling_price: 1700, reorder_level: 2 },
+  { name: 'Red Bricks (1000 nos)', brand: '', category: 'Cement & Concrete', unit: 'piece', purchase_price: 5500, selling_price: 6500, reorder_level: 5 },
+];
+const STEEL_ITEMS: Omit<OnboardItem, 'included' | 'stock_qty'>[] = [
+  { name: 'TMT Saria 8mm (bundle)', brand: 'Jsw/Vizag', category: 'Steel & Iron', unit: 'ton', purchase_price: 54000, selling_price: 58000, reorder_level: 2 },
+  { name: 'TMT Saria 10mm (bundle)', brand: 'Jsw/Vizag', category: 'Steel & Iron', unit: 'ton', purchase_price: 54000, selling_price: 58000, reorder_level: 2 },
+  { name: 'TMT Saria 12mm (bundle)', brand: 'Jsw/Vizag', category: 'Steel & Iron', unit: 'ton', purchase_price: 53500, selling_price: 57500, reorder_level: 1 },
+  { name: 'MS Square Pipe 25×25mm (6m)', brand: '', category: 'Steel & Iron', unit: 'piece', purchase_price: 350, selling_price: 420, reorder_level: 10 },
+  { name: 'MS Flat Bar 25mm (6m)', brand: '', category: 'Steel & Iron', unit: 'piece', purchase_price: 280, selling_price: 340, reorder_level: 10 },
+  { name: 'GI Wire 16 gauge (kg)', brand: '', category: 'Steel & Iron', unit: 'kg', purchase_price: 62, selling_price: 75, reorder_level: 50 },
+];
+const PLUMBING_ITEMS: Omit<OnboardItem, 'included' | 'stock_qty'>[] = [
+  { name: 'PVC Pipe 3/4" (3m)', brand: 'Ashirvad/Finolex', category: 'Plumbing', unit: 'piece', purchase_price: 65, selling_price: 80, reorder_level: 20 },
+  { name: 'PVC Pipe 1" (3m)', brand: 'Ashirvad/Finolex', category: 'Plumbing', unit: 'piece', purchase_price: 95, selling_price: 120, reorder_level: 20 },
+  { name: 'CPVC Pipe 1/2" (3m)', brand: 'Astral', category: 'Plumbing', unit: 'piece', purchase_price: 120, selling_price: 150, reorder_level: 10 },
+  { name: 'PVC Ball Valve 3/4"', brand: '', category: 'Plumbing', unit: 'piece', purchase_price: 40, selling_price: 55, reorder_level: 20 },
+  { name: 'Water Tank 500L', brand: 'Sintex', category: 'Plumbing', unit: 'piece', purchase_price: 1500, selling_price: 1850, reorder_level: 2 },
+];
+const ELECTRICAL_ITEMS: Omit<OnboardItem, 'included' | 'stock_qty'>[] = [
+  { name: 'Wire 2.5mm (90m roll)', brand: 'Polycab/Finolex', category: 'Electrical', unit: 'roll', purchase_price: 1200, selling_price: 1450, reorder_level: 3 },
+  { name: 'Wire 4mm (90m roll)', brand: 'Polycab/Finolex', category: 'Electrical', unit: 'roll', purchase_price: 1800, selling_price: 2100, reorder_level: 2 },
+  { name: 'MCB 32A Single Pole', brand: 'Havells/Schneider', category: 'Electrical', unit: 'piece', purchase_price: 85, selling_price: 110, reorder_level: 10 },
+  { name: 'Interior Paint 20L', brand: 'Asian/Berger', category: 'Paint', unit: 'piece', purchase_price: 1400, selling_price: 1700, reorder_level: 3 },
+  { name: 'Exterior Emulsion 20L', brand: 'Asian/Berger', category: 'Paint', unit: 'piece', purchase_price: 1800, selling_price: 2200, reorder_level: 2 },
+  { name: 'Primer 4L', brand: '', category: 'Paint', unit: 'piece', purchase_price: 320, selling_price: 400, reorder_level: 5 },
+];
+
+function toOnboardItems(base: Omit<OnboardItem, 'included' | 'stock_qty'>[]): OnboardItem[] {
+  return base.map(b => ({ ...b, included: true, stock_qty: 0 }));
+}
+
+function OnboardItemTable({ items, onChange }: { items: OnboardItem[]; onChange: (items: OnboardItem[]) => void }) {
+  function update(i: number, field: keyof OnboardItem, value: string | number | boolean) {
+    const next = items.map((item, idx) => idx === i ? { ...item, [field]: value } : item);
+    onChange(next);
+  }
+  function addCustom() {
+    onChange([...items, { name: '', brand: '', category: items[0]?.category || 'Other', unit: 'piece', purchase_price: 0, selling_price: 0, reorder_level: 5, stock_qty: 0, included: true }]);
+  }
+  const inventoryValue = items.filter(it => it.included).reduce((a, it) => a + Number(it.stock_qty || 0) * Number(it.purchase_price || 0), 0);
+
+  return (
+    <div className="space-y-2">
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="bg-gray-50 text-gray-500 uppercase">
+              <th className="px-2 py-2 text-center w-8"></th>
+              <th className="px-2 py-2 text-left">Name</th>
+              <th className="px-2 py-2 text-right w-20">Stock</th>
+              <th className="px-2 py-2 text-right w-24">Buy ₹</th>
+              <th className="px-2 py-2 text-right w-24">Sell ₹</th>
+              <th className="px-2 py-2 text-left w-20">Unit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item, i) => (
+              <tr key={i} className={`border-t border-gray-100 ${item.included ? '' : 'opacity-40'}`}>
+                <td className="px-2 py-1.5 text-center">
+                  <input type="checkbox" checked={item.included} onChange={e => update(i, 'included', e.target.checked)} className="w-4 h-4 text-blue-600 rounded" />
+                </td>
+                <td className="px-2 py-1.5">
+                  <input value={item.name} onChange={e => update(i, 'name', e.target.value)} className="w-full border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 min-w-[140px]" placeholder="Product name" />
+                </td>
+                <td className="px-2 py-1.5">
+                  <input type="number" min="0" value={item.stock_qty || ''} onChange={e => update(i, 'stock_qty', parseFloat(e.target.value) || 0)} placeholder="0" className="w-full border border-gray-200 rounded px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                </td>
+                <td className="px-2 py-1.5">
+                  <input type="number" min="0" value={item.purchase_price || ''} onChange={e => update(i, 'purchase_price', parseFloat(e.target.value) || 0)} placeholder="0" className="w-full border border-gray-200 rounded px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                </td>
+                <td className="px-2 py-1.5">
+                  <input type="number" min="0" value={item.selling_price || ''} onChange={e => update(i, 'selling_price', parseFloat(e.target.value) || 0)} placeholder="0" className="w-full border border-gray-200 rounded px-2 py-1 text-xs text-right focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                </td>
+                <td className="px-2 py-1.5">
+                  <select value={item.unit} onChange={e => update(i, 'unit', e.target.value)} className="w-full border border-gray-200 rounded px-1 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400">
+                    {UNITS.map(u => <option key={u}>{u}</option>)}
+                  </select>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <button onClick={addCustom} className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
+        <Plus size={12} /> Add custom item
+      </button>
+      {inventoryValue > 0 && (
+        <div className="bg-blue-50 rounded-lg px-3 py-2 text-xs text-blue-800 font-medium">
+          Inventory value: {inr(inventoryValue)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HardwareOnboarding({ bunkId, onComplete }: { bunkId: string; onComplete: () => void }) {
+  const [step, setStep] = useState(1);
+  const [saving, setSaving] = useState(false);
+
+  const [cementItems, setCementItems] = useState<OnboardItem[]>(() => toOnboardItems(CEMENT_ITEMS));
+  const [steelItems, setSteelItems] = useState<OnboardItem[]>(() => toOnboardItems(STEEL_ITEMS));
+  const [plumbingItems, setPlumbingItems] = useState<OnboardItem[]>(() => toOnboardItems(PLUMBING_ITEMS));
+  const [electricalItems, setElectricalItems] = useState<OnboardItem[]>(() => toOnboardItems(ELECTRICAL_ITEMS));
+
+  const [onboardCustomers, setOnboardCustomers] = useState<OnboardCustomer[]>([
+    { name: '', phone: '', outstanding: 0 },
+    { name: '', phone: '', outstanding: 0 },
+    { name: '', phone: '', outstanding: 0 },
+    { name: '', phone: '', outstanding: 0 },
+    { name: '', phone: '', outstanding: 0 },
+  ]);
+
+  const allItems = [...cementItems, ...steelItems, ...plumbingItems, ...electricalItems];
+  const includedItems = allItems.filter(it => it.included && it.name.trim());
+  const validCustomers = onboardCustomers.filter(c => c.name.trim());
+
+  const totalInventoryValue = includedItems.reduce((a, it) => a + Number(it.stock_qty || 0) * Number(it.purchase_price || 0), 0);
+
+  const categoryBreakdown = includedItems.reduce<Record<string, number>>((acc, it) => {
+    acc[it.category] = (acc[it.category] || 0) + 1;
+    return acc;
+  }, {});
+
+  function updateCustomer(i: number, field: keyof OnboardCustomer, value: string | number) {
+    setOnboardCustomers(prev => prev.map((c, idx) => idx === i ? { ...c, [field]: value } : c));
+  }
+
+  async function handleLaunch() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      if (includedItems.length > 0) {
+        const products = includedItems.map(it => ({
+          bunk_id: bunkId,
+          name: it.name.trim(),
+          brand: it.brand || '',
+          category: it.category,
+          unit: it.unit,
+          purchase_price: Number(it.purchase_price) || 0,
+          selling_price: Number(it.selling_price) || 0,
+          mrp: Number(it.selling_price) || 0,
+          current_stock: Number(it.stock_qty) || 0,
+          reorder_level: Number(it.reorder_level) || 5,
+          is_active: true,
+        }));
+        const { error } = await supabase.from('hw_products').insert(products);
+        if (error) throw error;
+      }
+      if (validCustomers.length > 0) {
+        const custRows = validCustomers.map(c => ({
+          bunk_id: bunkId,
+          name: c.name.trim(),
+          phone: c.phone.trim() || null,
+          address: null,
+          credit_limit: 0,
+          outstanding_amount: Number(c.outstanding) || 0,
+          is_active: true,
+        }));
+        const { error } = await supabase.from('hw_customers').insert(custRows);
+        if (error) throw error;
+      }
+      onComplete();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Setup failed. Please try again.';
+      alert(msg);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white flex flex-col">
+      {/* Progress bar */}
+      <div className="bg-white border-b border-gray-200 px-4 py-3">
+        <div className="max-w-2xl mx-auto">
+          <div className="flex items-center justify-between mb-2">
+            {ONBOARD_STEPS.map((label, i) => (
+              <div key={i} className="flex flex-col items-center flex-1">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${i + 1 < step ? 'bg-blue-600 text-white' : i + 1 === step ? 'bg-blue-600 text-white ring-4 ring-blue-100' : 'bg-gray-200 text-gray-500'}`}>
+                  {i + 1 < step ? <CheckCircle2 size={14} /> : i + 1}
+                </div>
+                {i < ONBOARD_STEPS.length - 1 && <div className={`hidden sm:block absolute h-0.5 ${i + 1 < step ? 'bg-blue-600' : 'bg-gray-200'}`} />}
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-between text-xs text-gray-500 hidden sm:flex">
+            {ONBOARD_STEPS.map((label, i) => (
+              <span key={i} className={`flex-1 text-center ${i + 1 === step ? 'text-blue-600 font-medium' : ''}`}>{label}</span>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500 sm:hidden text-center">Step {step} of {ONBOARD_STEPS.length}: <span className="text-blue-600 font-medium">{ONBOARD_STEPS[step - 1]}</span></p>
+        </div>
+      </div>
+
+      <div className="flex-1 flex items-start justify-center px-4 py-8">
+        <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl">
+
+          {/* Step 1: Welcome */}
+          {step === 1 && (
+            <div className="p-8 text-center space-y-5">
+              <div className="text-5xl mb-2">🔧</div>
+              <h1 className="text-2xl font-bold text-gray-900">Welcome to Hardware Store AI</h1>
+              <p className="text-gray-600 text-base leading-relaxed max-w-md mx-auto">
+                Let's set up your store in 5 minutes. Add your inventory, top customers, and you're ready to record sales!
+              </p>
+              <button onClick={() => setStep(2)} className="mt-4 bg-blue-600 text-white px-8 py-3 rounded-xl font-semibold text-base hover:bg-blue-700 transition-colors shadow-md">
+                Get Started →
+              </button>
+            </div>
+          )}
+
+          {/* Step 2: Cement & Concrete */}
+          {step === 2 && (
+            <div className="p-6 space-y-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Cement & Concrete</h2>
+                <p className="text-sm text-gray-500 mt-1">Check items you stock. Fill current quantity, adjust prices if needed.</p>
+              </div>
+              <OnboardItemTable items={cementItems} onChange={setCementItems} />
+            </div>
+          )}
+
+          {/* Step 3: Steel & Iron */}
+          {step === 3 && (
+            <div className="p-6 space-y-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Steel & Iron</h2>
+                <p className="text-sm text-gray-500 mt-1">Check items you stock. Fill current quantity, adjust prices if needed.</p>
+              </div>
+              <OnboardItemTable items={steelItems} onChange={setSteelItems} />
+            </div>
+          )}
+
+          {/* Step 4: Plumbing & Pipes */}
+          {step === 4 && (
+            <div className="p-6 space-y-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Plumbing & Pipes</h2>
+                <p className="text-sm text-gray-500 mt-1">Check items you stock. Fill current quantity, adjust prices if needed.</p>
+              </div>
+              <OnboardItemTable items={plumbingItems} onChange={setPlumbingItems} />
+            </div>
+          )}
+
+          {/* Step 5: Electrical & Paints */}
+          {step === 5 && (
+            <div className="p-6 space-y-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Electrical & Paints</h2>
+                <p className="text-sm text-gray-500 mt-1">Check items you stock. Fill current quantity, adjust prices if needed.</p>
+              </div>
+              <OnboardItemTable items={electricalItems} onChange={setElectricalItems} />
+            </div>
+          )}
+
+          {/* Step 6: Top Customers */}
+          {step === 6 && (
+            <div className="p-6 space-y-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Add your regular customers (credit parties)</h2>
+                <p className="text-sm text-gray-500 mt-1">Add contractors, builders, or anyone who buys on credit.</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-50 text-gray-500 uppercase">
+                      <th className="px-2 py-2 text-left">Name</th>
+                      <th className="px-2 py-2 text-left w-32">Phone</th>
+                      <th className="px-2 py-2 text-right w-32">Outstanding (₹ owed)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {onboardCustomers.map((c, i) => (
+                      <tr key={i} className="border-t border-gray-100">
+                        <td className="px-2 py-2">
+                          <input value={c.name} onChange={e => updateCustomer(i, 'name', e.target.value)} placeholder="Customer name" className="w-full border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                        </td>
+                        <td className="px-2 py-2">
+                          <input value={c.phone} onChange={e => updateCustomer(i, 'phone', e.target.value)} placeholder="Phone" className="w-full border border-gray-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                        </td>
+                        <td className="px-2 py-2">
+                          <input type="number" min="0" value={c.outstanding || ''} onChange={e => updateCustomer(i, 'outstanding', parseFloat(e.target.value) || 0)} placeholder="0" className="w-full border border-gray-200 rounded px-2 py-1.5 text-xs text-right focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <button onClick={() => setOnboardCustomers(prev => [...prev, { name: '', phone: '', outstanding: 0 }])} className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
+                <Plus size={12} /> Add more rows
+              </button>
+            </div>
+          )}
+
+          {/* Step 7: Summary & Launch */}
+          {step === 7 && (
+            <div className="p-6 space-y-5">
+              <h2 className="text-xl font-bold text-gray-900">Summary & Launch</h2>
+              <div className="bg-blue-50 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Package size={18} className="text-blue-600" />
+                  <span className="font-semibold text-gray-800">{includedItems.length} products ready</span>
+                </div>
+                {Object.entries(categoryBreakdown).map(([cat, count]) => (
+                  <div key={cat} className="flex items-center justify-between pl-6 text-sm text-gray-600">
+                    <span>{cat}</span>
+                    <span className="font-medium">{count} items</span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between pt-2 border-t border-blue-100">
+                  <span className="text-sm font-semibold text-blue-800">Total inventory value</span>
+                  <span className="text-sm font-bold text-blue-800">{inr(totalInventoryValue)}</span>
+                </div>
+              </div>
+              {validCustomers.length > 0 && (
+                <div className="bg-orange-50 rounded-xl p-4 flex items-center gap-3">
+                  <Users size={18} className="text-orange-600" />
+                  <span className="font-semibold text-gray-800">{validCustomers.length} customer{validCustomers.length > 1 ? 's' : ''} to add</span>
+                </div>
+              )}
+              <button onClick={handleLaunch} disabled={saving} className="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold text-base hover:bg-blue-700 disabled:opacity-60 flex items-center justify-center gap-2 shadow-md">
+                {saving ? <><Loader2 size={18} className="animate-spin" /> Setting up…</> : '🚀 Launch Store'}
+              </button>
+            </div>
+          )}
+
+          {/* Navigation */}
+          {step > 1 && (
+            <div className="flex items-center justify-between px-6 pb-6 pt-2 border-t border-gray-100">
+              <button onClick={() => setStep(s => s - 1)} disabled={saving} className="flex items-center gap-1.5 text-gray-500 hover:text-gray-700 text-sm font-medium disabled:opacity-40">
+                ← Back
+              </button>
+              {step < 7 && (
+                <button onClick={() => setStep(s => s + 1)} className="bg-blue-600 text-white px-6 py-2 rounded-xl font-semibold text-sm hover:bg-blue-700 transition-colors">
+                  Next →
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ────────────────────────────────────────────────────────────
 export function HardwareApp({ bunkId, onLogout, user }: { bunkId: string; onLogout: () => void; user: { name: string; email: string; role: string } }) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -72,6 +432,7 @@ export function HardwareApp({ bunkId, onLogout, user }: { bunkId: string; onLogo
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   // BUG-FIX: Replace browser confirm() with React state modal (confirm() is blocked on mobile PWA)
   const [confirmState, setConfirmState] = useState<{ msg: string; onYes: () => void } | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
@@ -79,6 +440,16 @@ export function HardwareApp({ bunkId, onLogout, user }: { bunkId: string; onLogo
   };
 
   const showConfirm = (msg: string, onYes: () => void) => setConfirmState({ msg, onYes });
+
+  useEffect(() => {
+    if (!bunkId) return;
+    const key = `hwOnboardingDone_${bunkId}`;
+    if (localStorage.getItem(key)) return;
+    supabase.from('hw_products').select('id').eq('bunk_id', bunkId).eq('is_active', true).limit(1)
+      .then(({ data }) => {
+        if (!data || data.length === 0) setShowOnboarding(true);
+      });
+  }, [bunkId]);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -119,6 +490,19 @@ export function HardwareApp({ bunkId, onLogout, user }: { bunkId: string; onLogo
     { id: 'reports', label: 'Reports', icon: <FileText size={16} /> },
     { id: 'settings', label: 'Settings', icon: <SettingsIcon size={16} /> },
   ];
+
+  if (showOnboarding) {
+    return (
+      <HardwareOnboarding
+        bunkId={bunkId}
+        onComplete={() => {
+          localStorage.setItem(`hwOnboardingDone_${bunkId}`, '1');
+          setShowOnboarding(false);
+          fetchAll();
+        }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -179,7 +563,7 @@ export function HardwareApp({ bunkId, onLogout, user }: { bunkId: string; onLogo
           <div className="flex justify-center items-center h-64"><Loader2 className="animate-spin text-blue-600" size={32} /></div>
         ) : (
           <>
-            {activeTab === 'dashboard' && <HwDashboard todaySalesTotal={todaySalesTotal} todayExpenses={todayExpenses} todayCollections={todayCollections} lowStock={lowStock} recentSales={sales.slice(0, 8)} totalProducts={products.length} totalCreditOutstanding={totalCreditOutstanding} pendingCheques={pendingCheques} customers={customers} />}
+            {activeTab === 'dashboard' && <HwDashboard todaySalesTotal={todaySalesTotal} todayExpenses={todayExpenses} todayCollections={todayCollections} lowStock={lowStock} recentSales={sales.slice(0, 8)} totalProducts={products.length} totalCreditOutstanding={totalCreditOutstanding} pendingCheques={pendingCheques} customers={customers} products={products} />}
             {activeTab === 'inventory' && <HwInventory bunkId={bunkId} products={products} onRefresh={fetchAll} showToast={showToast} showConfirm={showConfirm} />}
             {activeTab === 'sales' && <HwSales bunkId={bunkId} products={products} customers={customers} sales={sales} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'customers' && <HwCustomers bunkId={bunkId} customers={customers} payments={payments} onRefresh={fetchAll} showToast={showToast} />}
@@ -195,16 +579,20 @@ export function HardwareApp({ bunkId, onLogout, user }: { bunkId: string; onLogo
 }
 
 // ─── Dashboard ─────────────────────────────────────────────────────────────────
-function HwDashboard({ todaySalesTotal, todayExpenses, todayCollections, lowStock, recentSales, totalProducts, totalCreditOutstanding, pendingCheques, customers }: {
+function HwDashboard({ todaySalesTotal, todayExpenses, todayCollections, lowStock, recentSales, totalProducts, totalCreditOutstanding, pendingCheques, customers, products }: {
   todaySalesTotal: number; todayExpenses: number; todayCollections: number; lowStock: Product[]; recentSales: Sale[];
-  totalProducts: number; totalCreditOutstanding: number; pendingCheques: number; customers: Customer[];
+  totalProducts: number; totalCreditOutstanding: number; pendingCheques: number; customers: Customer[]; products: Product[];
 }) {
-  const overdueCount = customers.filter(c => {
+  const overdueCustomers = customers.filter(c => {
     if (!c.outstanding_amount) return false;
     if (!c.last_payment_date) return true;
     const days = Math.floor((Date.now() - new Date(c.last_payment_date).getTime()) / 86400000);
     return days > 30;
-  }).length;
+  });
+  const overdueCount = overdueCustomers.length;
+  const overdueAmount = overdueCustomers.reduce((a, c) => a + (c.outstanding_amount || 0), 0);
+
+  const inventoryValue = products.reduce((a, p) => a + Number(p.current_stock || 0) * Number(p.purchase_price || 0), 0);
 
   const kpis = [
     { label: "Today's Sales", value: inr(todaySalesTotal), icon: <TrendingUp size={20} />, color: 'bg-green-50 text-green-700 border-green-200' },
@@ -226,6 +614,24 @@ function HwDashboard({ todaySalesTotal, todayExpenses, todayCollections, lowStoc
           </div>
         ))}
       </div>
+      <div className="grid grid-cols-1 sm:grid-cols-1 gap-3">
+        <div className="rounded-xl border p-4 bg-blue-50 text-blue-700 border-blue-200 flex items-center gap-3">
+          <Package size={20} className="shrink-0" />
+          <div>
+            <p className="text-xs font-medium opacity-80">Inventory Value</p>
+            <p className="text-xl font-bold">{inr(inventoryValue)}</p>
+            <p className="text-xs opacity-70">at purchase cost · {totalProducts} products</p>
+          </div>
+        </div>
+      </div>
+      {overdueCount > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center gap-3">
+          <AlertTriangle size={18} className="text-red-600 shrink-0" />
+          <p className="text-sm text-red-700 font-medium">
+            {overdueCount} customer{overdueCount > 1 ? 's' : ''} overdue 30+ days — {inr(overdueAmount)} pending. Contact them today.
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -747,6 +1153,9 @@ function HwCustomers({ bunkId, customers, payments, onRefresh, showToast }: {
   const [chequeDate, setChequeDate] = useState('');
   const [payingSaving, setPayingSaving] = useState(false);
   const [showCheques, setShowCheques] = useState(false);
+  const [ledgerCustomer, setLedgerCustomer] = useState<Customer | null>(null);
+  const [ledgerData, setLedgerData] = useState<{ sales: Sale[]; payments: Payment[] }>({ sales: [], payments: [] });
+  const [ledgerLoading, setLedgerLoading] = useState(false);
 
   const pendingCheques = payments.filter(p => p.payment_mode === 'cheque' && p.cheque_status === 'received');
 
@@ -767,6 +1176,18 @@ function HwCustomers({ bunkId, customers, payments, onRefresh, showToast }: {
   function openAdd() { setEditing(null); setForm(defaultCF()); setShowModal(true); }
   function openEdit(c: Customer) { setEditing(c); setForm({ name: c.name, phone: c.phone || '', address: c.address || '', credit_limit: c.credit_limit || 0 }); setShowModal(true); }
   function openPay(c: Customer) { setPayModal(c); setPayAmount(''); setPayMode('cash'); setChequeNo(''); setChequeBank(''); setChequeDate(''); }
+
+  async function openLedger(c: Customer) {
+    setLedgerCustomer(c);
+    setLedgerData({ sales: [], payments: [] });
+    setLedgerLoading(true);
+    const [salesRes, paymentsRes] = await Promise.all([
+      supabase.from('hw_sales').select('*').eq('bunk_id', bunkId).eq('customer_id', c.id).order('sale_date', { ascending: false }).limit(20),
+      supabase.from('hw_payments').select('*').eq('bunk_id', bunkId).eq('customer_id', c.id).order('payment_date', { ascending: false }).limit(20),
+    ]);
+    setLedgerData({ sales: (salesRes.data as Sale[]) || [], payments: (paymentsRes.data as Payment[]) || [] });
+    setLedgerLoading(false);
+  }
 
   async function handleSave() {
     if (!form.name.trim()) { showToast('Customer name required', 'error'); return; }
@@ -933,6 +1354,7 @@ function HwCustomers({ bunkId, customers, payments, onRefresh, showToast }: {
                         {c.outstanding_amount > 0 && (
                           <button onClick={() => openPay(c)} className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded font-medium hover:bg-orange-200">Collect</button>
                         )}
+                        <button onClick={() => openLedger(c)} className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded font-medium hover:bg-blue-100 flex items-center gap-1"><FileText size={11} /> Ledger</button>
                         <button onClick={() => openEdit(c)} className="text-blue-600 hover:text-blue-800"><Edit2 size={14} /></button>
                       </div>
                     </td>
@@ -990,6 +1412,79 @@ function HwCustomers({ bunkId, customers, payments, onRefresh, showToast }: {
                 {payingSaving && <Loader2 size={14} className="animate-spin" />}{payingSaving ? 'Saving…' : 'Record Payment'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {ledgerCustomer && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b shrink-0">
+              <div>
+                <h2 className="text-lg font-semibold">{ledgerCustomer.name} — Ledger</h2>
+                {ledgerCustomer.phone && <p className="text-xs text-gray-400">{ledgerCustomer.phone}</p>}
+              </div>
+              <button onClick={() => setLedgerCustomer(null)}><X size={20} /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              {ledgerLoading ? (
+                <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin text-blue-600" size={24} /></div>
+              ) : (() => {
+                const saleEntries = ledgerData.sales.map(s => ({
+                  date: s.sale_date, type: 'Sale' as const,
+                  description: `Sale · ${s.payment_mode}${s.notes ? ` · ${s.notes}` : ''}`,
+                  debit: s.total_amount, credit: 0, id: s.id,
+                }));
+                const paymentEntries = ledgerData.payments.map(p => ({
+                  date: p.payment_date, type: 'Payment' as const,
+                  description: `Payment · ${p.payment_mode}${p.cheque_number ? ` #${p.cheque_number}` : ''}`,
+                  debit: 0, credit: p.amount, id: p.id,
+                }));
+                const combined = [...saleEntries, ...paymentEntries].sort((a, b) => b.date.localeCompare(a.date));
+                const totalSold = saleEntries.reduce((a, e) => a + e.debit, 0);
+                const totalPaid = paymentEntries.reduce((a, e) => a + e.credit, 0);
+                return (
+                  <div className="space-y-3">
+                    {combined.length === 0 && <p className="text-gray-400 text-sm text-center py-8">No transactions found.</p>}
+                    {combined.map(entry => (
+                      <div key={entry.id} className={`flex items-center justify-between py-2.5 border-b border-gray-100 last:border-0`}>
+                        <div className="flex items-center gap-3">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${entry.type === 'Sale' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                            {entry.type}
+                          </span>
+                          <div>
+                            <p className="text-sm text-gray-700">{entry.description}</p>
+                            <p className="text-xs text-gray-400">{fmtDate(entry.date)}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          {entry.debit > 0 && <p className="text-sm font-semibold text-orange-600">{inr(entry.debit)}</p>}
+                          {entry.credit > 0 && <p className="text-sm font-semibold text-green-600">−{inr(entry.credit)}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+            {!ledgerLoading && (
+              <div className="border-t p-4 bg-gray-50 rounded-b-2xl grid grid-cols-3 gap-4 shrink-0">
+                <div className="text-center">
+                  <p className="text-xs text-gray-500">Total Sold</p>
+                  <p className="font-bold text-orange-600">{inr(ledgerData.sales.reduce((a, s) => a + s.total_amount, 0))}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-gray-500">Total Paid</p>
+                  <p className="font-bold text-green-600">{inr(ledgerData.payments.reduce((a, p) => a + p.amount, 0))}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-gray-500">Balance</p>
+                  <p className={`font-bold ${(ledgerData.sales.reduce((a, s) => a + s.total_amount, 0) - ledgerData.payments.reduce((a, p) => a + p.amount, 0)) > 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                    {inr(ledgerData.sales.reduce((a, s) => a + s.total_amount, 0) - ledgerData.payments.reduce((a, p) => a + p.amount, 0))}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
