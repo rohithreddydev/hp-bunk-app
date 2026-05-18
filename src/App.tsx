@@ -155,7 +155,9 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     // Coerce to string — prevents crash if called with Error object or non-string
     const safeMsg = typeof msg === 'string' ? msg : (msg?.message ?? String(msg));
     setAlertMessage(safeMsg);
-    const t = setTimeout(() => setAlertMessage(null), 5000);
+    // Error messages stay 10s; success messages stay 5s
+    const isError = safeMsg.startsWith('❌') || safeMsg.startsWith('⚠️') || safeMsg.toLowerCase().startsWith('transaction failed') || safeMsg.toLowerCase().startsWith('save failed');
+    const t = setTimeout(() => setAlertMessage(null), isError ? 10000 : 5000);
     return () => clearTimeout(t);
   };
   const showConfirm = (message: string, onConfirm: () => void) => { setConfirmDialog({ message, onConfirm }); };
@@ -464,12 +466,29 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   };
 
   const addTransaction = async (t: any): Promise<boolean> => {
-    // Use direct REST API fetch (same pattern as addMorningEntry) to bypass
-    // PostgREST schema cache issues and ensure the auth token is always sent.
     const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
     const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
-    const { data: sessionData } = await supabase.auth.getSession();
-    const authToken = sessionData?.session?.access_token || supabaseKey;
+
+    // Refresh session before insert to handle expired tokens
+    let authToken = supabaseKey;
+    try {
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      authToken = refreshed?.session?.access_token || supabaseKey;
+    } catch (_) {
+      // refreshSession can fail if network is slow — fall back to getSession
+      const { data: sd } = await supabase.auth.getSession();
+      authToken = sd?.session?.access_token || supabaseKey;
+    }
+
+    // Guard: if bunkId looks wrong, catch it early
+    if (!bId || bId === 'default' || bId === 'null' || bId === 'undefined') {
+      showAlert('❌ Save failed: Your account session is invalid. Please sign out and sign in again.');
+      return false;
+    }
+    if (!t.customerId) {
+      showAlert('❌ Save failed: No customer selected. Please select a customer and try again.');
+      return false;
+    }
 
     const row: any = {
       bunk_id: bId, customer_id: t.customerId, type: t.type,
@@ -492,16 +511,24 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         },
         body: JSON.stringify(row),
       });
+
       if (!resp.ok) {
         const errText = await resp.text();
         let errMsg = errText;
-        try { errMsg = JSON.parse(errText)?.message || errText; } catch (_) {}
-        console.error('addTransaction error:', errMsg);
-        showAlert('Transaction Failed: ' + errMsg);
+        try {
+          const parsed = JSON.parse(errText);
+          errMsg = parsed?.message || parsed?.hint || parsed?.detail || errText;
+        } catch (_) {}
+        console.error('[addTransaction] HTTP', resp.status, errMsg);
+        // Show a persistent, visible error the user can read and report
+        showAlert(`❌ Save failed (${resp.status}): ${errMsg}`);
         return false;
       }
+
       const data = await resp.json();
-      const savedId = Array.isArray(data) && data.length > 0 ? String(data[0].id) : ('tmp-' + Date.now());
+      const savedId = Array.isArray(data) && data.length > 0
+        ? String(data[0].id) : ('tmp-' + Date.now());
+
       setTransactions(prev => {
         const newTx: Transaction = { ...t, id: savedId };
         if (prev.some(x => x.id === newTx.id)) return prev;
@@ -509,8 +536,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       });
       return true;
     } catch (err: any) {
-      console.error('addTransaction network error:', err);
-      showAlert('Transaction Failed: ' + (err?.message || 'Network error'));
+      console.error('[addTransaction] Network error:', err);
+      showAlert('❌ Save failed: ' + (err?.message || 'Network error — check your internet connection'));
       return false;
     }
   };
@@ -1927,7 +1954,7 @@ const CreditLedger = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selCust) return;
+    if (!selCust) return showAlert("Please select a customer first.");
     if (tab === 'sale' && !amount && !advanceAmount) return showAlert("Please enter a sale amount or an advance amount.");
     if (tab === 'payment' && !amount) return showAlert("Please enter a payment amount.");
     const amtNum = Number(amount) || 0; const advNum = Number(advanceAmount) || 0; const qtyNum = Number(qty) || 0;
