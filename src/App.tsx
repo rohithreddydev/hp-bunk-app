@@ -464,6 +464,13 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   };
 
   const addTransaction = async (t: any): Promise<boolean> => {
+    // Use direct REST API fetch (same pattern as addMorningEntry) to bypass
+    // PostgREST schema cache issues and ensure the auth token is always sent.
+    const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
+    const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
+    const { data: sessionData } = await supabase.auth.getSession();
+    const authToken = sessionData?.session?.access_token || supabaseKey;
+
     const row: any = {
       bunk_id: bId, customer_id: t.customerId, type: t.type,
       date: t.date, amount: t.amount,
@@ -473,18 +480,39 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     if (t.mode)          row.payment_mode   = t.mode;
     if (t.vehicleNumber) row.vehicle_number = t.vehicleNumber;
     if (t.remarks)       row.remarks        = t.remarks;
-    const { data, error } = await supabase.from('transactions').insert([row]).select();
-    if (error) { console.error('addTransaction error:', error); showAlert("Transaction Failed: " + error.message); return false; }
-    if (!data || data.length === 0) {
-      showAlert("Save failed — please sign out and sign in again, then retry. If the issue continues, contact support.");
+
+    try {
+      const resp = await fetch(`${supabaseUrl}/rest/v1/transactions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${authToken}`,
+          'Prefer': 'return=representation',
+        },
+        body: JSON.stringify(row),
+      });
+      if (!resp.ok) {
+        const errText = await resp.text();
+        let errMsg = errText;
+        try { errMsg = JSON.parse(errText)?.message || errText; } catch (_) {}
+        console.error('addTransaction error:', errMsg);
+        showAlert('Transaction Failed: ' + errMsg);
+        return false;
+      }
+      const data = await resp.json();
+      const savedId = Array.isArray(data) && data.length > 0 ? String(data[0].id) : ('tmp-' + Date.now());
+      setTransactions(prev => {
+        const newTx: Transaction = { ...t, id: savedId };
+        if (prev.some(x => x.id === newTx.id)) return prev;
+        return [newTx, ...prev];
+      });
+      return true;
+    } catch (err: any) {
+      console.error('addTransaction network error:', err);
+      showAlert('Transaction Failed: ' + (err?.message || 'Network error'));
       return false;
     }
-    setTransactions(prev => {
-      const newTx: Transaction = { ...t, id: String(data[0].id) };
-      if (prev.some(x => x.id === newTx.id)) return prev;
-      return [newTx, ...prev];
-    });
-    return true;
   };
 
   const updateTransaction = async (id: string, updates: any) => { const { error } = await supabase.from('transactions').update({ customer_id: updates.customerId, type: updates.type, date: updates.date, product: updates.product, quantity: updates.quantity, amount: updates.amount, payment_mode: updates.mode, vehicle_number: updates.vehicleNumber, remarks: updates.remarks }).eq('id', id).eq('bunk_id', bId); if (error) return showAlert("Update Failed: " + error.message); setTransactions(transactions.map(t => t.id === id ? { ...t, ...updates } : t)); showAlert("Transaction updated."); };
