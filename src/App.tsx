@@ -466,27 +466,13 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   };
 
   const addTransaction = async (t: any): Promise<boolean> => {
-    const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
-    const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
-
-    // Refresh session before insert to handle expired tokens
-    let authToken = supabaseKey;
-    try {
-      const { data: refreshed } = await supabase.auth.refreshSession();
-      authToken = refreshed?.session?.access_token || supabaseKey;
-    } catch (_) {
-      // refreshSession can fail if network is slow — fall back to getSession
-      const { data: sd } = await supabase.auth.getSession();
-      authToken = sd?.session?.access_token || supabaseKey;
-    }
-
-    // Guard: if bunkId looks wrong, catch it early
+    // Guard: catch bad bunkId before hitting the DB
     if (!bId || bId === 'default' || bId === 'null' || bId === 'undefined') {
-      showAlert('❌ Save failed: Your account session is invalid. Please sign out and sign in again.');
+      showAlert('❌ Save failed: Session invalid. Please sign out and sign in again.');
       return false;
     }
     if (!t.customerId) {
-      showAlert('❌ Save failed: No customer selected. Please select a customer and try again.');
+      showAlert('❌ Save failed: No customer selected.');
       return false;
     }
 
@@ -500,46 +486,28 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     if (t.vehicleNumber) row.vehicle_number = t.vehicleNumber;
     if (t.remarks)       row.remarks        = t.remarks;
 
-    try {
-      const resp = await fetch(`${supabaseUrl}/rest/v1/transactions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${authToken}`,
-          'Prefer': 'return=representation',
-        },
-        body: JSON.stringify(row),
-      });
+    // Use supabase JS client — it auto-manages JWT refresh and is already
+    // proven to work for updateTransaction / deleteTransaction in this app.
+    const { data, error } = await supabase
+      .from('transactions')
+      .insert(row)
+      .select()
+      .single();
 
-      if (!resp.ok) {
-        const errText = await resp.text();
-        let errMsg = errText;
-        try {
-          const parsed = JSON.parse(errText);
-          errMsg = parsed?.message || parsed?.hint || parsed?.detail || errText;
-        } catch (_) {}
-        console.error('[addTransaction] HTTP', resp.status, errMsg);
-        // Show a persistent, visible error the user can read and report
-        showAlert(`❌ Save failed (${resp.status}): ${errMsg}`);
-        return false;
-      }
-
-      const data = await resp.json();
-      const savedId = Array.isArray(data) && data.length > 0
-        ? String(data[0].id) : ('tmp-' + Date.now());
-
-      setTransactions(prev => {
-        const newTx: Transaction = { ...t, id: savedId };
-        if (prev.some(x => x.id === newTx.id)) return prev;
-        return [newTx, ...prev];
-      });
-      return true;
-    } catch (err: any) {
-      console.error('[addTransaction] Network error:', err);
-      showAlert('❌ Save failed: ' + (err?.message || 'Network error — check your internet connection'));
+    if (error) {
+      console.error('[addTransaction] Supabase error:', error);
+      const msg = error?.message || error?.details || JSON.stringify(error);
+      showAlert(`❌ Save failed: ${msg}`);
       return false;
     }
+
+    const savedId = data?.id ? String(data.id) : ('tmp-' + Date.now());
+    setTransactions(prev => {
+      const newTx: Transaction = { ...t, id: savedId };
+      if (prev.some(x => x.id === newTx.id)) return prev;
+      return [newTx, ...prev];
+    });
+    return true;
   };
 
   const updateTransaction = async (id: string, updates: any) => { const { error } = await supabase.from('transactions').update({ customer_id: updates.customerId, type: updates.type, date: updates.date, product: updates.product, quantity: updates.quantity, amount: updates.amount, payment_mode: updates.mode, vehicle_number: updates.vehicleNumber, remarks: updates.remarks }).eq('id', id).eq('bunk_id', bId); if (error) return showAlert("Update Failed: " + error.message); setTransactions(transactions.map(t => t.id === id ? { ...t, ...updates } : t)); showAlert("Transaction updated."); };
