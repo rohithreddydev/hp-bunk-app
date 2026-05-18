@@ -805,7 +805,9 @@ function ApSales({ bunkId, products, customers, sales, onRefresh, showToast }: {
         product_name: i.product.name, quantity: i.quantity, unit_price: i.price, total_price: i.price * i.quantity,
       })));
       for (const i of cart) {
-        await supabase.from('ap_products').update({ current_stock: i.product.current_stock - i.quantity }).eq('id', i.product.id);
+        const { data: freshProd } = await supabase.from('ap_products').select('current_stock').eq('id', i.product.id).eq('bunk_id', bunkId).maybeSingle();
+        const freshStock = freshProd ? Number(freshProd.current_stock) : Number(i.product.current_stock);
+        await supabase.from('ap_products').update({ current_stock: Math.max(0, freshStock - i.quantity) }).eq('id', i.product.id).eq('bunk_id', bunkId);
       }
     }
     if (paymentMode === 'credit' && customerId) {
