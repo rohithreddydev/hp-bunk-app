@@ -8,7 +8,8 @@ import {
   LayoutDashboard, Package, ShoppingCart, Users, Truck, Receipt,
   Plus, Edit2, Trash2, X, Search, AlertTriangle, CheckCircle2,
   Loader2, TrendingUp, TrendingDown, Wallet,
-  Settings as SettingsIcon, LogOut,
+  Settings as SettingsIcon, LogOut, FileText, BookOpen,
+  ArrowUpRight, ArrowDownLeft, BarChart2,
 } from 'lucide-react';
 import { SettingsTab } from './SettingsTab';
 import { supabase } from './supabase';
@@ -47,7 +48,12 @@ interface Expense {
 }
 interface CartItem { product: Product; quantity: number; price: number; }
 
-type Tab = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'purchases' | 'expenses' | 'settings';
+type Tab = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'purchases' | 'expenses' | 'reports' | 'settings';
+
+interface LedgerEntry {
+  id: string; date: string; type: 'sale' | 'payment';
+  description: string; debit: number; credit: number; balance: number;
+}
 
 export function StationeryApp({ bunkId, onLogout, user }: { bunkId: string; onLogout: () => void; user: { name: string; email: string; role: string } }) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -96,6 +102,7 @@ export function StationeryApp({ bunkId, onLogout, user }: { bunkId: string; onLo
     { id: 'customers', label: 'Customers', icon: <Users size={16} /> },
     { id: 'purchases', label: 'Purchases', icon: <Truck size={16} /> },
     { id: 'expenses', label: 'Expenses', icon: <Receipt size={16} /> },
+    { id: 'reports', label: 'Reports', icon: <FileText size={16} /> },
     { id: 'settings', label: 'Settings', icon: <SettingsIcon size={16} /> },
   ];
 
@@ -141,6 +148,7 @@ export function StationeryApp({ bunkId, onLogout, user }: { bunkId: string; onLo
             {activeTab === 'customers' && <StCustomers bunkId={bunkId} customers={customers} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'purchases' && <StPurchases bunkId={bunkId} purchases={purchases} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'expenses' && <StExpenses bunkId={bunkId} expenses={expenses} onRefresh={fetchAll} showToast={showToast} />}
+            {activeTab === 'reports' && <StReports bunkId={bunkId} />}
             {activeTab === 'settings' && <SettingsTab bunkId={bunkId} user={user} onLogout={onLogout} />}
           </>
         )}
@@ -406,7 +414,9 @@ function StSales({ bunkId, products, customers, onRefresh, showToast }: { bunkId
       total_price: i.price * i.quantity,
     })));
     for (const i of cart) {
-      await supabase.from('st_products').update({ current_stock: i.product.current_stock - i.quantity }).eq('id', i.product.id);
+      const { data: freshProd } = await supabase.from('st_products').select('current_stock').eq('id', i.product.id).eq('bunk_id', bunkId).maybeSingle();
+      const freshStock = freshProd ? Number(freshProd.current_stock) : Number(i.product.current_stock);
+      await supabase.from('st_products').update({ current_stock: freshStock - i.quantity }).eq('id', i.product.id).eq('bunk_id', bunkId);
     }
     if (paymentMode === 'credit' && customerId) {
       const { data: freshCust } = await supabase.from('st_customers').select('outstanding_amount').eq('id', customerId).eq('bunk_id', bunkId).maybeSingle();
@@ -502,6 +512,7 @@ function StCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: stri
   const [payAmount, setPayAmount] = useState('');
   const [payMode, setPayMode] = useState('cash');
   const [payingSaving, setPayingSaving] = useState(false);
+  const [ledgerCust, setLedgerCust] = useState<Customer | null>(null);
 
   const filtered = customers.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search));
 
@@ -569,6 +580,7 @@ function StCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: stri
                       {c.outstanding_amount > 0 && (
                         <button onClick={() => openPay(c)} className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded font-medium hover:bg-orange-200">Collect</button>
                       )}
+                      <button onClick={() => setLedgerCust(c)} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded font-medium hover:bg-blue-200 flex items-center gap-1"><BookOpen size={11} />Ledger</button>
                       <button onClick={() => openEdit(c)} className="text-amber-600 hover:text-amber-800"><Edit2 size={14} /></button>
                     </div>
                   </td>
@@ -619,6 +631,7 @@ function StCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: stri
           </div>
         </div>
       )}
+      {ledgerCust && <StLedgerModal bunkId={bunkId} customer={ledgerCust} onClose={() => setLedgerCust(null)} />}
     </div>
   );
 }
@@ -683,6 +696,220 @@ function StPurchases({ bunkId, purchases, onRefresh, showToast }: { bunkId: stri
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+function StLedgerModal({ bunkId, customer, onClose }: { bunkId: string; customer: Customer; onClose: () => void }) {
+  const [entries, setEntries] = useState<LedgerEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const [salesRes, paymentsRes] = await Promise.all([
+        supabase.from('st_sales').select('id, sale_date, total_amount, payment_mode').eq('bunk_id', bunkId).eq('customer_id', customer.id).order('sale_date'),
+        supabase.from('st_payments').select('id, payment_date, amount, payment_mode').eq('bunk_id', bunkId).eq('customer_id', customer.id).order('payment_date'),
+      ]);
+      const raw: { date: string; type: 'sale' | 'payment'; id: string; amount: number; mode: string }[] = [
+        ...(salesRes.data || []).map((s: { id: string; sale_date: string; total_amount: number; payment_mode: string }) => ({ date: s.sale_date, type: 'sale' as const, id: s.id, amount: s.total_amount, mode: s.payment_mode })),
+        ...(paymentsRes.data || []).map((p: { id: string; payment_date: string; amount: number; payment_mode: string }) => ({ date: p.payment_date, type: 'payment' as const, id: p.id, amount: p.amount, mode: p.payment_mode })),
+      ].sort((a, b) => a.date.localeCompare(b.date));
+      let balance = 0;
+      const ledger: LedgerEntry[] = raw.map(r => {
+        if (r.type === 'sale' && r.mode === 'credit') { balance += r.amount; return { id: r.id, date: r.date, type: 'sale', description: `Credit Sale`, debit: r.amount, credit: 0, balance }; }
+        if (r.type === 'sale') { return { id: r.id, date: r.date, type: 'sale', description: `Cash/UPI Sale`, debit: 0, credit: 0, balance }; }
+        balance -= r.amount;
+        if (balance < 0) balance = 0;
+        return { id: r.id, date: r.date, type: 'payment', description: `Payment (${r.mode})`, debit: 0, credit: r.amount, balance };
+      });
+      setEntries(ledger);
+      setLoading(false);
+    }
+    load();
+  }, [bunkId, customer.id]);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b">
+          <div>
+            <h2 className="text-lg font-semibold">{customer.name} — Ledger</h2>
+            <p className="text-sm text-orange-600">Outstanding: {inr(customer.outstanding_amount)}</p>
+          </div>
+          <button onClick={onClose}><X size={20} /></button>
+        </div>
+        <div className="overflow-y-auto flex-1">
+          {loading ? (
+            <div className="flex justify-center items-center h-32"><Loader2 className="animate-spin text-amber-600" size={24} /></div>
+          ) : entries.length === 0 ? (
+            <p className="text-center text-gray-400 py-12">No transactions found.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-600 text-xs uppercase sticky top-0">
+                <tr>
+                  <th className="px-4 py-2 text-left">Date</th>
+                  <th className="px-4 py-2 text-left">Description</th>
+                  <th className="px-4 py-2 text-right text-red-600">Debit</th>
+                  <th className="px-4 py-2 text-right text-green-600">Credit</th>
+                  <th className="px-4 py-2 text-right">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map(e => (
+                  <tr key={e.id} className="border-t border-gray-100 hover:bg-gray-50">
+                    <td className="px-4 py-2 text-gray-600 whitespace-nowrap">{formatISTDate(e.date)}</td>
+                    <td className="px-4 py-2">
+                      <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${e.type === 'sale' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                        {e.type === 'sale' ? <ArrowUpRight size={10} /> : <ArrowDownLeft size={10} />}{e.description}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 text-right text-red-600 font-medium">{e.debit > 0 ? inr(e.debit) : '—'}</td>
+                    <td className="px-4 py-2 text-right text-green-600 font-medium">{e.credit > 0 ? inr(e.credit) : '—'}</td>
+                    <td className={`px-4 py-2 text-right font-semibold ${e.balance > 0 ? 'text-orange-600' : 'text-gray-500'}`}>{inr(e.balance)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="p-4 border-t flex justify-end">
+          <button onClick={onClose} className="px-5 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50">Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StReports({ bunkId }: { bunkId: string }) {
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [data, setData] = useState<{ totalSales: number; totalExpenses: number; profit: number; creditCollected: number; topProducts: { name: string; qty: number; revenue: number }[]; expenseBreakdown: { category: string; amount: number }[] } | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function loadReport() {
+    setLoading(true);
+    const from = `${year}-${String(month).padStart(2, '0')}-01`;
+    const toDate = new Date(year, month, 0);
+    const to = `${year}-${String(month).padStart(2, '0')}-${String(toDate.getDate()).padStart(2, '0')}`;
+
+    const [salesRes, expRes, paymentsRes, itemsRes] = await Promise.all([
+      supabase.from('st_sales').select('total_amount, payment_mode').eq('bunk_id', bunkId).gte('sale_date', from).lte('sale_date', to),
+      supabase.from('st_expenses').select('amount, category').eq('bunk_id', bunkId).gte('expense_date', from).lte('expense_date', to),
+      supabase.from('st_payments').select('amount').eq('bunk_id', bunkId).gte('payment_date', from).lte('payment_date', to),
+      supabase.from('st_sale_items').select('product_name, quantity, total_price, sale_id, st_sales!inner(sale_date, bunk_id)').eq('st_sales.bunk_id', bunkId).gte('st_sales.sale_date', from).lte('st_sales.sale_date', to),
+    ]);
+
+    const totalSales = (salesRes.data || []).reduce((a, s) => a + Number(s.total_amount), 0);
+    const totalExpenses = (expRes.data || []).reduce((a, e) => a + Number(e.amount), 0);
+    const creditCollected = (paymentsRes.data || []).reduce((a, p) => a + Number(p.amount), 0);
+    const profit = totalSales - totalExpenses;
+
+    const prodMap: Record<string, { qty: number; revenue: number }> = {};
+    for (const item of (itemsRes.data || [])) {
+      const n = item.product_name;
+      if (!prodMap[n]) prodMap[n] = { qty: 0, revenue: 0 };
+      prodMap[n].qty += Number(item.quantity);
+      prodMap[n].revenue += Number(item.total_price);
+    }
+    const topProducts = Object.entries(prodMap).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.revenue - a.revenue).slice(0, 8);
+
+    const catMap: Record<string, number> = {};
+    for (const e of (expRes.data || [])) {
+      catMap[e.category] = (catMap[e.category] || 0) + Number(e.amount);
+    }
+    const expenseBreakdown = Object.entries(catMap).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
+
+    setData({ totalSales, totalExpenses, profit, creditCollected, topProducts, expenseBreakdown });
+    setLoading(false);
+  }
+
+  useEffect(() => { loadReport(); }, [month, year]);
+
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const years = Array.from({ length: 4 }, (_, i) => now.getFullYear() - i);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3 flex-wrap">
+        <BarChart2 size={20} className="text-amber-600" />
+        <h2 className="text-lg font-semibold text-gray-800">Monthly Reports</h2>
+        <div className="flex gap-2 ml-auto">
+          <select value={month} onChange={e => setMonth(Number(e.target.value))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+            {months.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+          </select>
+          <select value={year} onChange={e => setYear(Number(e.target.value))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center items-center h-48"><Loader2 className="animate-spin text-amber-600" size={28} /></div>
+      ) : data && (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[
+              { label: 'Total Sales', value: inr(data.totalSales), icon: <TrendingUp size={18} />, color: 'bg-amber-50 text-amber-700 border-amber-200' },
+              { label: 'Total Expenses', value: inr(data.totalExpenses), icon: <TrendingDown size={18} />, color: 'bg-red-50 text-red-700 border-red-200' },
+              { label: 'Net Profit', value: inr(data.profit), icon: <Wallet size={18} />, color: data.profit >= 0 ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200' },
+              { label: 'Credit Collected', value: inr(data.creditCollected), icon: <ArrowDownLeft size={18} />, color: 'bg-blue-50 text-blue-700 border-blue-200' },
+            ].map(k => (
+              <div key={k.label} className={`rounded-xl border p-4 ${k.color}`}>
+                <div className="flex items-center justify-between mb-1"><span className="text-xs font-medium opacity-80">{k.label}</span>{k.icon}</div>
+                <p className="text-xl font-bold">{k.value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2"><Package size={15} className="text-amber-600" />Top Products by Revenue</h3>
+              {data.topProducts.length === 0 ? <p className="text-gray-400 text-sm">No sales this month.</p> : (() => {
+                const max = data.topProducts[0]?.revenue || 1;
+                return (
+                  <div className="space-y-2.5">
+                    {data.topProducts.map(p => (
+                      <div key={p.name}>
+                        <div className="flex justify-between text-sm mb-0.5">
+                          <span className="font-medium text-gray-700 truncate max-w-[60%]">{p.name}</span>
+                          <span className="text-gray-500">{p.qty} sold · {inr(p.revenue)}</span>
+                        </div>
+                        <div className="w-full bg-gray-100 rounded-full h-1.5">
+                          <div className="bg-amber-500 h-1.5 rounded-full" style={{ width: `${(p.revenue / max) * 100}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2"><Receipt size={15} className="text-red-500" />Expense Breakdown</h3>
+              {data.expenseBreakdown.length === 0 ? <p className="text-gray-400 text-sm">No expenses this month.</p> : (() => {
+                const max = data.expenseBreakdown[0]?.amount || 1;
+                return (
+                  <div className="space-y-2.5">
+                    {data.expenseBreakdown.map(e => (
+                      <div key={e.category}>
+                        <div className="flex justify-between text-sm mb-0.5">
+                          <span className="font-medium text-gray-700">{e.category}</span>
+                          <span className="text-red-600 font-medium">{inr(e.amount)}</span>
+                        </div>
+                        <div className="w-full bg-gray-100 rounded-full h-1.5">
+                          <div className="bg-red-400 h-1.5 rounded-full" style={{ width: `${(e.amount / max) * 100}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
