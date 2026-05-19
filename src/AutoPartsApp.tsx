@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// FuelDesk AI — Auto Parts Module
+// Smart Biz AI — Auto Parts Module
 // Slate theme — ap_ Supabase tables
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -9,9 +9,10 @@ import {
   Plus, Edit2, Trash2, X, Search, AlertTriangle, CheckCircle2, Loader2,
   TrendingUp, TrendingDown, Wallet, Car, BarChart2,
   Settings as SettingsIcon, LogOut, ChevronRight, ChevronLeft,
-  BookOpen, ArrowUpRight, ArrowDownLeft,
+  BookOpen, ArrowUpRight, ArrowDownLeft, Brain, Download,
 } from 'lucide-react';
 import { SettingsTab } from './SettingsTab';
+import { IntelligenceTab } from './IntelligenceTab';
 import { supabase } from './supabase';
 import { getTodayIST, formatISTDate } from './utils';
 
@@ -34,6 +35,7 @@ interface Customer {
   id: string; bunk_id: string; name: string; phone: string; address: string;
   vehicle_number: string; vehicle_model: string;
   credit_limit: number; outstanding_amount: number; is_active: boolean; created_at: string;
+  last_payment_date?: string;
 }
 interface Sale {
   id: string; bunk_id: string; customer_id: string | null; customer_name: string;
@@ -56,7 +58,7 @@ interface LedgerEntry {
   description: string; debit: number; credit: number; balance: number;
 }
 
-type Tab = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'purchases' | 'expenses' | 'reports' | 'settings';
+type Tab = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'purchases' | 'expenses' | 'reports' | 'intelligence' | 'settings';
 
 // ─── Onboarding Wizard ─────────────────────────────────────────────────────────
 interface OnboardingProduct {
@@ -398,6 +400,7 @@ export function AutoPartsApp({ bunkId, onLogout, user }: { bunkId: string; onLog
     { id: 'purchases', label: 'Purchases', icon: <Truck size={16} /> },
     { id: 'expenses', label: 'Expenses', icon: <Receipt size={16} /> },
     { id: 'reports', label: 'Reports', icon: <BarChart2 size={16} /> },
+    { id: 'intelligence', icon: <Brain size={14} />, label: 'AI Insights' },
     { id: 'settings', label: 'Settings', icon: <SettingsIcon size={16} /> },
   ];
 
@@ -420,7 +423,7 @@ export function AutoPartsApp({ bunkId, onLogout, user }: { bunkId: string; onLog
         <span className="text-2xl">🚗</span>
         <div>
           <h1 className="font-bold text-lg leading-tight">Auto Parts</h1>
-          <p className="text-slate-300 text-xs">FuelDesk AI</p>
+          <p className="text-slate-300 text-xs">Smart Biz AI</p>
         </div>
         <button onClick={onLogout} className="ml-auto p-2 rounded-lg hover:bg-white/20 transition" title="Sign Out">
           <LogOut size={20} />
@@ -457,6 +460,7 @@ export function AutoPartsApp({ bunkId, onLogout, user }: { bunkId: string; onLog
             {activeTab === 'purchases' && <ApPurchases bunkId={bunkId} purchases={purchases} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'expenses' && <ApExpenses bunkId={bunkId} expenses={expenses} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'reports' && <ApReports bunkId={bunkId} />}
+            {activeTab === 'intelligence' && <IntelligenceTab bunkId={bunkId} />}
             {activeTab === 'settings' && <SettingsTab bunkId={bunkId} user={user} onLogout={onLogout} />}
           </>
         )}
@@ -950,8 +954,18 @@ function ApSales({ bunkId, products, customers, sales, onRefresh, showToast }: {
 interface ACustForm { name: string; phone: string; address: string; vehicle_number: string; vehicle_model: string; credit_limit: number; }
 const defaultACF = (): ACustForm => ({ name: '', phone: '', address: '', vehicle_number: '', vehicle_model: '', credit_limit: 0 });
 
+function agingBadge(lastDate: string | null | undefined) {
+  const d = lastDate ? Math.floor((Date.now() - new Date(lastDate).getTime()) / 86400000) : 999;
+  if (d < 8) return <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">{d}d</span>;
+  if (d < 31) return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">{d}d</span>;
+  return <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">{d === 999 ? 'new' : d + 'd'}</span>;
+}
+
+const CUST_PAGE_SIZE = 10;
+
 function ApCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: string; customers: Customer[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; }) {
   const [search, setSearch] = useState('');
+  const [custPage, setCustPage] = useState(0);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [form, setForm] = useState<ACustForm>(defaultACF());
@@ -1009,17 +1023,18 @@ function ApCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: stri
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
-              <tr><th className="px-4 py-3 text-left">Name</th><th className="px-4 py-3 text-left">Phone</th><th className="px-4 py-3 text-left">Vehicle</th><th className="px-4 py-3 text-right">Credit Limit</th><th className="px-4 py-3 text-right">Outstanding</th><th className="px-4 py-3 text-center">Actions</th></tr>
+              <tr><th className="px-4 py-3 text-left">Name</th><th className="px-4 py-3 text-left">Phone</th><th className="px-4 py-3 text-left">Vehicle</th><th className="px-4 py-3 text-right">Credit Limit</th><th className="px-4 py-3 text-right">Outstanding</th><th className="px-4 py-3 text-center">Aging</th><th className="px-4 py-3 text-center">Actions</th></tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && <tr><td colSpan={6} className="text-center py-10 text-gray-400">No customers found.</td></tr>}
-              {filtered.map(c => (
+              {filtered.length === 0 && <tr><td colSpan={7} className="text-center py-10 text-gray-400">No customers found.</td></tr>}
+              {filtered.slice(custPage * CUST_PAGE_SIZE, (custPage + 1) * CUST_PAGE_SIZE).map(c => (
                 <tr key={c.id} className="border-t border-gray-100 hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-800">{c.name}</td>
                   <td className="px-4 py-3 text-gray-600">{c.phone || '—'}</td>
                   <td className="px-4 py-3 text-gray-600">{c.vehicle_number ? <span>{c.vehicle_number}<span className="text-gray-400 ml-1">({c.vehicle_model || 'N/A'})</span></span> : '—'}</td>
                   <td className="px-4 py-3 text-right text-gray-600">{inr(c.credit_limit || 0)}</td>
                   <td className="px-4 py-3 text-right"><span className={`font-semibold ${c.outstanding_amount > 0 ? 'text-orange-600' : 'text-gray-500'}`}>{inr(c.outstanding_amount)}</span></td>
+                  <td className="px-4 py-3 text-center">{agingBadge(c.last_payment_date)}</td>
                   <td className="px-4 py-3 text-center">
                     <div className="flex items-center justify-center gap-2">
                       {c.outstanding_amount > 0 && (
@@ -1034,6 +1049,15 @@ function ApCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: stri
             </tbody>
           </table>
         </div>
+        {filtered.length > CUST_PAGE_SIZE && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-sm text-gray-600">
+            <span>{custPage * CUST_PAGE_SIZE + 1}–{Math.min((custPage + 1) * CUST_PAGE_SIZE, filtered.length)} of {filtered.length}</span>
+            <div className="flex gap-2">
+              <button disabled={custPage === 0} onClick={() => setCustPage(p => p - 1)} className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Prev</button>
+              <button disabled={(custPage + 1) * CUST_PAGE_SIZE >= filtered.length} onClick={() => setCustPage(p => p + 1)} className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Next</button>
+            </div>
+          </div>
+        )}
       </div>
       {showModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -1351,6 +1375,24 @@ function ApReports({ bunkId }: { bunkId: string }) {
     { label: 'Net Profit', value: inr(netProfit), color: netProfit >= 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200' },
   ];
 
+  const handleExportCSV = () => {
+    if (!reportSales || reportSales.length === 0) return;
+    const headers = ['Date', 'Customer', 'Amount', 'Mode'];
+    const rows = (reportSales as any[]).map(s => [
+      s.sale_date || s.created_at?.substring(0,10) || '',
+      s.customer_name || '-',
+      s.total_amount || 0,
+      s.payment_mode || '-'
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(String).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `report-${new Date().toISOString().substring(0,7)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   return (
     <div className="space-y-6">
       {/* Period selector */}
@@ -1371,6 +1413,7 @@ function ApReports({ bunkId }: { bunkId: string }) {
           </div>
         )}
         {loading && <Loader2 size={16} className="animate-spin text-slate-500 ml-2" />}
+        <button onClick={handleExportCSV} className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 ml-auto"><Download size={13} /> Export CSV</button>
       </div>
 
       {/* KPI cards */}

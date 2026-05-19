@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { LogOut, Plus, Trash2, Search, RefreshCw, AlertTriangle, TrendingUp, Package, Users, ShoppingCart, FileText, BarChart2, Settings } from 'lucide-react';
+import { LogOut, Plus, Trash2, Search, RefreshCw, AlertTriangle, TrendingUp, Package, Users, ShoppingCart, FileText, BarChart2, Settings, Brain, Download } from 'lucide-react';
 import { supabase } from './supabase';
 import { getTodayIST } from './utils';
+import { SettingsTab } from './SettingsTab';
+import { IntelligenceTab } from './IntelligenceTab';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 interface AgProduct { id: string; bunk_id: string; name: string; category: string; unit: string; purchase_rate: number; selling_rate: number; stock_qty: number; low_stock_at: number; hsn_code: string; created_at: string; }
@@ -35,7 +37,7 @@ function Toast({ msg, type }: { msg: string; type: 'success' | 'error' }) {
 }
 
 // ── Header ─────────────────────────────────────────────────────────────────
-function Header({ onLogout, user, tab, setTab }: { onLogout: () => void; user: { name?: string; phone?: string }; tab: string; setTab: (t: string) => void }) {
+function Header({ onLogout, user, tab, setTab }: { onLogout: () => void; user: { name: string; email: string; role: string }; tab: string; setTab: (t: string) => void }) {
   const tabs = [
     { id: 'dashboard', icon: <BarChart2 size={14} />, label: 'Dashboard' },
     { id: 'inventory', icon: <Package size={14} />, label: 'Inventory' },
@@ -44,14 +46,15 @@ function Header({ onLogout, user, tab, setTab }: { onLogout: () => void; user: {
     { id: 'purchases', icon: <TrendingUp size={14} />, label: 'Purchases' },
     { id: 'expenses', icon: <FileText size={14} />, label: 'Expenses' },
     { id: 'reports', icon: <BarChart2 size={14} />, label: 'Reports' },
+    { id: 'intelligence', icon: <Brain size={14} />, label: 'AI Insights' },
     { id: 'settings', icon: <Settings size={14} />, label: 'Settings' },
   ];
   return (
     <div className="bg-green-700 text-white sticky top-0 z-40 shadow-lg">
       <div className="flex items-center justify-between px-4 py-3">
         <div>
-          <h1 className="font-bold text-lg leading-tight">🌾 Agro Shop AI</h1>
-          <p className="text-green-200 text-xs">{user.name || user.phone}</p>
+          <h1 className="font-bold text-lg leading-tight">🌾 Smart Biz AI</h1>
+          <p className="text-green-200 text-xs">{user.name}</p>
         </div>
         <button onClick={onLogout} className="flex items-center gap-1 bg-green-800 hover:bg-green-900 px-3 py-1.5 rounded-lg text-xs font-medium transition">
           <LogOut size={13} /> Logout
@@ -591,9 +594,19 @@ function AgSales({ bunkId, products, customers, onRefresh, showToast }: { bunkId
   );
 }
 
+function agingBadge(lastDate: string | null | undefined) {
+  const d = lastDate ? Math.floor((Date.now() - new Date(lastDate).getTime()) / 86400000) : 999;
+  if (d < 8) return <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">{d}d</span>;
+  if (d < 31) return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">{d}d</span>;
+  return <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">{d === 999 ? 'new' : d + 'd'}</span>;
+}
+
+const CUST_PAGE_SIZE = 10;
+
 // ── Farmers ────────────────────────────────────────────────────────────────
 function AgFarmers({ bunkId, customers, onRefresh, showToast }: { bunkId: string; customers: AgCustomer[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void }) {
   const [view, setView] = useState<'list' | 'payments'>('list');
+  const [custPage, setCustPage] = useState(0);
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -723,16 +736,16 @@ function AgFarmers({ bunkId, customers, onRefresh, showToast }: { bunkId: string
 
           <div className="space-y-2">
             {filtered.length === 0 && <div className="text-center py-8 text-gray-400 text-sm">No farmers found</div>}
-            {filtered.map(c => (
+            {filtered.slice(custPage * CUST_PAGE_SIZE, (custPage + 1) * CUST_PAGE_SIZE).map(c => (
               <div key={c.id} className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
                 <div className="flex justify-between items-start">
                   <div>
                     <p className="font-semibold text-gray-800">{c.name}</p>
                     <p className="text-xs text-gray-500">{[c.village, c.land_area, c.phone].filter(Boolean).join(' · ')}</p>
-                    {c.last_payment_date && <p className="text-xs text-gray-400 mt-0.5">Last payment: {c.last_payment_date}</p>}
                   </div>
-                  <div className="text-right">
+                  <div className="text-right space-y-1">
                     <p className={`font-bold text-base ${(c.outstanding_amount || 0) > 0 ? 'text-red-600' : 'text-green-600'}`}>{inr(c.outstanding_amount || 0)}</p>
+                    {(c.outstanding_amount || 0) > 0 && agingBadge(c.last_payment_date)}
                     {(c.credit_limit || 0) > 0 && <p className="text-xs text-gray-400">Limit: {inr(c.credit_limit)}</p>}
                   </div>
                 </div>
@@ -745,6 +758,15 @@ function AgFarmers({ bunkId, customers, onRefresh, showToast }: { bunkId: string
               </div>
             ))}
           </div>
+          {filtered.length > CUST_PAGE_SIZE && (
+            <div className="flex items-center justify-between px-1 py-2 text-sm text-gray-600">
+              <span>{custPage * CUST_PAGE_SIZE + 1}–{Math.min((custPage + 1) * CUST_PAGE_SIZE, filtered.length)} of {filtered.length}</span>
+              <div className="flex gap-2">
+                <button disabled={custPage === 0} onClick={() => setCustPage(p => p - 1)} className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Prev</button>
+                <button disabled={(custPage + 1) * CUST_PAGE_SIZE >= filtered.length} onClick={() => setCustPage(p => p + 1)} className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Next</button>
+              </div>
+            </div>
+          )}
 
           {payModal && (
             <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
@@ -1062,14 +1084,32 @@ function AgReports({ bunkId }: { bunkId: string }) {
 
   const periodLabel = period === 'today' ? `Today (${getTodayIST()})` : period === 'month' ? 'This Month' : `${season.emoji} ${season.label} Season`;
 
+  function handleExportCSV() {
+    if (!reportData) return;
+    const rows = [
+      ['Metric', 'Value'],
+      ['Period', periodLabel],
+      ['Total Sales', reportData.sales],
+      ['Cash / UPI Sales', reportData.cash],
+      ['Credit Sales', reportData.credit],
+      ['Payments Received', reportData.payments],
+      ['Expenses', reportData.expenses],
+      ['Net (Cash basis)', reportData.cash + reportData.payments - reportData.expenses],
+    ];
+    const csv = rows.map(r => r.join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const a = document.createElement('a'); a.href = url; a.download = `agriculture-report-${period}.csv`; a.click();
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
+      <div className="flex gap-2 items-center">
         {(['today', 'month', 'season'] as const).map(p => (
           <button key={p} onClick={() => setPeriod(p)} className={`flex-1 py-2 text-sm font-medium rounded-lg transition capitalize ${period === p ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
             {p === 'season' ? `${season.emoji} Season` : p}
           </button>
         ))}
+        {reportData && <button onClick={handleExportCSV} className="flex items-center gap-1.5 bg-white border border-gray-200 text-gray-700 px-3 py-2 rounded-xl text-sm font-medium hover:bg-gray-50"><Download size={14} /></button>}
       </div>
 
       {loading ? <div className="text-center py-8 text-gray-400 text-sm">Loading…</div> : reportData && (
@@ -1578,6 +1618,7 @@ export function AgricultureApp({ bunkId, onLogout, user }: { bunkId: string; onL
         {tab === 'purchases' && <AgPurchases bunkId={bunkId} onRefresh={refresh} showToast={showToast} />}
         {tab === 'expenses' && <AgExpenses bunkId={bunkId} onRefresh={refresh} showToast={showToast} />}
         {tab === 'reports' && <AgReports bunkId={bunkId} />}
+        {tab === 'intelligence' && <IntelligenceTab bunkId={bunkId} />}
         {tab === 'settings' && <AgSettings bunkId={bunkId} onLogout={onLogout} showToast={showToast} />}
       </div>
       {toast && <Toast msg={toast.msg} type={toast.type} />}

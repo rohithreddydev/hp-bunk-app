@@ -12,8 +12,10 @@ import {
   Loader2, TrendingUp, TrendingDown, Wallet, BarChart3,
   Settings as SettingsIcon, LogOut, FileText, Calendar, BookOpen,
   ChevronRight, DollarSign, CreditCard, ArrowUpRight, ArrowDownLeft,
+  Brain, Download,
 } from 'lucide-react';
 import { SettingsTab } from './SettingsTab';
+import { IntelligenceTab } from './IntelligenceTab';
 import { supabase } from './supabase';
 import { getTodayIST, formatISTDate } from './utils';
 
@@ -38,6 +40,7 @@ interface Product {
 interface Customer {
   id: string; bunk_id: string; name: string; phone: string; address: string;
   credit_limit: number; outstanding_amount: number; is_active: boolean; created_at: string;
+  last_payment_date?: string;
 }
 interface Supplier {
   id: string; bunk_id: string; name: string; phone: string; company: string;
@@ -60,7 +63,7 @@ interface Expense {
 interface CartItem { product: Product; quantity: number; price: number; }
 interface LedgerEntry { date: string; type: 'sale' | 'payment'; amount: number; label: string; mode?: string; running_balance?: number; }
 
-type Tab = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers' | 'purchases' | 'expenses' | 'reports' | 'settings';
+type Tab = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers' | 'purchases' | 'expenses' | 'reports' | 'intelligence' | 'settings';
 
 export function KiranaApp({ bunkId, onLogout, user }: { bunkId: string; onLogout: () => void; user: { name: string; email: string; role: string } }) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -118,6 +121,7 @@ export function KiranaApp({ bunkId, onLogout, user }: { bunkId: string; onLogout
     { id: 'purchases', label: 'Purchases', icon: <BarChart3 size={16} /> },
     { id: 'expenses', label: 'Expenses', icon: <Receipt size={16} /> },
     { id: 'reports', label: 'Reports', icon: <FileText size={16} /> },
+    { id: 'intelligence', label: 'AI Insights', icon: <Brain size={14} /> },
     { id: 'settings', label: 'Settings', icon: <SettingsIcon size={16} /> },
   ];
 
@@ -171,6 +175,7 @@ export function KiranaApp({ bunkId, onLogout, user }: { bunkId: string; onLogout
             {activeTab === 'purchases' && <KiPurchases bunkId={bunkId} purchases={purchases} suppliers={suppliers} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'expenses' && <KiExpenses bunkId={bunkId} expenses={expenses} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'reports' && <KiReports bunkId={bunkId} />}
+            {user.role === 'owner' && activeTab === 'intelligence' && <IntelligenceTab bunkId={bunkId} />}
             {activeTab === 'settings' && <SettingsTab bunkId={bunkId} user={user} onLogout={onLogout} />}
           </>
         )}
@@ -588,8 +593,18 @@ function KiSales({ bunkId, products, customers, onRefresh, showToast }: { bunkId
 interface CustForm { name: string; phone: string; address: string; credit_limit: number; }
 const defaultCF = (): CustForm => ({ name: '', phone: '', address: '', credit_limit: 0 });
 
+function agingBadge(lastDate: string | null | undefined) {
+  const d = lastDate ? Math.floor((Date.now() - new Date(lastDate).getTime()) / 86400000) : 999;
+  if (d < 8) return <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">{d}d</span>;
+  if (d < 31) return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">{d}d</span>;
+  return <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">{d === 999 ? 'new' : d + 'd'}</span>;
+}
+
+const CUST_PAGE_SIZE = 10;
+
 function KiCustomers({ bunkId, customers, sales, onRefresh, showToast }: { bunkId: string; customers: Customer[]; sales: Sale[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; }) {
   const [search, setSearch] = useState('');
+  const [custPage, setCustPage] = useState(0);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [form, setForm] = useState<CustForm>(defaultCF());
@@ -658,16 +673,17 @@ function KiCustomers({ bunkId, customers, sales, onRefresh, showToast }: { bunkI
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
-              <tr><th className="px-4 py-3 text-left">Name</th><th className="px-4 py-3 text-left">Phone</th><th className="px-4 py-3 text-right">Credit Limit</th><th className="px-4 py-3 text-right">Outstanding</th><th className="px-4 py-3 text-center">Actions</th></tr>
+              <tr><th className="px-4 py-3 text-left">Name</th><th className="px-4 py-3 text-left">Phone</th><th className="px-4 py-3 text-right">Credit Limit</th><th className="px-4 py-3 text-right">Outstanding</th><th className="px-4 py-3 text-center">Aging</th><th className="px-4 py-3 text-center">Actions</th></tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && <tr><td colSpan={5} className="text-center py-10 text-gray-400">No customers found.</td></tr>}
-              {filtered.map(c => (
+              {filtered.length === 0 && <tr><td colSpan={6} className="text-center py-10 text-gray-400">No customers found.</td></tr>}
+              {filtered.slice(custPage * CUST_PAGE_SIZE, (custPage + 1) * CUST_PAGE_SIZE).map(c => (
                 <tr key={c.id} className="border-t border-gray-100 hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-800">{c.name}</td>
                   <td className="px-4 py-3 text-gray-600">{c.phone || '—'}</td>
                   <td className="px-4 py-3 text-right text-gray-500">{c.credit_limit > 0 ? inr(c.credit_limit) : '—'}</td>
                   <td className="px-4 py-3 text-right"><span className={`font-semibold ${c.outstanding_amount > 0 ? 'text-orange-600' : 'text-gray-400'}`}>{inr(c.outstanding_amount)}</span></td>
+                  <td className="px-4 py-3 text-center">{agingBadge(c.last_payment_date)}</td>
                   <td className="px-4 py-3 text-center">
                     <div className="flex items-center justify-center gap-2">
                       <button onClick={() => setLedgerCust(c)} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-200">Ledger</button>
@@ -682,6 +698,15 @@ function KiCustomers({ bunkId, customers, sales, onRefresh, showToast }: { bunkI
             </tbody>
           </table>
         </div>
+        {filtered.length > CUST_PAGE_SIZE && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-sm text-gray-600">
+            <span>{custPage * CUST_PAGE_SIZE + 1}–{Math.min((custPage + 1) * CUST_PAGE_SIZE, filtered.length)} of {filtered.length}</span>
+            <div className="flex gap-2">
+              <button disabled={custPage === 0} onClick={() => setCustPage(p => p - 1)} className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Prev</button>
+              <button disabled={(custPage + 1) * CUST_PAGE_SIZE >= filtered.length} onClick={() => setCustPage(p => p + 1)} className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Next</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {ledgerCust && <KiLedgerModal bunkId={bunkId} customer={ledgerCust} onClose={() => setLedgerCust(null)} />}
@@ -1046,17 +1071,20 @@ function KiReports({ bunkId }: { bunkId: string }) {
     topCustomers: { name: string; outstanding_amount: number }[];
     expenseBreakdown: { category: string; total: number }[];
     txCount: number;
+    sales: { sale_date: string; customer_name: string; total_amount: number; payment_mode: string }[];
   } | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function loadReport() {
     setLoading(true);
-    const from = `${year}-${String(month).padStart(2, '0')}-01`;
-    const to   = `${year}-${String(month).padStart(2, '0')}-31`;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear = month === 12 ? year + 1 : year;
+    const fromDate = `${year}-${String(month).padStart(2, '0')}-01`;
+    const toDate = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`;
     const [{ data: sales }, { data: expenses }, { data: payments }, { data: saleItems }, { data: products }, { data: topCusts }] = await Promise.all([
-      supabase.from('ki_sales').select('total_amount, payment_mode').eq('bunk_id', bunkId).gte('sale_date', from).lte('sale_date', to),
-      supabase.from('ki_expenses').select('amount, category').eq('bunk_id', bunkId).gte('expense_date', from).lte('expense_date', to),
-      supabase.from('ki_payments').select('amount').eq('bunk_id', bunkId).gte('payment_date', from).lte('payment_date', to),
+      supabase.from('ki_sales').select('sale_date, customer_name, total_amount, payment_mode').eq('bunk_id', bunkId).gte('sale_date', fromDate).lt('sale_date', toDate),
+      supabase.from('ki_expenses').select('amount, category').eq('bunk_id', bunkId).gte('expense_date', fromDate).lt('expense_date', toDate),
+      supabase.from('ki_payments').select('amount').eq('bunk_id', bunkId).gte('payment_date', fromDate).lt('payment_date', toDate),
       supabase.from('ki_sale_items').select('product_name, quantity, total_price, product_id').eq('bunk_id', bunkId),
       supabase.from('ki_products').select('id, purchase_price').eq('bunk_id', bunkId),
       supabase.from('ki_customers').select('name, outstanding_amount').eq('bunk_id', bunkId).order('outstanding_amount', { ascending: false }).limit(5),
@@ -1088,13 +1116,26 @@ function KiReports({ bunkId }: { bunkId: string }) {
     (expenses || []).forEach((e: { category: string; amount: number }) => { expMap[e.category] = (expMap[e.category] || 0) + e.amount; });
     const expenseBreakdown = Object.entries(expMap).map(([category, total]) => ({ category, total })).sort((a, b) => b.total - a.total);
 
-    setData({ totalSales, cashSales, creditSales, upiSales, totalExp, totalCollections, grossProfit: revenue - cost, topProducts, topCustomers: (topCusts || []).filter((c: { outstanding_amount: number }) => c.outstanding_amount > 0), expenseBreakdown, txCount: (sales || []).length });
+    setData({ totalSales, cashSales, creditSales, upiSales, totalExp, totalCollections, grossProfit: revenue - cost, topProducts, topCustomers: (topCusts || []).filter((c: { outstanding_amount: number }) => c.outstanding_amount > 0), expenseBreakdown, txCount: (sales || []).length, sales: (sales || []) as { sale_date: string; customer_name: string; total_amount: number; payment_mode: string }[] });
     setLoading(false);
   }
 
   useEffect(() => { loadReport(); }, [month, year]);
 
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  const handleExportCSV = () => {
+    if (!data) return;
+    const rows = [
+      ['Date', 'Customer', 'Amount', 'Mode'],
+      ...(data.sales || []).map((s: { sale_date: string; customer_name: string; total_amount: number; payment_mode: string }) => [s.sale_date, s.customer_name || '-', s.total_amount, s.payment_mode || '-'])
+    ];
+    const csv = rows.map(r => r.map(String).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `kirana-report-${year}-${month}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="space-y-5">
@@ -1109,6 +1150,11 @@ function KiReports({ bunkId }: { bunkId: string }) {
         <button onClick={loadReport} disabled={loading} className="flex items-center gap-2 bg-orange-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-orange-700 disabled:opacity-60">
           {loading ? <Loader2 size={14} className="animate-spin" /> : <ChevronRight size={14} />}{loading ? 'Loading…' : 'Load'}
         </button>
+        {data && (
+          <button onClick={handleExportCSV} className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-xl text-sm font-medium hover:bg-gray-50">
+            <Download size={14} /> Export CSV
+          </button>
+        )}
       </div>
 
       {loading && <div className="flex justify-center py-12"><Loader2 className="animate-spin text-orange-600" size={32} /></div>}

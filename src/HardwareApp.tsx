@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// FuelDesk AI — Hardware Store Module (v2)
+// Smart Biz AI — Hardware Store Module (v2)
 // Blue theme — hw_ Supabase tables
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -9,9 +9,10 @@ import {
   Plus, Edit2, Trash2, X, Search, AlertTriangle, CheckCircle2,
   Loader2, TrendingUp, TrendingDown, Wallet, CreditCard,
   Settings as SettingsIcon, LogOut, ChevronDown, ChevronUp,
-  FileText, Clock, RefreshCw,
+  FileText, Clock, RefreshCw, Brain, Download,
 } from 'lucide-react';
 import { SettingsTab } from './SettingsTab';
+import { IntelligenceTab } from './IntelligenceTab';
 import { supabase } from './supabase';
 import { getTodayIST } from './utils';
 
@@ -57,7 +58,7 @@ interface Expense {
 }
 interface CartItem { product: Product; quantity: number; price: number; }
 
-type Tab = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'purchases' | 'expenses' | 'reports' | 'settings';
+type Tab = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'purchases' | 'expenses' | 'reports' | 'intelligence' | 'settings';
 
 // ─── HardwareOnboarding wizard ─────────────────────────────────────────────────
 interface OnboardItem {
@@ -488,6 +489,7 @@ export function HardwareApp({ bunkId, onLogout, user }: { bunkId: string; onLogo
     { id: 'purchases', label: 'Purchases', icon: <Truck size={16} /> },
     { id: 'expenses', label: 'Expenses', icon: <Receipt size={16} /> },
     { id: 'reports', label: 'Reports', icon: <FileText size={16} /> },
+    { id: 'intelligence', label: 'AI Insights', icon: <Brain size={16} /> },
     { id: 'settings', label: 'Settings', icon: <SettingsIcon size={16} /> },
   ];
 
@@ -510,7 +512,7 @@ export function HardwareApp({ bunkId, onLogout, user }: { bunkId: string; onLogo
         <span className="text-2xl">🔧</span>
         <div>
           <h1 className="font-bold text-lg leading-tight">Hardware Store</h1>
-          <p className="text-blue-200 text-xs">FuelDesk AI</p>
+          <p className="text-blue-200 text-xs">Smart Biz AI</p>
         </div>
         <button onClick={onLogout} className="ml-auto p-2 rounded-lg hover:bg-white/20 transition" title="Sign Out">
           <LogOut size={20} />
@@ -570,6 +572,7 @@ export function HardwareApp({ bunkId, onLogout, user }: { bunkId: string; onLogo
             {activeTab === 'purchases' && <HwPurchases bunkId={bunkId} purchases={purchases} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'expenses' && <HwExpenses bunkId={bunkId} expenses={expenses} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'reports' && <HwReports bunkId={bunkId} sales={sales} expenses={expenses} payments={payments} customers={customers} />}
+            {activeTab === 'intelligence' && <IntelligenceTab bunkId={bunkId} />}
             {activeTab === 'settings' && <SettingsTab bunkId={bunkId} user={user} onLogout={onLogout} />}
           </>
         )}
@@ -1135,12 +1138,22 @@ function HwSales({ bunkId, products, customers, sales, onRefresh, showToast }: {
 interface CustForm { name: string; phone: string; address: string; credit_limit: number; }
 const defaultCF = (): CustForm => ({ name: '', phone: '', address: '', credit_limit: 0 });
 
+function agingBadge(lastDate: string | null | undefined) {
+  const d = lastDate ? Math.floor((Date.now() - new Date(lastDate).getTime()) / 86400000) : 999;
+  if (d < 8) return <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">{d}d</span>;
+  if (d < 31) return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">{d}d</span>;
+  return <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">{d === 999 ? 'new' : d + 'd'}</span>;
+}
+
+const CUST_PAGE_SIZE = 10;
+
 function HwCustomers({ bunkId, customers, payments, onRefresh, showToast }: {
   bunkId: string; customers: Customer[]; payments: Payment[];
   onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void;
 }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'outstanding' | 'overdue'>('all');
+  const [custPage, setCustPage] = useState(0);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [form, setForm] = useState<CustForm>(defaultCF());
@@ -1331,7 +1344,7 @@ function HwCustomers({ bunkId, customers, payments, onRefresh, showToast }: {
             </thead>
             <tbody>
               {filtered.length === 0 && <tr><td colSpan={6} className="text-center py-10 text-gray-400">No customers found.</td></tr>}
-              {filtered.map(c => {
+              {filtered.slice(custPage * CUST_PAGE_SIZE, (custPage + 1) * CUST_PAGE_SIZE).map(c => {
                 const days = daysSincePayment(c);
                 const isOverdue = c.outstanding_amount > 0 && days > 30;
                 return (
@@ -1340,15 +1353,7 @@ function HwCustomers({ bunkId, customers, payments, onRefresh, showToast }: {
                     <td className="px-4 py-3 text-gray-600">{c.phone || '—'}</td>
                     <td className="px-4 py-3 text-right text-gray-500 text-xs">{inr(c.credit_limit || 0)}</td>
                     <td className="px-4 py-3 text-right"><span className={`font-semibold ${c.outstanding_amount > 0 ? 'text-orange-600' : 'text-gray-400'}`}>{inr(c.outstanding_amount)}</span></td>
-                    <td className="px-4 py-3 text-center">
-                      {c.last_payment_date ? (
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${isOverdue ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
-                          {days}d ago{isOverdue ? ' ⚠️' : ''}
-                        </span>
-                      ) : c.outstanding_amount > 0 ? (
-                        <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">Never paid</span>
-                      ) : <span className="text-gray-400">—</span>}
-                    </td>
+                    <td className="px-4 py-3 text-center">{agingBadge(c.last_payment_date)}</td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-2">
                         {c.outstanding_amount > 0 && (
@@ -1364,6 +1369,15 @@ function HwCustomers({ bunkId, customers, payments, onRefresh, showToast }: {
             </tbody>
           </table>
         </div>
+        {filtered.length > CUST_PAGE_SIZE && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-sm text-gray-600">
+            <span>{custPage * CUST_PAGE_SIZE + 1}–{Math.min((custPage + 1) * CUST_PAGE_SIZE, filtered.length)} of {filtered.length}</span>
+            <div className="flex gap-2">
+              <button disabled={custPage === 0} onClick={() => setCustPage(p => p - 1)} className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Prev</button>
+              <button disabled={(custPage + 1) * CUST_PAGE_SIZE >= filtered.length} onClick={() => setCustPage(p => p + 1)} className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Next</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {showModal && (
@@ -1676,11 +1690,26 @@ function HwReports({ bunkId, sales, expenses, payments, customers }: {
   const expByCategory: Record<string, number> = {};
   mExp.forEach(e => { expByCategory[e.category] = (expByCategory[e.category] || 0) + e.amount; });
 
+  function handleExportCSV() {
+    const rows = [
+      ['Type', 'Date', 'Amount', 'Mode', 'Customer/Category'],
+      ...mSales.map(s => ['Sale', s.sale_date, s.total_amount, s.payment_mode, s.customer_name || '']),
+      ...mExp.map(e => ['Expense', e.expense_date, e.amount, '', e.category]),
+      ...mPay.map(p => ['Payment', p.payment_date, p.amount, p.payment_mode, p.customer_name || '']),
+    ];
+    const csv = rows.map(r => r.join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const a = document.createElement('a'); a.href = url; a.download = `hardware-report-${reportMonth}.csv`; a.click();
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <h2 className="font-semibold text-gray-800 text-lg">Monthly Report</h2>
         <input type="month" value={reportMonth} onChange={e => setReportMonth(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+        <button onClick={handleExportCSV} className="ml-auto flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-xl text-sm font-medium hover:bg-gray-50">
+          <Download size={14} /> Export CSV
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

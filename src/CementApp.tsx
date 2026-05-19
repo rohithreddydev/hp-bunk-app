@@ -4,9 +4,10 @@ import {
   Plus, Search, AlertTriangle, TrendingUp, RefreshCw,
   CheckCircle2, MapPin, Phone, X, ChevronRight, Building2,
   ArrowUpRight, Loader2, Layers, LogOut,
-  Zap, Trophy, Banknote, ChevronLeft,
+  Zap, Trophy, Banknote, ChevronLeft, Brain, Download,
 } from 'lucide-react';
 import { SettingsTab } from './SettingsTab';
+import { IntelligenceTab } from './IntelligenceTab';
 import { supabase } from './supabase';
 import { getTodayIST, formatISTDate } from './utils';
 
@@ -833,7 +834,7 @@ function RateUpdateBanner({ bunkId, productsCount }: { bunkId: string; productsC
 
 // ── Main Component ───────────────────────────────────────────────────────────
 export function CementApp({ bunkId, onLogout, user }: { bunkId: string; onLogout: () => void; user: { name: string; email: string; role: string } }) {
-  const [tab, setTab] = useState<'dashboard' | 'inventory' | 'sales' | 'customers' | 'deliveries' | 'purchases' | 'expenses' | 'reports' | 'suppliers' | 'settings'>('dashboard');
+  const [tab, setTab] = useState<'dashboard' | 'inventory' | 'sales' | 'customers' | 'deliveries' | 'purchases' | 'expenses' | 'reports' | 'suppliers' | 'intelligence' | 'settings'>('dashboard');
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
   const [productsCount, setProductsCount] = useState(0);
 
@@ -877,6 +878,7 @@ export function CementApp({ bunkId, onLogout, user }: { bunkId: string; onLogout
     { id: 'expenses',   label: 'Expenses',    icon: Receipt },
     { id: 'reports',    label: 'Reports',     icon: TrendingUp },
     { id: 'suppliers',  label: 'Suppliers',   icon: Building2 },
+    { id: 'intelligence', label: 'AI Insights', icon: Brain },
     { id: 'settings',   label: 'Settings',    icon: Settings },
   ] as const;
 
@@ -937,6 +939,7 @@ export function CementApp({ bunkId, onLogout, user }: { bunkId: string; onLogout
         {tab === 'expenses'   && <ExpensesTab bunkId={bunkId} />}
         {tab === 'reports'    && <ReportsTab bunkId={bunkId} />}
         {tab === 'suppliers'  && <SuppliersTab bunkId={bunkId} />}
+        {tab === 'intelligence' && <IntelligenceTab bunkId={bunkId} />}
         {tab === 'settings'   && <SettingsTab bunkId={bunkId} user={user} onLogout={onLogout} />}
       </div>
     </div>
@@ -1696,11 +1699,21 @@ function CustomerLedgerModal({ bunkId, customer, onClose }: { bunkId: string; cu
   );
 }
 
+function agingBadge(lastDate: string | null | undefined) {
+  const d = lastDate ? Math.floor((Date.now() - new Date(lastDate).getTime()) / 86400000) : 999;
+  if (d < 8) return <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">{d}d</span>;
+  if (d < 31) return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">{d}d</span>;
+  return <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">{d === 999 ? 'new' : d + 'd'}</span>;
+}
+
+const CUST_PAGE_SIZE = 10;
+
 function CustomersTab({ bunkId }: { bunkId: string }) {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [custPage, setCustPage] = useState(0);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [form, setForm] = useState({ name: '', phone: '', address: '', customer_type: 'retail', gstin: '', credit_limit: 0 });
@@ -1774,7 +1787,7 @@ function CustomersTab({ bunkId }: { bunkId: string }) {
       </div>
 
       <div className="space-y-3">
-        {filtered.map(c => (
+        {filtered.slice(custPage * CUST_PAGE_SIZE, (custPage + 1) * CUST_PAGE_SIZE).map(c => (
           <div key={c.id} className="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-sm">
             <div className="flex justify-between items-start">
               <div className="flex-1 cursor-pointer" onClick={() => { setEditing(c); setForm({ name: c.name, phone: c.phone || '', address: c.address || '', customer_type: c.customer_type, gstin: c.gstin || '', credit_limit: c.credit_limit }); setShowForm(true); }}>
@@ -1783,6 +1796,7 @@ function CustomersTab({ bunkId }: { bunkId: string }) {
               </div>
               <div className="text-right flex flex-col items-end gap-1.5">
                 {c.outstanding_amount > 0 && <div className="text-sm font-bold text-red-600">{inr(c.outstanding_amount)}</div>}
+                {c.outstanding_amount > 0 && agingBadge(c.last_payment_date)}
                 <div className="text-xs text-gray-400">Total: {inr(c.total_purchases)}</div>
                 <div className="flex gap-1.5">
                   <button onClick={() => setLedgerCustomer(c)} className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-lg hover:bg-gray-200 font-medium">Ledger</button>
@@ -1794,6 +1808,15 @@ function CustomersTab({ bunkId }: { bunkId: string }) {
         ))}
         {filtered.length === 0 && <div className="text-center py-10 text-gray-400">No customers found</div>}
       </div>
+      {filtered.length > CUST_PAGE_SIZE && (
+        <div className="flex items-center justify-between px-1 py-2 text-sm text-gray-600">
+          <span>{custPage * CUST_PAGE_SIZE + 1}–{Math.min((custPage + 1) * CUST_PAGE_SIZE, filtered.length)} of {filtered.length}</span>
+          <div className="flex gap-2">
+            <button disabled={custPage === 0} onClick={() => setCustPage(p => p - 1)} className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Prev</button>
+            <button disabled={(custPage + 1) * CUST_PAGE_SIZE >= filtered.length} onClick={() => setCustPage(p => p + 1)} className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Next</button>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center p-4">
@@ -2273,6 +2296,27 @@ function ReportsTab({ bunkId }: { bunkId: string }) {
   const [month, setMonth] = useState(currentMonth);
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [salesData, setSalesData] = useState<any[]>([]);
+
+  const handleExportCSV = () => {
+    const sales = salesData;
+    if (!sales || sales.length === 0) { return; }
+    const headers = ['Date', 'Customer', 'Amount', 'Status', 'Mode'];
+    const rows = (sales as any[]).map(s => [
+      s.sale_date || s.created_at?.substring(0,10) || '',
+      s.customer_name || '-',
+      s.total_amount || 0,
+      s.payment_status || s.delivery_status || '-',
+      s.payment_mode || '-'
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(String).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `cement-report-${new Date().toISOString().substring(0,7)}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  };
 
   const loadReport = useCallback(async () => {
     setLoading(true);

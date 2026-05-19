@@ -4,10 +4,11 @@ import {
   AlertTriangle, CheckCircle, X, Save, ArrowLeft, ChevronRight,
   DollarSign, Calendar, Pill, FileText, Truck, BarChart2,
   Clock, Tag, RefreshCw, Receipt, BookOpen, ArrowUpRight, ArrowDownLeft,
-  Settings as SettingsIcon, LogOut,
+  Settings as SettingsIcon, LogOut, Brain, Download,
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { SettingsTab } from './SettingsTab';
+import { IntelligenceTab } from './IntelligenceTab';
 
 interface MedProduct {
   id: string;
@@ -41,6 +42,7 @@ interface MedCustomer {
   outstanding_amount: number;
   credit_limit: number;
   is_active: boolean;
+  last_payment_date?: string;
 }
 
 interface MedSale {
@@ -145,6 +147,13 @@ function expiryColor(days: number): string {
   return 'text-green-600 bg-green-100';
 }
 
+function agingBadge(lastDate: string | null | undefined) {
+  const d = lastDate ? Math.floor((Date.now() - new Date(lastDate).getTime()) / 86400000) : 999;
+  if (d < 8) return <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">{d}d</span>;
+  if (d < 31) return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">{d}d</span>;
+  return <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">{d === 999 ? 'new' : d+'d'}</span>;
+}
+
 function MedLedgerModal({ bunkId, customer, onClose }: { bunkId: string; customer: MedCustomer; onClose: () => void }) {
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -220,6 +229,7 @@ function MedReports({ bunkId }: { bunkId: string }) {
     expenseBreakdown: { category: string; amount: number }[];
   } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [sales, setSales] = useState<any[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -228,7 +238,7 @@ function MedReports({ bunkId }: { bunkId: string }) {
     const to = `${year}-${String(month).padStart(2,'0')}-${String(toDate.getDate()).padStart(2,'0')}`;
 
     const [salesRes, itemsRes, expRes, payRes, prodRes] = await Promise.all([
-      supabase.from('med_sales').select('total_amount,payment_mode').eq('bunk_id', bunkId).gte('sale_date', from).lte('sale_date', to),
+      supabase.from('med_sales').select('sale_date,customer_name,total_amount,payment_mode').eq('bunk_id', bunkId).gte('sale_date', from).lte('sale_date', to),
       supabase.from('med_sale_items').select('product_name,quantity,total_price').eq('bunk_id', bunkId).gte('created_at', from).lte('created_at', to + 'T23:59:59'),
       supabase.from('med_expenses').select('category,amount').eq('bunk_id', bunkId).gte('expense_date', from).lte('expense_date', to),
       supabase.from('med_payments').select('amount').eq('bunk_id', bunkId).gte('payment_date', from).lte('payment_date', to),
@@ -240,6 +250,8 @@ function MedReports({ bunkId }: { bunkId: string }) {
     const exps = expRes.data || [];
     const pays = payRes.data || [];
     const prods = prodRes.data || [];
+
+    setSales(sales);
 
     const totalSales = sales.reduce((a, x) => a + Number(x.total_amount), 0);
     const totalExpenses = exps.reduce((a, x) => a + Number(x.amount), 0);
@@ -275,6 +287,15 @@ function MedReports({ bunkId }: { bunkId: string }) {
 
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
+  const handleExportCSV = () => {
+    if (!sales || sales.length === 0) return;
+    const headers = ['Date', 'Customer', 'Amount', 'Mode'];
+    const rows = sales.map((s: any) => [s.sale_date || s.created_at?.substring(0,10), s.customer_name || '-', s.total_amount || s.amount || 0, s.payment_mode || '-']);
+    const csv = [headers, ...rows].map(r => r.map(String).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `medical-report.csv`; a.click();
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -285,6 +306,7 @@ function MedReports({ bunkId }: { bunkId: string }) {
           {[now.getFullYear()-1, now.getFullYear()].map(y => <option key={y} value={y}>{y}</option>)}
         </select>
         <button onClick={load} className="p-2 rounded-lg bg-teal-50 text-teal-600 hover:bg-teal-100"><RefreshCw className="w-4 h-4" /></button>
+        <button onClick={handleExportCSV} disabled={!sales.length} className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 text-sm disabled:opacity-40"><Download className="w-4 h-4" /> Export CSV</button>
       </div>
 
       {loading ? <div className="text-center py-12 text-gray-400">Loading...</div> : !data ? null : (
@@ -362,7 +384,7 @@ function MedReports({ bunkId }: { bunkId: string }) {
 }
 
 export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogout: () => void; user: { name: string; email: string; role: string } }) {
-  const [tab, setTab] = useState<'dashboard'|'inventory'|'sales'|'customers'|'purchases'|'expenses'|'expiry'|'reports'|'settings'>('dashboard');
+  const [tab, setTab] = useState<'dashboard'|'inventory'|'sales'|'customers'|'purchases'|'expenses'|'expiry'|'reports'|'intelligence'|'settings'>('dashboard');
   const [products, setProducts] = useState<MedProduct[]>([]);
   const [customers, setCustomers] = useState<MedCustomer[]>([]);
   const [sales, setSales] = useState<MedSale[]>([]);
@@ -404,6 +426,9 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
   const [showPaymentModal, setShowPaymentModal] = useState<MedCustomer|null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMode, setPaymentMode] = useState('cash');
+  const [custSearch, setCustSearch] = useState('');
+  const [custPage, setCustPage] = useState(0);
+  const CUST_PAGE_SIZE = 10;
 
   // purchase form
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
@@ -702,6 +727,7 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
           ['expenses','Expenses',DollarSign],
           ['expiry','Expiry Tracker',Clock],
           ['reports','Reports',FileText],
+          ['intelligence','AI Insights',Brain],
           ['settings','Settings',SettingsIcon],
         ] as const).map(([key, label, Icon]) => (
           <button key={key} onClick={() => setTab(key as typeof tab)}
@@ -978,6 +1004,10 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
                 <Plus className="w-4 h-4" /> Add Customer
               </button>
             </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+              <input value={custSearch} onChange={e => { setCustSearch(e.target.value); setCustPage(0); }} placeholder="Search customers…" className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-teal-500 focus:outline-none" />
+            </div>
             {showCustomerForm && (
               <div className="bg-white rounded-xl p-4 shadow-sm border space-y-3">
                 <h3 className="font-semibold text-gray-700">New Customer</h3>
@@ -998,22 +1028,44 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
                 </div>
               </div>
             )}
-            {customers.map(c => (
-              <div key={c.id} className="bg-white rounded-xl p-3 shadow-sm flex justify-between items-start">
-                <div>
-                  <div className="font-semibold text-sm">{c.name}</div>
-                  <div className="text-xs text-gray-500">{c.phone} | {c.customer_type}</div>
-                  {Number(c.outstanding_amount) > 0 && <div className="text-xs font-medium text-orange-600">Outstanding: ₹{Number(c.outstanding_amount).toFixed(0)}</div>}
-                  {Number(c.credit_limit) > 0 && <div className="text-xs text-gray-400">Limit: ₹{c.credit_limit}</div>}
-                </div>
-                <div className="flex gap-1">
-                  <button onClick={() => setLedgerCust(c)} className="bg-blue-100 text-blue-700 px-3 py-1 rounded-lg text-xs font-medium hover:bg-blue-200">Ledger</button>
-                  {Number(c.outstanding_amount) > 0 && (
-                    <button onClick={() => setShowPaymentModal(c)} className="bg-green-100 text-green-700 px-3 py-1 rounded-lg text-xs font-medium hover:bg-green-200">Collect</button>
+            {(() => {
+              const filteredCustomers = customers.filter(c => c.name.toLowerCase().includes(custSearch.toLowerCase()) || c.phone.includes(custSearch));
+              const pagedCustomers = filteredCustomers.slice(custPage * CUST_PAGE_SIZE, (custPage + 1) * CUST_PAGE_SIZE);
+              return (
+                <>
+                  {pagedCustomers.map(c => (
+                    <div key={c.id} className="bg-white rounded-xl p-3 shadow-sm flex justify-between items-start">
+                      <div>
+                        <div className="font-semibold text-sm">{c.name}</div>
+                        <div className="text-xs text-gray-500">{c.phone} | {c.customer_type}</div>
+                        {Number(c.outstanding_amount) > 0 && (
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-xs font-medium text-orange-600">Outstanding: ₹{Number(c.outstanding_amount).toFixed(0)}</span>
+                            {agingBadge(c.last_payment_date)}
+                          </div>
+                        )}
+                        {Number(c.credit_limit) > 0 && <div className="text-xs text-gray-400">Limit: ₹{c.credit_limit}</div>}
+                      </div>
+                      <div className="flex gap-1">
+                        <button onClick={() => setLedgerCust(c)} className="bg-blue-100 text-blue-700 px-3 py-1 rounded-lg text-xs font-medium hover:bg-blue-200">Ledger</button>
+                        {Number(c.outstanding_amount) > 0 && (
+                          <button onClick={() => setShowPaymentModal(c)} className="bg-green-100 text-green-700 px-3 py-1 rounded-lg text-xs font-medium hover:bg-green-200">Collect</button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {filteredCustomers.length > CUST_PAGE_SIZE && (
+                    <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 bg-white rounded-xl">
+                      <span className="text-xs text-gray-500">{filteredCustomers.length} total · showing {custPage * CUST_PAGE_SIZE + 1}–{Math.min((custPage + 1) * CUST_PAGE_SIZE, filteredCustomers.length)}</span>
+                      <div className="flex gap-2">
+                        <button onClick={() => setCustPage(p => Math.max(0, p - 1))} disabled={custPage === 0} className="px-3 py-1 text-xs border rounded disabled:opacity-40">Prev</button>
+                        <button onClick={() => setCustPage(p => p + 1)} disabled={(custPage + 1) * CUST_PAGE_SIZE >= filteredCustomers.length} className="px-3 py-1 text-xs border rounded disabled:opacity-40">Next</button>
+                      </div>
+                    </div>
                   )}
-                </div>
-              </div>
-            ))}
+                </>
+              );
+            })()}
           </div>
         )}
 
@@ -1152,6 +1204,8 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
         )}
 
         {tab === 'reports' && <MedReports bunkId={bunkId} />}
+
+        {tab === 'intelligence' && <IntelligenceTab bunkId={bunkId} />}
 
         {tab === 'settings' && <SettingsTab bunkId={bunkId} user={user} onLogout={onLogout} />}
 

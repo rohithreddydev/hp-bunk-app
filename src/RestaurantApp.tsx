@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// FuelDesk AI — Restaurant Module
+// Smart Biz AI — Restaurant Module
 // Red/orange theme — rst_ Supabase tables
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -9,9 +9,10 @@ import {
   Plus, Edit2, X, Search, AlertTriangle, CheckCircle2, Loader2,
   TrendingUp, TrendingDown, Wallet, FileText, BookOpen,
   ArrowUpRight, ArrowDownLeft, RefreshCw, BarChart2,
-  Settings as SettingsIcon, LogOut,
+  Settings as SettingsIcon, LogOut, Brain, Download,
 } from 'lucide-react';
 import { SettingsTab } from './SettingsTab';
+import { IntelligenceTab } from './IntelligenceTab';
 import { supabase } from './supabase';
 import { getTodayIST, formatISTDate } from './utils';
 
@@ -57,7 +58,7 @@ interface RstLedgerEntry {
   running_balance?: number;
 }
 
-type Tab = 'dashboard' | 'menu' | 'orders' | 'customers' | 'purchases' | 'expenses' | 'reports' | 'settings';
+type Tab = 'dashboard' | 'menu' | 'orders' | 'customers' | 'purchases' | 'expenses' | 'reports' | 'intelligence' | 'settings';
 
 // ─── Main Component ────────────────────────────────────────────────────────────
 export function RestaurantApp({ bunkId, onLogout, user }: { bunkId: string; onLogout: () => void; user: { name: string; email: string; role: string } }) {
@@ -111,6 +112,7 @@ export function RestaurantApp({ bunkId, onLogout, user }: { bunkId: string; onLo
     { id: 'purchases', label: 'Purchases', icon: <Truck size={16} /> },
     { id: 'expenses', label: 'Expenses', icon: <Receipt size={16} /> },
     { id: 'reports', label: 'Reports', icon: <BarChart2 size={16} /> },
+    { id: 'intelligence', label: 'AI Insights', icon: <Brain size={16} /> },
     { id: 'settings', label: 'Settings', icon: <SettingsIcon size={16} /> },
   ];
 
@@ -120,7 +122,7 @@ export function RestaurantApp({ bunkId, onLogout, user }: { bunkId: string; onLo
         <span className="text-2xl">🍽️</span>
         <div>
           <h1 className="font-bold text-lg leading-tight">Restaurant</h1>
-          <p className="text-red-200 text-xs">FuelDesk AI</p>
+          <p className="text-red-200 text-xs">Smart Biz AI</p>
         </div>
         <button onClick={onLogout} className="ml-auto p-2 rounded-lg hover:bg-white/20 transition" title="Sign Out">
           <LogOut size={20} />
@@ -157,6 +159,7 @@ export function RestaurantApp({ bunkId, onLogout, user }: { bunkId: string; onLo
             {activeTab === 'purchases' && <RstPurchases bunkId={bunkId} purchases={purchases} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'expenses' && <RstExpenses bunkId={bunkId} expenses={expenses} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'reports' && <RstReports bunkId={bunkId} />}
+            {activeTab === 'intelligence' && <IntelligenceTab bunkId={bunkId} />}
             {activeTab === 'settings' && <SettingsTab bunkId={bunkId} user={user} onLogout={onLogout} />}
           </>
         )}
@@ -460,8 +463,18 @@ function RstOrders({ bunkId, menuItems, customers, onRefresh, showToast }: { bun
 }
 
 // ─── Customers ─────────────────────────────────────────────────────────────────
+function agingBadge(lastDate: string | null | undefined) {
+  const d = lastDate ? Math.floor((Date.now() - new Date(lastDate).getTime()) / 86400000) : 999;
+  if (d < 8) return <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">{d}d</span>;
+  if (d < 31) return <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">{d}d</span>;
+  return <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700">{d === 999 ? 'new' : d + 'd'}</span>;
+}
+
+const CUST_PAGE_SIZE = 10;
+
 function RstCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: string; customers: Customer[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; }) {
   const [search, setSearch] = useState('');
+  const [custPage, setCustPage] = useState(0);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ name: '', phone: '', credit_limit: 0 });
   const [saving, setSaving] = useState(false);
@@ -512,15 +525,16 @@ function RstCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: str
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
-              <tr><th className="px-4 py-3 text-left">Name</th><th className="px-4 py-3 text-left">Phone</th><th className="px-4 py-3 text-right">Outstanding</th><th className="px-4 py-3 text-right">Actions</th></tr>
+              <tr><th className="px-4 py-3 text-left">Name</th><th className="px-4 py-3 text-left">Phone</th><th className="px-4 py-3 text-right">Outstanding</th><th className="px-4 py-3 text-center">Aging</th><th className="px-4 py-3 text-right">Actions</th></tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && <tr><td colSpan={4} className="text-center py-10 text-gray-400">No customers found.</td></tr>}
-              {filtered.map(c => (
+              {filtered.length === 0 && <tr><td colSpan={5} className="text-center py-10 text-gray-400">No customers found.</td></tr>}
+              {filtered.slice(custPage * CUST_PAGE_SIZE, (custPage + 1) * CUST_PAGE_SIZE).map(c => (
                 <tr key={c.id} className="border-t border-gray-100 hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-800">{c.name}</td>
                   <td className="px-4 py-3 text-gray-600">{c.phone || '—'}</td>
                   <td className="px-4 py-3 text-right"><span className={`font-semibold ${c.outstanding_amount > 0 ? 'text-orange-600' : 'text-gray-500'}`}>{inr(c.outstanding_amount)}</span></td>
+                  <td className="px-4 py-3 text-center">{agingBadge(c.last_payment_date)}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex gap-1 justify-end">
                       <button onClick={() => setLedgerModal(c)} className="bg-blue-100 text-blue-700 text-xs px-3 py-1.5 rounded-lg hover:bg-blue-200 font-medium flex items-center gap-1"><BookOpen size={12} /> Ledger</button>
@@ -532,6 +546,15 @@ function RstCustomers({ bunkId, customers, onRefresh, showToast }: { bunkId: str
             </tbody>
           </table>
         </div>
+        {filtered.length > CUST_PAGE_SIZE && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-sm text-gray-600">
+            <span>{custPage * CUST_PAGE_SIZE + 1}–{Math.min((custPage + 1) * CUST_PAGE_SIZE, filtered.length)} of {filtered.length}</span>
+            <div className="flex gap-2">
+              <button disabled={custPage === 0} onClick={() => setCustPage(p => p - 1)} className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Prev</button>
+              <button disabled={(custPage + 1) * CUST_PAGE_SIZE >= filtered.length} onClick={() => setCustPage(p => p + 1)} className="px-3 py-1 rounded-lg border border-gray-200 disabled:opacity-40 hover:bg-gray-50">Next</button>
+            </div>
+          </div>
+        )}
       </div>
       {showModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -814,9 +837,28 @@ function RstReports({ bunkId }: { bunkId: string }) {
 
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
+  function handleExportCSV() {
+    if (!data) return;
+    const rows = [
+      ['Metric', 'Value'],
+      ['Revenue', data.totalRev],
+      ['Expenses', data.totalExp],
+      ['Profit', data.profit],
+      ['Credit Collected', data.creditCollected],
+      ['Orders', data.orderCount],
+      ['Dine In', data.dineIn],
+      ['Takeaway', data.takeaway],
+      ...data.topItems.map(i => [`Item: ${i.name}`, i.revenue]),
+      ...data.expenseBreakdown.map(e => [`Expense: ${e.category}`, e.amount]),
+    ];
+    const csv = rows.map(r => r.join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const a = document.createElement('a'); a.href = url; a.download = `restaurant-report-${year}-${String(month).padStart(2,'0')}.csv`; a.click();
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <select value={month} onChange={e => setMonth(Number(e.target.value))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
           {MONTHS.map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
         </select>
@@ -824,6 +866,7 @@ function RstReports({ bunkId }: { bunkId: string }) {
           {[now.getFullYear()-1, now.getFullYear()].map(y => <option key={y} value={y}>{y}</option>)}
         </select>
         <button onClick={load} className="p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100"><RefreshCw size={16} /></button>
+        {data && <button onClick={handleExportCSV} className="ml-auto flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-xl text-sm font-medium hover:bg-gray-50"><Download size={14} /> Export CSV</button>}
       </div>
 
       {loading ? <div className="flex justify-center py-12"><Loader2 className="animate-spin text-red-600" size={28} /></div> : !data ? null : (
