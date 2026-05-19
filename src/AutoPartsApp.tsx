@@ -375,6 +375,16 @@ export function AutoPartsApp({ bunkId, onLogout, user }: { bunkId: string; onLog
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  useEffect(() => {
+    const ch = supabase
+      .channel(`ap-rt-${bunkId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ap_sales',     filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ap_expenses',  filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ap_customers', filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [bunkId, fetchAll]);
+
   // First-run detection
   useEffect(() => {
     if (!bunkId) return;
@@ -454,7 +464,7 @@ export function AutoPartsApp({ bunkId, onLogout, user }: { bunkId: string; onLog
         ) : (
           <>
             {activeTab === 'dashboard' && <ApDashboard todaySalesTotal={todaySalesTotal} todaySalesCount={todaySales.length} todayExpenses={todayExpenses} lowStock={lowStock} recentSales={sales.slice(0, 8)} totalProducts={products.length} totalCreditOutstanding={totalCreditOutstanding} products={products} todayCollections={todayCollections} />}
-            {activeTab === 'inventory' && <ApInventory bunkId={bunkId} products={products} onRefresh={fetchAll} showToast={showToast} />}
+            {activeTab === 'inventory' && <ApInventory bunkId={bunkId} products={products} onRefresh={fetchAll} showToast={showToast} isOwner={user?.role === 'owner'} />}
             {activeTab === 'sales' && <ApSales bunkId={bunkId} products={products} customers={customers} sales={sales} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'customers' && <ApCustomers bunkId={bunkId} customers={customers} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'purchases' && <ApPurchases bunkId={bunkId} purchases={purchases} onRefresh={fetchAll} showToast={showToast} />}
@@ -565,7 +575,7 @@ const defaultAPF = (): AProdForm => ({ name: '', brand: '', category: CATEGORIES
 
 interface AdjustModal { product: Product; }
 
-function ApInventory({ bunkId, products, onRefresh, showToast }: { bunkId: string; products: Product[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; }) {
+function ApInventory({ bunkId, products, onRefresh, showToast, isOwner }: { bunkId: string; products: Product[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; isOwner: boolean }) {
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('All');
   const [showModal, setShowModal] = useState(false);
@@ -669,7 +679,7 @@ function ApInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
                     <div className="flex items-center justify-center gap-2">
                       <button onClick={() => openAdjust(p)} title="Adjust Stock" className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-medium hover:bg-slate-200">±</button>
                       <button onClick={() => openEdit(p)} className="text-slate-600 hover:text-slate-800"><Edit2 size={14} /></button>
-                      <button onClick={() => handleDelete(p)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button>
+                      {isOwner && <button onClick={() => handleDelete(p)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button>}
                     </div>
                   </td>
                 </tr>

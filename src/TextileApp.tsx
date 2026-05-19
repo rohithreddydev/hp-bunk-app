@@ -90,6 +90,16 @@ export function TextileApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  useEffect(() => {
+    const ch = supabase
+      .channel(`tx-rt-${bunkId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tx_sales',     filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tx_expenses',  filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tx_customers', filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [bunkId, fetchAll]);
+
   const today = getTodayIST();
   const todaySalesTotal = sales.filter(s => s.sale_date === today).reduce((a, s) => a + s.total_amount, 0);
   const todayExpenses = expenses.filter(e => e.expense_date === today).reduce((a, e) => a + e.amount, 0);
@@ -145,7 +155,7 @@ export function TextileApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
         ) : (
           <>
             {activeTab === 'dashboard' && <TxDashboard todaySalesTotal={todaySalesTotal} todayExpenses={todayExpenses} lowStock={lowStock} totalProducts={products.length} recentSales={sales.slice(0, 8)} totalCreditOutstanding={totalCreditOutstanding} />}
-            {activeTab === 'inventory' && <TxInventory bunkId={bunkId} products={products} onRefresh={fetchAll} showToast={showToast} />}
+            {activeTab === 'inventory' && <TxInventory bunkId={bunkId} products={products} onRefresh={fetchAll} showToast={showToast} isOwner={user?.role === 'owner'} />}
             {activeTab === 'sales' && <TxSales bunkId={bunkId} products={products} customers={customers} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'customers' && <TxCustomers bunkId={bunkId} customers={customers} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'purchases' && <TxPurchases bunkId={bunkId} purchases={purchases} onRefresh={fetchAll} showToast={showToast} />}
@@ -239,7 +249,7 @@ interface ProdForm {
 }
 const defaultPF = (): ProdForm => ({ name: '', brand: '', category: CATEGORIES[0], unit: UNITS[0], fabric_type: '', mrp: 0, selling_price: 0, purchase_price: 0, current_stock: 0, reorder_level: 5 });
 
-function TxInventory({ bunkId, products, onRefresh, showToast }: { bunkId: string; products: Product[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; }) {
+function TxInventory({ bunkId, products, onRefresh, showToast, isOwner }: { bunkId: string; products: Product[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; isOwner: boolean }) {
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('All');
   const [showModal, setShowModal] = useState(false);
@@ -328,7 +338,7 @@ function TxInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
                   <td className="px-4 py-3 text-center">
                     <div className="flex items-center justify-center gap-2">
                       <button onClick={() => openEdit(p)} className="text-purple-600 hover:text-purple-800"><Edit2 size={14} /></button>
-                      <button onClick={() => handleDelete(p)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button>
+                      {isOwner && <button onClick={() => handleDelete(p)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button>}
                     </div>
                   </td>
                 </tr>

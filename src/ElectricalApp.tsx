@@ -8,7 +8,7 @@ import {
   ChevronDown, ChevronRight, Loader2, CheckCircle2,
   TrendingUp, TrendingDown, DollarSign, Edit2, Home,
   AlertCircle, Filter, Settings, LogOut, BookOpen,
-  ArrowUpRight, ArrowDownLeft,
+  ArrowUpRight, ArrowDownLeft, Download,
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { getTodayIST } from './utils';
@@ -97,30 +97,39 @@ function DashboardTab({ bunkId }: { bunkId: string }) {
   const [projects, setProjects] = useState<ElecProject[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    (async () => {
-      const [sRes, pRes, cRes, prRes] = await Promise.all([
-        supabase.from('electrical_sales').select('total_amount,payment_mode,payment_status').eq('bunk_id', bunkId).eq('sale_date', today),
-        supabase.from('electrical_products').select('*').eq('bunk_id', bunkId).eq('is_active', true),
-        supabase.from('electrical_customers').select('outstanding_amount').eq('bunk_id', bunkId).eq('is_active', true),
-        supabase.from('electrical_projects').select('*, electrical_customers(name,phone)').eq('bunk_id', bunkId).eq('status', 'active').order('created_at', { ascending: false }).limit(5),
-      ]);
-      const sales = sRes.data || [];
-      const prods = pRes.data as ElecProduct[] || [];
-      const low = prods.filter(p => Number(p.current_stock) <= Number(p.reorder_level));
-      const outstanding = (cRes.data || []).reduce((s, c) => s + c.outstanding_amount, 0);
-      setLowStock(low);
-      setProjects(prRes.data as ElecProject[] || []);
-      setStats({
-        todaySales: sales.reduce((s, r) => s + r.total_amount, 0),
-        todayCash: sales.filter(r => r.payment_mode === 'cash').reduce((s, r) => s + r.total_amount, 0),
-        todayCredit: sales.filter(r => r.payment_status === 'credit').reduce((s, r) => s + r.total_amount, 0),
-        bills: sales.length, outstanding, lowStock: low.length,
-        activeProjects: (prRes.data || []).length,
-      });
-      setLoading(false);
-    })();
+  const load = useCallback(async () => {
+    const [sRes, pRes, cRes, prRes] = await Promise.all([
+      supabase.from('electrical_sales').select('total_amount,payment_mode,payment_status').eq('bunk_id', bunkId).eq('sale_date', today),
+      supabase.from('electrical_products').select('*').eq('bunk_id', bunkId).eq('is_active', true),
+      supabase.from('electrical_customers').select('outstanding_amount').eq('bunk_id', bunkId).eq('is_active', true),
+      supabase.from('electrical_projects').select('*, electrical_customers(name,phone)').eq('bunk_id', bunkId).eq('status', 'active').order('created_at', { ascending: false }).limit(5),
+    ]);
+    const sales = sRes.data || [];
+    const prods = pRes.data as ElecProduct[] || [];
+    const low = prods.filter(p => Number(p.current_stock) <= Number(p.reorder_level));
+    const outstanding = (cRes.data || []).reduce((s, c) => s + c.outstanding_amount, 0);
+    setLowStock(low);
+    setProjects(prRes.data as ElecProject[] || []);
+    setStats({
+      todaySales: sales.reduce((s, r) => s + r.total_amount, 0),
+      todayCash: sales.filter(r => r.payment_mode === 'cash').reduce((s, r) => s + r.total_amount, 0),
+      todayCredit: sales.filter(r => r.payment_status === 'credit').reduce((s, r) => s + r.total_amount, 0),
+      bills: sales.length, outstanding, lowStock: low.length,
+      activeProjects: (prRes.data || []).length,
+    });
+    setLoading(false);
   }, [bunkId, today]);
+
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const ch = supabase
+      .channel(`elec-dash-rt-${bunkId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'electrical_sales',    filter: `bunk_id=eq.${bunkId}` }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'electrical_expenses', filter: `bunk_id=eq.${bunkId}` }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [bunkId, load]);
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-yellow-500" size={28} /></div>;
 
@@ -973,50 +982,87 @@ function ExpensesTab({ bunkId }: { bunkId: string }) {
 
 // ─── Reports Tab ──────────────────────────────────────────────────────────────
 function ReportsTab({ bunkId }: { bunkId: string }) {
-  const today = getTodayIST();
-  const [range, setRange] = useState<'today' | 'week' | 'month'>('today');
-  const [data, setData] = useState({ sales: 0, cash: 0, upi: 0, credit: 0, bills: 0, expenses: 0, purchases: 0, outstanding: 0 });
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [year, setYear] = useState(now.getFullYear());
+  const [data, setData] = useState<{ sales: number; cash: number; upi: number; credit: number; bills: number; expenses: number; purchases: number; outstanding: number; expBreakdown: { category: string; amount: number }[] } | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const load = useCallback(async () => {
+  const loadReport = useCallback(async () => {
     setLoading(true);
-    let from = today;
-    if (range === 'week') { const d = new Date(today); d.setDate(d.getDate() - 6); from = d.toISOString().slice(0, 10); }
-    if (range === 'month') { from = today.slice(0, 7) + '-01'; }
+    const from = `${year}-${String(month).padStart(2, '0')}-01`;
+    const to   = `${year}-${String(month).padStart(2, '0')}-${new Date(year, month, 0).getDate()}`;
     const [sRes, eRes, pRes, cRes] = await Promise.all([
-      supabase.from('electrical_sales').select('total_amount,payment_mode,payment_status').eq('bunk_id', bunkId).gte('sale_date', from).lte('sale_date', today),
-      supabase.from('electrical_expenses').select('amount').eq('bunk_id', bunkId).gte('expense_date', from).lte('expense_date', today),
-      supabase.from('electrical_purchases').select('total_amount').eq('bunk_id', bunkId).gte('purchase_date', from).lte('purchase_date', today),
+      supabase.from('electrical_sales').select('total_amount,payment_mode,payment_status').eq('bunk_id', bunkId).gte('sale_date', from).lte('sale_date', to),
+      supabase.from('electrical_expenses').select('amount,category').eq('bunk_id', bunkId).gte('expense_date', from).lte('expense_date', to),
+      supabase.from('electrical_purchases').select('total_amount').eq('bunk_id', bunkId).gte('purchase_date', from).lte('purchase_date', to),
       supabase.from('electrical_customers').select('outstanding_amount').eq('bunk_id', bunkId).eq('is_active', true),
     ]);
     const sales = sRes.data || [];
+    const expData = eRes.data || [];
+    const catMap: Record<string, number> = {};
+    expData.forEach(e => { catMap[e.category] = (catMap[e.category] || 0) + Number(e.amount); });
+    const expBreakdown = Object.entries(catMap).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
     setData({
       sales: sales.reduce((s, r) => s + r.total_amount, 0),
       cash: sales.filter(r => r.payment_mode === 'cash').reduce((s, r) => s + r.total_amount, 0),
       upi: sales.filter(r => r.payment_mode === 'upi').reduce((s, r) => s + r.total_amount, 0),
       credit: sales.filter(r => r.payment_status === 'credit').reduce((s, r) => s + r.total_amount, 0),
       bills: sales.length,
-      expenses: (eRes.data || []).reduce((s, e) => s + e.amount, 0),
+      expenses: expData.reduce((s, e) => s + Number(e.amount), 0),
       purchases: (pRes.data || []).reduce((s, p) => s + p.total_amount, 0),
       outstanding: (cRes.data || []).reduce((s, c) => s + c.outstanding_amount, 0),
+      expBreakdown,
     });
     setLoading(false);
-  }, [bunkId, today, range]);
+  }, [bunkId, month, year]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadReport(); }, [loadReport]);
+
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const years = Array.from({ length: 4 }, (_, i) => now.getFullYear() - i);
+
+  function handleExportCSV() {
+    if (!data) return;
+    const rows: (string | number)[][] = [
+      ['Metric', 'Value'],
+      ['Total Sales', data.sales],
+      ['Cash Sales', data.cash],
+      ['UPI Sales', data.upi],
+      ['Credit Sales', data.credit],
+      ['Total Bills', data.bills],
+      ['Total Expenses', data.expenses],
+      ['Purchases', data.purchases],
+      ['Net Profit', data.sales - data.expenses],
+      ['Total Outstanding', data.outstanding],
+      ...data.expBreakdown.map(e => [`Expense: ${e.category}`, e.amount]),
+    ];
+    const csv = rows.map(r => r.join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const a = document.createElement('a'); a.href = url; a.download = `electrical-report-${year}-${String(month).padStart(2,'0')}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className="space-y-6">
-      <div className="flex gap-2">
-        {(['today', 'week', 'month'] as const).map(r => (
-          <button key={r} onClick={() => setRange(r)} className={`px-4 py-2 rounded-lg text-sm font-medium border ${range === r ? 'bg-yellow-500 text-white border-yellow-500' : 'bg-white text-gray-600'}`}>{r === 'today' ? 'Today' : r === 'week' ? 'This Week' : 'This Month'}</button>
-        ))}
+      <div className="flex items-center gap-3 flex-wrap">
+        <BarChart3 size={20} className="text-yellow-600" />
+        <h2 className="text-lg font-semibold text-gray-800">Monthly Reports</h2>
+        <div className="flex gap-2 ml-auto flex-wrap">
+          <select value={month} onChange={e => setMonth(Number(e.target.value))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
+            {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+          </select>
+          <select value={year} onChange={e => setYear(Number(e.target.value))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400">
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          {data && <button onClick={handleExportCSV} className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-1.5 rounded-xl text-sm font-medium hover:bg-gray-50"><Download size={14} /> Export CSV</button>}
+        </div>
       </div>
-      {loading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin text-yellow-500" /></div> : (
+      {loading ? <div className="flex justify-center py-10"><Loader2 className="animate-spin text-yellow-500" /></div> : data && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard icon={<TrendingUp size={18} />} label="Total Sales" value={fmt(data.sales)} sub={`${data.bills} bills`} color="border-green-500" />
-            <StatCard icon={<DollarSign size={18} />} label="Cash" value={fmt(data.cash)} color="border-blue-500" />
+            <StatCard icon={<DollarSign size={18} />} label="Cash + UPI" value={fmt(data.cash + data.upi)} color="border-blue-500" />
             <StatCard icon={<AlertCircle size={18} />} label="Credit Sales" value={fmt(data.credit)} color="border-orange-500" />
             <StatCard icon={<TrendingDown size={18} />} label="Expenses" value={fmt(data.expenses)} color="border-red-500" />
           </div>
@@ -1030,6 +1076,19 @@ function ReportsTab({ bunkId }: { bunkId: string }) {
               <p className="text-3xl font-bold text-orange-600">{fmt(data.outstanding)}</p>
             </div>
           </div>
+          {data.expBreakdown.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm p-4">
+              <p className="font-semibold text-gray-700 mb-3">Expense Breakdown</p>
+              <div className="space-y-2">
+                {data.expBreakdown.map(e => (
+                  <div key={e.category} className="flex justify-between items-center text-sm">
+                    <span className="text-gray-600">{e.category}</span>
+                    <span className="font-semibold text-red-600">{fmt(e.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="bg-white rounded-xl shadow-sm p-4 grid grid-cols-2 gap-4 text-sm">
             <div><p className="text-gray-500">UPI Sales</p><p className="font-bold">{fmt(data.upi)}</p></div>
             <div><p className="text-gray-500">Purchases</p><p className="font-bold">{fmt(data.purchases)}</p></div>

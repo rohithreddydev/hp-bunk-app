@@ -478,6 +478,16 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
+  useEffect(() => {
+    const ch = supabase
+      .channel(`med-rt-${bunkId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'med_sales',     filter: `bunk_id=eq.${bunkId}` }, loadAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'med_expenses',  filter: `bunk_id=eq.${bunkId}` }, loadAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'med_customers', filter: `bunk_id=eq.${bunkId}` }, loadAll)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [bunkId, loadAll]);
+
   // ── Product CRUD ──────────────────────────────────────────────────────────
   const openNewProduct = () => {
     setEditProduct(null);

@@ -1594,6 +1594,17 @@ export function AgricultureApp({ bunkId, onLogout, user }: { bunkId: string; onL
     supabase.from('ag_customers').select('*').eq('bunk_id', bunkId).eq('is_active', true).order('name').then(({ data }) => setCustomers(data || []));
   }, [bunkId, refreshKey]);
 
+  useEffect(() => {
+    if (!bunkId) return;
+    const ch = supabase
+      .channel(`ag-rt-${bunkId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ag_sales',     filter: `bunk_id=eq.${bunkId}` }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ag_expenses',  filter: `bunk_id=eq.${bunkId}` }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ag_customers', filter: `bunk_id=eq.${bunkId}` }, refresh)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [bunkId, refresh]);
+
   if (showOnboarding) {
     return (
       <AgricultureOnboarding

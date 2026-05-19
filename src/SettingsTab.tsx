@@ -22,12 +22,13 @@ export function SettingsTab({ bunkId, user, onLogout }: SettingsTabProps) {
   const [loadingName, setLoadingName] = useState(true);
   const [savingName, setSavingName] = useState(false);
 
-  const [currentPass, setCurrentPass] = useState('');
   const [newPass, setNewPass] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
   const [changingPass, setChangingPass] = useState(false);
 
   const [loggingOut, setLoggingOut] = useState(false);
+
+  const [botStatus, setBotStatus] = useState<'checking' | 'active' | 'idle' | 'unknown'>('checking');
 
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
@@ -52,6 +53,18 @@ export function SettingsTab({ bunkId, user, onLogout }: SettingsTabProps) {
       });
   }, [bunkId]);
 
+  // Check bot liveness from bot_activity_log
+  useEffect(() => {
+    if (!bunkId) { setBotStatus('unknown'); return; }
+    supabase.from('bot_activity_log').select('created_at').eq('bunk_id', bunkId)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle()
+      .then(({ data }) => {
+        if (!data) { setBotStatus('unknown'); return; }
+        const ageMin = (Date.now() - new Date(data.created_at).getTime()) / 60000;
+        setBotStatus(ageMin <= 60 ? 'active' : ageMin <= 1440 ? 'idle' : 'unknown');
+      });
+  }, [bunkId]);
+
   const handleSaveBusinessName = async () => {
     if (!businessName.trim()) { showToast('Business name cannot be empty', 'error'); return; }
     setSavingName(true);
@@ -73,7 +86,7 @@ export function SettingsTab({ bunkId, user, onLogout }: SettingsTabProps) {
     setChangingPass(false);
     if (error) { showToast(error.message, 'error'); return; }
     showToast('Password changed successfully');
-    setCurrentPass(''); setNewPass(''); setConfirmPass('');
+    setNewPass(''); setConfirmPass('');
   };
 
   const handleSignOut = async () => {
@@ -155,16 +168,6 @@ export function SettingsTab({ bunkId, user, onLogout }: SettingsTabProps) {
         </h2>
         <div className="space-y-3">
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">Current Password</label>
-            <input
-              type="password"
-              value={currentPass}
-              onChange={e => setCurrentPass(e.target.value)}
-              placeholder="Enter current password"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
-            />
-          </div>
-          <div>
             <label className="text-xs text-gray-500 mb-1 block">New Password</label>
             <input
               type="password"
@@ -201,12 +204,18 @@ export function SettingsTab({ bunkId, user, onLogout }: SettingsTabProps) {
           <MessageCircle size={15} /> WhatsApp Bot
         </h2>
         <div className="flex items-center gap-3">
-          <span className="relative flex h-3 w-3">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-          </span>
-          <span className="text-sm font-medium text-green-700">Active</span>
-          <span className="text-xs text-gray-400 ml-1">— Smart Biz AI bot is running</span>
+          {botStatus === 'checking' && (
+            <><Loader2 size={14} className="animate-spin text-gray-400" /><span className="text-sm text-gray-400">Checking…</span></>
+          )}
+          {botStatus === 'active' && (
+            <><span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span><span className="text-sm font-medium text-green-700">Active</span><span className="text-xs text-gray-400 ml-1">— Last activity within 1 hr</span></>
+          )}
+          {botStatus === 'idle' && (
+            <><span className="relative flex h-3 w-3"><span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-400"></span></span><span className="text-sm font-medium text-yellow-700">Idle</span><span className="text-xs text-gray-400 ml-1">— No activity in last hour</span></>
+          )}
+          {botStatus === 'unknown' && (
+            <><span className="relative flex h-3 w-3"><span className="relative inline-flex rounded-full h-3 w-3 bg-gray-400"></span></span><span className="text-sm font-medium text-gray-500">Unknown</span><span className="text-xs text-gray-400 ml-1">— No recent activity found</span></>
+          )}
         </div>
       </div>
 

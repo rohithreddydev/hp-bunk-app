@@ -213,11 +213,22 @@ async function computeFinancialHealth(bunkId: string, bizType: string): Promise<
   const healthScore = Math.round(marginScore * 0.40 + growthScore * 0.30 + liquidityScore * 0.30);
   const grade = healthScore >= 80 ? 'A' : healthScore >= 65 ? 'B' : healthScore >= 50 ? 'C' : healthScore >= 35 ? 'D' : 'F';
 
-  // Outstanding (reuse customers data already fetched elsewhere — will be passed in)
-  const { data: custData } = await supabase.from(
-    bizType === 'fuel' ? 'customers' : `${prefix}_customers`
-  ).select('outstanding_amount').eq('bunk_id', bunkId).gt('outstanding_amount', 0);
-  const totalOutstanding = (custData || []).reduce((s: number, c: any) => s + Number(c.outstanding_amount || 0), 0);
+  // Outstanding: fuel balances live in transactions (computed), store balances in outstanding_amount column
+  let totalOutstanding = 0;
+  if (bizType === 'fuel' || !prefix) {
+    // Sum unpaid credit from transactions: credit_sales minus payments
+    const { data: txOut } = await supabase.from('transactions')
+      .select('type, amount').eq('bunk_id', bunkId).gte('date', since);
+    (txOut || []).forEach((t: any) => {
+      if (t.type === 'credit_sale' || t.type === 'opening_balance') totalOutstanding += Number(t.amount || 0);
+      else if (t.type === 'payment') totalOutstanding -= Number(t.amount || 0);
+    });
+    totalOutstanding = Math.max(0, totalOutstanding);
+  } else {
+    const { data: custData } = await supabase.from(`${prefix}_customers`)
+      .select('outstanding_amount').eq('bunk_id', bunkId).gt('outstanding_amount', 0);
+    totalOutstanding = (custData || []).reduce((s: number, c: any) => s + Number(c.outstanding_amount || 0), 0);
+  }
   const dso = avgDailySales > 0 ? Math.round(totalOutstanding / avgDailySales) : 0;
 
   return {

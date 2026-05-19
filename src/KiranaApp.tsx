@@ -102,6 +102,16 @@ export function KiranaApp({ bunkId, onLogout, user }: { bunkId: string; onLogout
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  useEffect(() => {
+    const ch = supabase
+      .channel(`ki-rt-${bunkId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ki_sales',     filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ki_expenses',  filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ki_customers', filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [bunkId, fetchAll]);
+
   const today = getTodayIST();
   const todaySales = sales.filter(s => s.sale_date === today);
   const todaySalesTotal = todaySales.reduce((a, s) => a + s.total_amount, 0);
@@ -168,7 +178,7 @@ export function KiranaApp({ bunkId, onLogout, user }: { bunkId: string; onLogout
         ) : (
           <>
             {activeTab === 'dashboard' && <KiDashboard todaySalesTotal={todaySalesTotal} todayCashSales={todayCashSales} todayCreditSales={todayCreditSales} todayExpenses={todayExpenses} lowStock={lowStock} stockValue={stockValue} totalCreditOutstanding={totalCreditOutstanding} recentSales={sales.slice(0, 8)} />}
-            {activeTab === 'inventory' && <KiInventory bunkId={bunkId} products={products} onRefresh={fetchAll} showToast={showToast} />}
+            {activeTab === 'inventory' && <KiInventory bunkId={bunkId} products={products} onRefresh={fetchAll} showToast={showToast} isOwner={user?.role === 'owner'} />}
             {activeTab === 'sales' && <KiSales bunkId={bunkId} products={products} customers={customers} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'customers' && <KiCustomers bunkId={bunkId} customers={customers} sales={sales} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'suppliers' && <KiSuppliers bunkId={bunkId} suppliers={suppliers} onRefresh={fetchAll} showToast={showToast} />}
@@ -250,7 +260,7 @@ function KiDashboard({ todaySalesTotal, todayCashSales, todayCreditSales, todayE
 interface ProdForm { name: string; brand: string; category: string; unit: string; mrp: number; selling_price: number; purchase_price: number; current_stock: number; reorder_level: number; }
 const defaultPF = (): ProdForm => ({ name: '', brand: '', category: CATEGORIES[0], unit: UNITS[0], mrp: 0, selling_price: 0, purchase_price: 0, current_stock: 0, reorder_level: 5 });
 
-function KiInventory({ bunkId, products, onRefresh, showToast }: { bunkId: string; products: Product[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; }) {
+function KiInventory({ bunkId, products, onRefresh, showToast, isOwner }: { bunkId: string; products: Product[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; isOwner: boolean }) {
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('All');
   const [showModal, setShowModal] = useState(false);
@@ -364,7 +374,7 @@ function KiInventory({ bunkId, products, onRefresh, showToast }: { bunkId: strin
                     <div className="flex items-center justify-center gap-2">
                       <button onClick={() => { setAdjustProduct(p); setAdjustMode('add'); setAdjustQty(''); }} className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-200">± Adjust</button>
                       <button onClick={() => openEdit(p)} className="text-orange-600 hover:text-orange-800"><Edit2 size={14} /></button>
-                      <button onClick={() => handleDelete(p)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button>
+                      {isOwner && <button onClick={() => handleDelete(p)} className="text-red-500 hover:text-red-700"><Trash2 size={14} /></button>}
                     </div>
                   </td>
                 </tr>

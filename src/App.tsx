@@ -236,10 +236,10 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
         const [{ data: bunkData }, { data: custData }, { data: txData }, { data: expData }, { data: fuelData }, { data: profData }, { data: morningData }] = await Promise.all([
           supabase.from('bunks').select('*').eq('id', targetBunk),
-          supabase.from('customers').select('*').eq('bunk_id', targetBunk).range(0, 499),
-          supabase.from('transactions').select('*').eq('bunk_id', targetBunk).order('created_at', { ascending: false }).range(0, 999),
-          supabase.from('expenses').select('*').eq('bunk_id', targetBunk).order('created_at', { ascending: false }).range(0, 499),
-          supabase.from('fuel_purchases').select('*').eq('bunk_id', targetBunk).order('created_at', { ascending: false }).range(0, 499),
+          supabase.from('customers').select('*').eq('bunk_id', targetBunk),
+          supabase.from('transactions').select('*').eq('bunk_id', targetBunk).order('created_at', { ascending: false }),
+          supabase.from('expenses').select('*').eq('bunk_id', targetBunk).order('created_at', { ascending: false }),
+          supabase.from('fuel_purchases').select('*').eq('bunk_id', targetBunk).order('created_at', { ascending: false }),
           supabase.from('profiles').select('*').eq('bunk_id', targetBunk).range(0, 99),
           supabase.from('morning_entries').select('*').eq('bunk_id', targetBunk).order('created_at', { ascending: false }).range(0, 365)
         ]);
@@ -519,7 +519,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
     const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
     const { data: sessionData } = await supabase.auth.getSession();
-    const authToken = sessionData?.session?.access_token || supabaseKey;
+    const authToken = sessionData?.session?.access_token;
+    if (!authToken) { showAlert('Session expired. Please refresh the page and sign in again.'); return; }
     const body = {
       bunk_id: bId,
       entry_date: e.date,
@@ -579,7 +580,8 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
     const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
     const { data: sessionData2 } = await supabase.auth.getSession();
-    const authToken2 = sessionData2?.session?.access_token || supabaseKey;
+    const authToken2 = sessionData2?.session?.access_token;
+    if (!authToken2) { showAlert('Session expired. Please refresh the page and sign in again.'); return; }
     const body = {
       entry_date: updates.date,
       petrol_dip_today: updates.petrolDip,
@@ -1251,7 +1253,7 @@ const Dashboard = () => {
   const pPurchases = fuelPurchases.filter(f => f.date && typeof f.date === 'string' && f.date.startsWith(period));
   const pExpenses = expenses.filter(ex => ex.date && typeof ex.date === 'string' && ex.date.startsWith(period));
 
-  const pTotalSalesRs = pEntries.reduce((sum, e) => sum + ((e.petrolSold || 0) * (settings?.petrolRate || 0) + (e.dieselSold || 0) * (settings?.dieselRate || 0)), 0);
+  const pTotalSalesRs = pEntries.reduce((sum, e) => sum + ((e.petrolSold || 0) * (e.petrolRateAtEntry || settings?.petrolRate || 0) + (e.dieselSold || 0) * (e.dieselRateAtEntry || settings?.dieselRate || 0)), 0);
   const pTotalPetrolL = pEntries.reduce((sum, e) => sum + (e.petrolSold || 0), 0);
   const pTotalDieselL = pEntries.reduce((sum, e) => sum + (e.dieselSold || 0), 0);
   const pFuelBuyRs = pPurchases.reduce((sum, p) => sum + (p.amount || 0), 0);
@@ -1879,8 +1881,17 @@ const CustomerList = () => {
     } else {
       const newId = await addCustomer(payload);
       if (newId && Number(newC.openingBalance) > 0) {
-        await supabase.from('transactions').insert([{ bunk_id: user?.bunkId, customer_id: newId, type: 'opening_balance', date: newC.openingBalanceDate, product: 'Opening Balance', quantity: 0, amount: Number(newC.openingBalance) }]);
-        window.location.reload();
+        const obAmt = Number(newC.openingBalance);
+        const { data: obData } = await supabase.from('transactions').insert([{
+          bunk_id: user?.bunkId, customer_id: newId, type: 'opening_balance',
+          date: newC.openingBalanceDate, product: 'Opening Balance', quantity: 0, amount: obAmt,
+        }]).select('id').single();
+        const obId = obData?.id ? String(obData.id) : ('ob-' + Date.now());
+        setTransactions(prev => [
+          { id: obId, customerId: newId, type: 'opening_balance', date: newC.openingBalanceDate,
+            product: 'Opening Balance', quantity: 0, amount: obAmt, mode: '' },
+          ...prev,
+        ]);
       }
     }
 
@@ -2048,7 +2059,7 @@ const CustomerList = () => {
                 // Credit aging: find last credit sale, compute days overdue
                 const lastCreditTx = cTxs.find(t => t.type === 'credit_sale');
                 const daysSinceCredit = lastCreditTx
-                  ? Math.floor((new Date().getTime() - new Date(lastCreditTx.date).getTime()) / 86400000)
+                  ? Math.floor((nowIST().getTime() - new Date(lastCreditTx.date).getTime()) / 86400000)
                   : null;
                 const agingBadge = bal > 0 && daysSinceCredit !== null
                   ? daysSinceCredit <= 7
@@ -4120,9 +4131,9 @@ const AppContent = () => {
 
   const handleNavClick = (id: string) => {
     if (unsavedForm) {
-      if (window.confirm("You have an unsaved morning entry. Leave anyway?")) {
+      showConfirm('You have an unsaved morning entry. Leave anyway?', () => {
         setUnsavedForm(false); setCurrentRoute(id); setIsSidebarOpen(false);
-      }
+      });
     } else { setCurrentRoute(id); setIsSidebarOpen(false); }
   };
 

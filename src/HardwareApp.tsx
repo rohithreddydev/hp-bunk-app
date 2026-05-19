@@ -473,6 +473,16 @@ export function HardwareApp({ bunkId, onLogout, user }: { bunkId: string; onLogo
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  useEffect(() => {
+    const ch = supabase
+      .channel(`hw-rt-${bunkId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hw_sales',     filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hw_expenses',  filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hw_customers', filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [bunkId, fetchAll]);
+
   const today = getTodayIST();
   const todaySalesTotal = sales.filter(s => s.sale_date === today).reduce((a, s) => a + s.total_amount, 0);
   const todayExpenses = expenses.filter(e => e.expense_date === today).reduce((a, e) => a + e.amount, 0);
@@ -566,7 +576,7 @@ export function HardwareApp({ bunkId, onLogout, user }: { bunkId: string; onLogo
         ) : (
           <>
             {activeTab === 'dashboard' && <HwDashboard todaySalesTotal={todaySalesTotal} todayExpenses={todayExpenses} todayCollections={todayCollections} lowStock={lowStock} recentSales={sales.slice(0, 8)} totalProducts={products.length} totalCreditOutstanding={totalCreditOutstanding} pendingCheques={pendingCheques} customers={customers} products={products} />}
-            {activeTab === 'inventory' && <HwInventory bunkId={bunkId} products={products} onRefresh={fetchAll} showToast={showToast} showConfirm={showConfirm} />}
+            {activeTab === 'inventory' && <HwInventory bunkId={bunkId} products={products} onRefresh={fetchAll} showToast={showToast} showConfirm={showConfirm} isOwner={user?.role === 'owner'} />}
             {activeTab === 'sales' && <HwSales bunkId={bunkId} products={products} customers={customers} sales={sales} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'customers' && <HwCustomers bunkId={bunkId} customers={customers} payments={payments} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'purchases' && <HwPurchases bunkId={bunkId} purchases={purchases} onRefresh={fetchAll} showToast={showToast} />}
@@ -697,7 +707,7 @@ interface ProdForm {
 }
 const defaultPF = (): ProdForm => ({ name: '', brand: '', category: CATEGORIES[0], unit: UNITS[0], mrp: 0, selling_price: 0, purchase_price: 0, current_stock: 0, reorder_level: 5 });
 
-function HwInventory({ bunkId, products, onRefresh, showToast, showConfirm }: { bunkId: string; products: Product[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; showConfirm: (msg: string, onYes: () => void) => void; }) {
+function HwInventory({ bunkId, products, onRefresh, showToast, showConfirm, isOwner }: { bunkId: string; products: Product[]; onRefresh: () => void; showToast: (m: string, t?: 'success' | 'error') => void; showConfirm: (msg: string, onYes: () => void) => void; isOwner: boolean }) {
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('All');
   const [showModal, setShowModal] = useState(false);
@@ -815,7 +825,7 @@ function HwInventory({ bunkId, products, onRefresh, showToast, showConfirm }: { 
                     <div className="flex items-center justify-center gap-1">
                       <button onClick={() => openAdjust(p)} className="text-xs bg-blue-50 text-blue-700 px-2 py-1 rounded font-medium hover:bg-blue-100" title="Adjust Stock"><RefreshCw size={12} /></button>
                       <button onClick={() => openEdit(p)} className="text-blue-600 hover:text-blue-800 p-1"><Edit2 size={14} /></button>
-                      <button onClick={() => handleDelete(p)} className="text-red-500 hover:text-red-700 p-1"><Trash2 size={14} /></button>
+                      {isOwner && <button onClick={() => handleDelete(p)} className="text-red-500 hover:text-red-700 p-1"><Trash2 size={14} /></button>}
                     </div>
                   </td>
                 </tr>

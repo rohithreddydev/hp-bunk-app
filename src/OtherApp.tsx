@@ -10,7 +10,7 @@ import {
   LayoutDashboard, Package, ShoppingCart, Users, Truck, Receipt,
   BarChart3, Store, Plus, Edit2, Trash2, X, Search, AlertTriangle,
   CheckCircle2, ChevronDown, Loader2, TrendingUp, TrendingDown,
-  Wallet, DollarSign, Calendar, Filter,
+  Wallet, DollarSign, Calendar, Filter, Download,
   Settings as SettingsIcon, LogOut,
 } from 'lucide-react';
 import { SettingsTab } from './SettingsTab';
@@ -239,6 +239,16 @@ export function OtherApp({ bunkId, bizType, onLogout, user }: { bunkId: string; 
   }, [bunkId]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  useEffect(() => {
+    const ch = supabase
+      .channel(`gen-rt-${bunkId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gen_sales',     filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gen_expenses',  filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gen_customers', filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [bunkId, fetchAll]);
 
   // ─ derived ─
   const today = getTodayIST();
@@ -1599,13 +1609,32 @@ function ReportsTab({ bunkId, sales, purchases, expenses }: {
     { label: 'Net Profit', value: inr(netProfit), color: netProfit >= 0 ? 'text-green-700' : 'text-red-700', icon: <BarChart3 size={18} /> },
   ];
 
+  function handleExportCSV() {
+    const rows: (string | number)[][] = [
+      ['Metric', 'Value'],
+      ['Total Sales', totalSales],
+      ['Cash Collected', cashCollected],
+      ['Total Expenses', totalExpenses],
+      ['Total Purchases', totalPurchases],
+      ['Net Profit', netProfit],
+      ...expenseEntries.map(([cat, amt]) => [`Expense: ${cat}`, amt]),
+    ];
+    const csv = rows.map(r => r.join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const a = document.createElement('a'); a.href = url; a.download = `store-report-${month}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <Calendar size={18} className="text-indigo-600" />
         <input type="month" value={month} onChange={e => setMonth(e.target.value)}
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
         <span className="text-gray-500 text-sm">{mSales.length} sales · {mExpenses.length} expenses</span>
+        <button onClick={handleExportCSV} className="ml-auto flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-xl text-sm font-medium hover:bg-gray-50">
+          <Download size={14} /> Export CSV
+        </button>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">

@@ -9,7 +9,7 @@ import {
   Plus, Edit2, Trash2, X, Search, AlertTriangle, CheckCircle2,
   Loader2, TrendingUp, TrendingDown, Wallet, CreditCard,
   Settings as SettingsIcon, LogOut, RefreshCw, ArrowDownToLine,
-  BookOpen, ArrowUpRight, ArrowDownLeft,
+  BookOpen, ArrowUpRight, ArrowDownLeft, Download,
 } from 'lucide-react';
 import { SettingsTab } from './SettingsTab';
 import { supabase } from './supabase';
@@ -88,6 +88,17 @@ export function LPGApp({ bunkId, onLogout, user }: { bunkId: string; onLogout: (
   }, [bunkId]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  useEffect(() => {
+    const ch = supabase
+      .channel(`lpg-rt-${bunkId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lpg_deliveries',           filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lpg_expenses',             filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lpg_commercial_sales',     filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lpg_commercial_payments',  filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [bunkId, fetchAll]);
 
   const today = getTodayIST();
   const todayDeliveries = deliveries.filter(d => d.date === today);
@@ -1051,15 +1062,37 @@ function LPGReports({ deliveries, allocations, sales, payments, expenses, custom
 
   const periodLabel = period === 'today' ? 'Today' : period === 'week' ? 'Last 7 Days' : 'This Month';
 
+  function handleExportCSV() {
+    const rows: (string | number)[][] = [
+      ['Metric', 'Value'],
+      [`Cash Collected (${periodLabel})`, totalCash],
+      [`Cylinders Delivered (${periodLabel})`, totalDelivered],
+      [`Allocation Received (${periodLabel})`, totalFilled],
+      [`Commercial Sales (${periodLabel})`, totalSalesAmt],
+      [`Commercial Collections (${periodLabel})`, totalCollected],
+      [`Expenses (${periodLabel})`, totalExpenses],
+      ['Current Filled Stock', currentFilled],
+      ['Current Empty Stock', currentEmpty],
+      ['Total Commercial Outstanding', totalOutstanding],
+    ];
+    const csv = rows.map(r => r.join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const a = document.createElement('a'); a.href = url; a.download = `lpg-report-${period}-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap items-center">
         {(['today', 'week', 'month'] as const).map(p => (
           <button key={p} onClick={() => setPeriod(p)}
             className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition ${period === p ? 'bg-blue-700 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300'}`}>
             {p === 'today' ? 'Today' : p === 'week' ? 'This Week' : 'This Month'}
           </button>
         ))}
+        <button onClick={handleExportCSV} className="ml-auto flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-xl text-sm font-medium hover:bg-gray-50">
+          <Download size={14} /> Export CSV
+        </button>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">

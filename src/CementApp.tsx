@@ -982,6 +982,16 @@ function DashboardTab({ bunkId }: { bunkId: string }) {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    const ch = supabase
+      .channel(`cem-dash-rt-${bunkId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cement_sales',      filter: `bunk_id=eq.${bunkId}` }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cement_expenses',   filter: `bunk_id=eq.${bunkId}` }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cement_deliveries', filter: `bunk_id=eq.${bunkId}` }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [bunkId, load]);
+
   const cashInHand = Number(financials?.cash_in_hand || 0);
   const bankTotal = (financials?.bank_accounts || []).reduce((s, a) => s + Number(a.balance || 0), 0);
   const financialAssets = cashInHand + bankTotal;

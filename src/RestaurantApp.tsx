@@ -95,6 +95,16 @@ export function RestaurantApp({ bunkId, onLogout, user }: { bunkId: string; onLo
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  useEffect(() => {
+    const ch = supabase
+      .channel(`rst-rt-${bunkId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rst_orders',    filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rst_expenses',  filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rst_customers', filter: `bunk_id=eq.${bunkId}` }, fetchAll)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [bunkId, fetchAll]);
+
   const today = getTodayIST();
   const todayOrders = orders.filter(o => o.sale_date === today);
   const todayRevenue = todayOrders.reduce((a, o) => a + o.total_amount, 0);
