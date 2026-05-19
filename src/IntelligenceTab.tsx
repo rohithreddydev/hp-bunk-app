@@ -118,26 +118,33 @@ const PREFIX_MAP: Record<string, string> = {
 };
 
 async function computeFinancialHealth(bunkId: string, bizType: string): Promise<FinancialHealth> {
-  const since = new Date(Date.now() - 30 * 86400000).toISOString().substring(0, 10);
+  const now = Date.now();
+  const since    = new Date(now - 30 * 86400000).toISOString().substring(0, 10);
+  const priorEnd = since;
+  const priorStart = new Date(now - 60 * 86400000).toISOString().substring(0, 10);
   const bench = BENCHMARKS[bizType] || BENCHMARKS.general;
   const prefix = PREFIX_MAP[bizType];
 
-  let revenue30 = 0, creditRevenue = 0, expenses30 = 0;
+  let revenue30 = 0, revenuePrior = 0, creditRevenue = 0, expenses30 = 0;
   const expenseByCategory: Record<string, number> = {};
   let stockValue = 0;
   const stockAlerts: { name: string; daysLeft: number; stock: number; unit: string }[] = [];
 
   if (bizType === 'fuel' || !prefix) {
     // Fuel store: use transactions + expenses tables
-    const [txRes, expRes] = await Promise.all([
+    const [txRes, expRes, priorTxRes] = await Promise.all([
       supabase.from('transactions').select('type, amount, payment_mode').eq('bunk_id', bunkId).gte('date', since),
       supabase.from('expenses').select('amount, category').eq('bunk_id', bunkId).gte('date', since),
+      supabase.from('transactions').select('type, amount').eq('bunk_id', bunkId).gte('date', priorStart).lt('date', priorEnd),
     ]);
     (txRes.data || []).forEach((t: any) => {
       if (t.type === 'credit_sale' || t.type === 'cash_sale') {
         revenue30 += Number(t.amount || 0);
         if (t.type === 'credit_sale') creditRevenue += Number(t.amount || 0);
       }
+    });
+    (priorTxRes.data || []).forEach((t: any) => {
+      if (t.type === 'credit_sale' || t.type === 'cash_sale') revenuePrior += Number(t.amount || 0);
     });
     (expRes.data || []).forEach((e: any) => {
       expenses30 += Number(e.amount || 0);
@@ -146,17 +153,19 @@ async function computeFinancialHealth(bunkId: string, bizType: string): Promise<
     });
   } else {
     // Non-fuel: use {prefix}_sales + {prefix}_expenses + {prefix}_products
-    const [salesRes, expRes, prodRes, saleVelRes] = await Promise.all([
+    const [salesRes, expRes, prodRes, saleVelRes, priorSalesRes] = await Promise.all([
       supabase.from(`${prefix}_sales`).select('total_amount, payment_mode').eq('bunk_id', bunkId).gte('sale_date', since),
       supabase.from(`${prefix}_expenses`).select('amount, category').eq('bunk_id', bunkId).gte('exp_date', since),
       supabase.from(`${prefix}_products`).select('name, price, stock_qty, unit').eq('bunk_id', bunkId).eq('is_active', true).limit(100),
       supabase.from(`${prefix}_sales`).select('product_name, qty, sale_date').eq('bunk_id', bunkId).gte('sale_date', since),
+      supabase.from(`${prefix}_sales`).select('total_amount').eq('bunk_id', bunkId).gte('sale_date', priorStart).lt('sale_date', priorEnd),
     ]);
 
     (salesRes.data || []).forEach((s: any) => {
       revenue30 += Number(s.total_amount || 0);
       if ((s.payment_mode || '').toLowerCase() === 'credit') creditRevenue += Number(s.total_amount || 0);
     });
+    (priorSalesRes.data || []).forEach((s: any) => { revenuePrior += Number(s.total_amount || 0); });
     (expRes.data || []).forEach((e: any) => {
       expenses30 += Number(e.amount || 0);
       const cat = e.category || 'General';
@@ -196,7 +205,9 @@ async function computeFinancialHealth(bunkId: string, bizType: string): Promise<
   // Health score components (mirrors backend)
   const marginScore = bench.gross_margin_pct > 0
     ? Math.min(100, Math.round(grossMarginPct / bench.gross_margin_pct * 85)) : 50;
-  const growthScore = 70; // Can't compute growth without prior period easily
+  const revenueGrowthPct = revenuePrior > 0
+    ? Math.round(((revenue30 - revenuePrior) / revenuePrior) * 100) : 0;
+  const growthScore = Math.min(100, Math.max(0, 50 + revenueGrowthPct * 0.5));
   const liquidityScore = expenses30 > 0 ? Math.min(100, Math.round((revenue30 - creditRevenue) / expenses30 * 70)) : 70;
 
   const healthScore = Math.round(marginScore * 0.40 + growthScore * 0.30 + liquidityScore * 0.30);
@@ -212,7 +223,7 @@ async function computeFinancialHealth(bunkId: string, bizType: string): Promise<
   return {
     revenue30, expenses30, grossProfit, grossMarginPct,
     avgDailySales, totalOutstanding, dso, creditPct, stockValue,
-    revenueGrowthPct: 0, healthScore, healthGrade: grade as 'A'|'B'|'C'|'D'|'F',
+    revenueGrowthPct, healthScore, healthGrade: grade as 'A'|'B'|'C'|'D'|'F',
     stockAlerts, expenseByCategory,
   };
 }
@@ -229,8 +240,8 @@ export function IntelligenceTab({ bunkId }: Props) {
   const [refreshing, setRefreshing]   = useState(false);
   const [section, setSection]         = useState<Section>('overview');
 
-  // Detect biz_type from localStorage (set at login/signup)
-  const bizType = localStorage.getItem('app_biz_type') || 'fuel';
+  // Stable bizType — read once on mount to avoid localStorage reads on every render
+  const [bizType] = useState<string>(() => localStorage.getItem('app_biz_type') || 'fuel');
 
   const loadFinance = useCallback(async () => {
     setFLoading(true);

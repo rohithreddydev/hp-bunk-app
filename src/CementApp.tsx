@@ -75,7 +75,7 @@ const PAYMENT_MODES = ['cash', 'upi', 'card', 'credit', 'cheque'];
 const STEEL_WEIGHT: Record<number, number> = { 8: 0.395, 10: 0.617, 12: 0.888, 16: 1.578, 20: 2.466, 25: 3.853, 32: 6.313 };
 
 const inr = (n: number) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
-const today = getTodayIST();
+// today is computed inline via getTodayIST() to avoid stale date across midnight
 
 // ── Onboarding Wizard ────────────────────────────────────────────────────────
 interface WizardRow {
@@ -958,8 +958,8 @@ function DashboardTab({ bunkId }: { bunkId: string }) {
   const load = useCallback(async () => {
     setLoading(true);
     const [salesRes, expRes, delRes, prodRes, custRes, finRes] = await Promise.all([
-      supabase.from('cement_sales').select('total_amount').eq('bunk_id', bunkId).eq('sale_date', today),
-      supabase.from('cement_expenses').select('amount').eq('bunk_id', bunkId).eq('expense_date', today),
+      supabase.from('cement_sales').select('total_amount').eq('bunk_id', bunkId).eq('sale_date', getTodayIST()),
+      supabase.from('cement_expenses').select('amount').eq('bunk_id', bunkId).eq('expense_date', getTodayIST()),
       supabase.from('cement_deliveries').select('*').eq('bunk_id', bunkId).neq('status', 'delivered').order('delivery_date', { ascending: true }),
       supabase.from('cement_products').select('*').eq('bunk_id', bunkId).eq('is_active', true),
       supabase.from('cement_customers').select('outstanding_amount').eq('bunk_id', bunkId).eq('is_active', true),
@@ -992,7 +992,7 @@ function DashboardTab({ bunkId }: { bunkId: string }) {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-gray-800">Today — {formatISTDate(today)}</h2>
+        <h2 className="text-lg font-bold text-gray-800">Today — {formatISTDate(getTodayIST())}</h2>
         <button onClick={load} className="text-orange-600 hover:text-orange-800"><RefreshCw size={18} /></button>
       </div>
 
@@ -1047,7 +1047,7 @@ function DashboardTab({ bunkId }: { bunkId: string }) {
 
       {/* Overdue Delivery Warning */}
       {(() => {
-        const overdueDeliveries = pendingDels.filter(d => d.delivery_date < today && d.status !== 'delivered');
+        const overdueDeliveries = pendingDels.filter(d => d.delivery_date < getTodayIST() && d.status !== 'delivered');
         return overdueDeliveries.length > 0 ? (
           <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-2">
             <AlertTriangle size={16} className="text-red-600 flex-shrink-0" />
@@ -1474,7 +1474,7 @@ function SalesTab({ bunkId }: { bunkId: string }) {
     const status = paid >= total ? 'paid' : paid === 0 ? 'credit' : 'partial';
     const { data: saleData, error } = await supabase.from('cement_sales').insert({
       bunk_id: bunkId, customer_id: selCustomer?.id || null,
-      customer_name: selCustomer?.name || 'Walk-in', sale_date: today,
+      customer_name: selCustomer?.name || 'Walk-in', sale_date: getTodayIST(),
       subtotal, gst_amount: gstAmt, discount_amount: 0, total_amount: total,
       paid_amount: paid, payment_mode: payMode, payment_status: status,
       delivery_required: delivReq, notes: notes || null, entered_via: 'webapp',
@@ -1754,7 +1754,7 @@ function CustomersTab({ bunkId }: { bunkId: string }) {
     setPayingSaving(true);
     await supabase.from('cement_customer_payments').insert({
       bunk_id: bunkId, customer_id: payModal.id,
-      amount: amt, payment_mode: payMode, payment_date: today,
+      amount: amt, payment_mode: payMode, payment_date: getTodayIST(),
     });
     const { data: fresh } = await supabase.from('cement_customers').select('outstanding_amount').eq('id', payModal.id).eq('bunk_id', bunkId).maybeSingle();
     const base = fresh ? Number(fresh.outstanding_amount) : Number(payModal.outstanding_amount);
@@ -1881,7 +1881,7 @@ function DeliveriesTab({ bunkId }: { bunkId: string }) {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ customer_id: '', customer_name: '', delivery_date: today, site_address: '', vehicle_number: '', driver_name: '', driver_phone: '', status: 'pending', notes: '' });
+  const [form, setForm] = useState({ customer_id: '', customer_name: '', delivery_date: getTodayIST(), site_address: '', vehicle_number: '', driver_name: '', driver_phone: '', status: 'pending', notes: '' });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -1930,7 +1930,7 @@ function DeliveriesTab({ bunkId }: { bunkId: string }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-gray-800">Deliveries</h2>
-        <button onClick={() => { setForm({ customer_id: '', customer_name: '', delivery_date: today, site_address: '', vehicle_number: '', driver_name: '', driver_phone: '', status: 'pending', notes: '' }); setShowForm(true); }}
+        <button onClick={() => { setForm({ customer_id: '', customer_name: '', delivery_date: getTodayIST(), site_address: '', vehicle_number: '', driver_name: '', driver_phone: '', status: 'pending', notes: '' }); setShowForm(true); }}
           className="flex items-center gap-1.5 bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-orange-700">
           <Plus size={16} /> Schedule Delivery
         </button>
@@ -2038,7 +2038,7 @@ function PurchasesTab({ bunkId }: { bunkId: string }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ supplier_id: '', invoice_number: '', purchase_date: today, vehicle_number: '', payment_status: 'unpaid', paid_amount: 0, notes: '' });
+  const [form, setForm] = useState({ supplier_id: '', invoice_number: '', purchase_date: getTodayIST(), vehicle_number: '', payment_status: 'unpaid', paid_amount: 0, notes: '' });
   const [items, setItems] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
 
@@ -2088,7 +2088,7 @@ function PurchasesTab({ bunkId }: { bunkId: string }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-gray-800">Purchases</h2>
-        <button onClick={() => { setForm({ supplier_id: '', invoice_number: '', purchase_date: today, vehicle_number: '', payment_status: 'unpaid', paid_amount: 0, notes: '' }); setItems([]); setShowForm(true); }}
+        <button onClick={() => { setForm({ supplier_id: '', invoice_number: '', purchase_date: getTodayIST(), vehicle_number: '', payment_status: 'unpaid', paid_amount: 0, notes: '' }); setItems([]); setShowForm(true); }}
           className="flex items-center gap-1.5 bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-orange-700">
           <Plus size={16} /> New Purchase
         </button>
@@ -2201,7 +2201,7 @@ function ExpensesTab({ bunkId }: { bunkId: string }) {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ category: 'other', description: '', amount: '', expense_date: today, payment_mode: 'cash', notes: '' });
+  const [form, setForm] = useState({ category: 'other', description: '', amount: '', expense_date: getTodayIST(), payment_mode: 'cash', notes: '' });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -2226,7 +2226,7 @@ function ExpensesTab({ bunkId }: { bunkId: string }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="font-bold text-gray-800">Expenses</h2>
-        <button onClick={() => { setForm({ category: 'other', description: '', amount: '', expense_date: today, payment_mode: 'cash', notes: '' }); setShowForm(true); }}
+        <button onClick={() => { setForm({ category: 'other', description: '', amount: '', expense_date: getTodayIST(), payment_mode: 'cash', notes: '' }); setShowForm(true); }}
           className="flex items-center gap-1.5 bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-orange-700">
           <Plus size={16} /> Add Expense
         </button>
@@ -2292,7 +2292,7 @@ function ExpensesTab({ bunkId }: { bunkId: string }) {
 
 // ── Reports ───────────────────────────────────────────────────────────────────
 function ReportsTab({ bunkId }: { bunkId: string }) {
-  const currentMonth = today.substring(0, 7);
+  const currentMonth = getTodayIST().substring(0, 7);
   const [month, setMonth] = useState(currentMonth);
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(false);

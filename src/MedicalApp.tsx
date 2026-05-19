@@ -7,6 +7,7 @@ import {
   Settings as SettingsIcon, LogOut, Brain, Download,
 } from 'lucide-react';
 import { supabase } from './supabase';
+import { getTodayIST } from './utils';
 import { SettingsTab } from './SettingsTab';
 import { IntelligenceTab } from './IntelligenceTab';
 
@@ -128,10 +129,7 @@ const CUSTOMER_TYPES = ['Retail', 'Doctor', 'Hospital', 'Clinic', 'Wholesale'];
 const EXPENSE_CATS = ['Rent', 'Salaries', 'Electricity', 'License Fees', 'Cold Storage', 'Packaging', 'Transport', 'Other'];
 const PAYMENT_MODES = ['cash', 'upi', 'card', 'credit'];
 
-function todayDate(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
+const todayDate = () => getTodayIST();
 
 function daysToExpiry(expiryDate: string): number {
   const exp = new Date(expiryDate);
@@ -170,7 +168,7 @@ function MedLedgerModal({ bunkId, customer, onClose }: { bunkId: string; custome
       ].sort((a, b) => a.date.localeCompare(b.date));
       let bal = 0;
       for (const e of all) {
-        bal = e.type === 'sale' ? bal + e.amount : Math.max(0, bal - e.amount);
+        bal = e.type === 'sale' ? bal + e.amount : bal - e.amount;
         e.running_balance = bal;
       }
       setEntries(all);
@@ -449,7 +447,7 @@ export function MedicalApp({ bunkId, onLogout, user }: { bunkId: string; onLogou
     const [prodRes, custRes, saleRes, purRes, expRes] = await Promise.all([
       supabase.from('med_products').select('*').eq('bunk_id', bunkId).eq('is_active', true).order('name'),
       supabase.from('med_customers').select('*').eq('bunk_id', bunkId).eq('is_active', true).order('name'),
-      supabase.from('med_sales').select('*').eq('bunk_id', bunkId).order('created_at', { ascending: false }).limit(200),
+      supabase.from('med_sales').select('*').eq('bunk_id', bunkId).order('sale_date', { ascending: false }).order('created_at', { ascending: false }).limit(200),
       supabase.from('med_purchases').select('*').eq('bunk_id', bunkId).order('purchase_date', { ascending: false }).limit(100),
       supabase.from('med_expenses').select('*').eq('bunk_id', bunkId).order('expense_date', { ascending: false }).limit(100),
     ]);

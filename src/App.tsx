@@ -278,7 +278,7 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       collectionsBank: Number(d.collections_sbi) || 0, collectionsDigital: Number(d.collections_hppay) || 0,
       collectionDtp: Number(d.collections_dtp) || 0, collectionsCard: Number(d.collections_paytm) || 0,
       collectionsCredit: Number(d.collections_credit) || 0, periodExpenses: Number(d.period_expenses) || 0,
-      balanceBank: Number(d.balance_sbi) || 0, balanceDigital: Number(d.balance_hp) || 0, balanceOd: Number(d.balance_od) || 0,
+      balanceBank: Number(d.balance_sbi) || 0, balanceDigital: Number(d.balance_hp) || 0, balanceOd: Number(d.balnce_od || d.balance_od) || 0,
       petrolRateAtEntry: Number(d.petrol_rate_at_entry) || 0, dieselRateAtEntry: Number(d.diesel_rate_at_entry) || 0
     });
     const channel = supabase
@@ -425,8 +425,10 @@ const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const bId = user?.bunkId || 'default';
 
   const addCustomer = async (c: any) => {
-    const pin = Math.floor(1000 + Math.random() * 9000).toString();
-    const custRow: any = { bunk_id: bId, company_name: c.companyName, phone: c.phone, portal_pin: pin, portal_access: true };
+    const pinArr = new Uint32Array(1);
+    crypto.getRandomValues(pinArr);
+    const pin = (1000 + (pinArr[0] % 9000)).toString();
+    const custRow: any = { bunk_id: bId, company_name: c.companyName, phone: c.phone, portal_pin: pin, portal_access: true, notify_on_credit: true };
     if (c.ownerName)      custRow.owner_name      = c.ownerName;
     if (c.category)       custRow.category        = c.category;
     if (c.address)        custRow.address         = c.address;
@@ -3889,11 +3891,11 @@ const DangerZone = ({ bunkId }: { bunkId: string }) => {
               'med_products', 'med_sales', 'med_purchases',
               'med_customers', 'med_expenses',
               // Restaurant (rst_*)
-              'rst_products', 'rst_sales', 'rst_purchases',
+              'rst_menu_items', 'rst_orders', 'rst_order_items', 'rst_purchases',
               'rst_customers', 'rst_expenses',
-              // Cement (cem_*)
-              'cem_products', 'cem_sales', 'cem_purchases',
-              'cem_customers', 'cem_expenses', 'cem_deliveries',
+              // Cement (cement_*)
+              'cement_products', 'cement_sales', 'cement_purchases',
+              'cement_customers', 'cement_expenses', 'cement_deliveries', 'cement_financials',
               // General (gen_*)
               'gen_products', 'gen_sales', 'gen_purchases',
               'gen_customers', 'gen_expenses', 'gen_suppliers',
@@ -4013,9 +4015,12 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
   componentDidCatch(error: any, errorInfo: any) {
     this.setState({ errorInfo });
     console.error('[ErrorBoundary] Caught:', error, errorInfo);
-    // Clear ALL localStorage (including Supabase auth tokens sb-xxx-auth-token)
-    // This is the only reliable way to break the stale-session crash loop
-    try { localStorage.clear(); } catch (_) {}
+    // Only clear app-specific keys — avoid wiping Supabase auth tokens which would log out all tabs
+    try {
+      localStorage.removeItem('app_user_session');
+      localStorage.removeItem('app_settings');
+      localStorage.removeItem('app_biz_type');
+    } catch (_) {}
     // Auto-reload after countdown so user doesn't need to click anything
     let count = 3;
     this._interval = setInterval(() => {
