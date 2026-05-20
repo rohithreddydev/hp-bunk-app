@@ -12,12 +12,18 @@ import {
   Loader2, TrendingUp, TrendingDown, Wallet, BarChart3,
   Settings as SettingsIcon, LogOut, FileText, Calendar, BookOpen,
   ChevronRight, DollarSign, CreditCard, ArrowUpRight, ArrowDownLeft,
-  Brain, Download,
+  Brain, Download, Printer, MessageCircle,
 } from 'lucide-react';
 import { SettingsTab } from './SettingsTab';
 import { IntelligenceTab } from './IntelligenceTab';
 import { supabase } from './supabase';
 import { getTodayIST, formatISTDate } from './utils';
+import { GSTInvoice, type GSTInvoiceProps } from './components/GSTInvoice';
+import { InboxTab } from './InboxTab';
+import { CampaignsTab } from './CampaignsTab';
+
+const VITE_WEBHOOK_URL = (import.meta as any).env?.VITE_WEBHOOK_URL || '';
+const VITE_CRON_SECRET = (import.meta as any).env?.VITE_CRON_SECRET || '';
 
 function inr(n: number | null | undefined): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(Number(n) || 0);
@@ -63,7 +69,7 @@ interface Expense {
 interface CartItem { product: Product; quantity: number; price: number; }
 interface LedgerEntry { date: string; type: 'sale' | 'payment'; amount: number; label: string; mode?: string; running_balance?: number; }
 
-type Tab = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers' | 'purchases' | 'expenses' | 'reports' | 'intelligence' | 'settings';
+type Tab = 'dashboard' | 'inventory' | 'sales' | 'customers' | 'suppliers' | 'purchases' | 'expenses' | 'reports' | 'intelligence' | 'settings' | 'inbox' | 'campaigns';
 
 export function KiranaApp({ bunkId, onLogout, user }: { bunkId: string; onLogout: () => void; user: { name: string; email: string; role: string } }) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
@@ -132,6 +138,8 @@ export function KiranaApp({ bunkId, onLogout, user }: { bunkId: string; onLogout
     { id: 'expenses', label: 'Expenses', icon: <Receipt size={16} /> },
     { id: 'reports', label: 'Reports', icon: <FileText size={16} /> },
     { id: 'intelligence', label: 'AI Insights', icon: <Brain size={14} /> },
+    { id: 'inbox', label: 'Inbox', icon: <MessageCircle size={16} /> },
+    { id: 'campaigns', label: 'Campaigns', icon: <Receipt size={16} /> },
     { id: 'settings', label: 'Settings', icon: <SettingsIcon size={16} /> },
   ];
 
@@ -186,6 +194,8 @@ export function KiranaApp({ bunkId, onLogout, user }: { bunkId: string; onLogout
             {activeTab === 'expenses' && <KiExpenses bunkId={bunkId} expenses={expenses} onRefresh={fetchAll} showToast={showToast} />}
             {activeTab === 'reports' && <KiReports bunkId={bunkId} />}
             {user.role === 'owner' && activeTab === 'intelligence' && <IntelligenceTab bunkId={bunkId} />}
+            {activeTab === 'inbox' && <InboxTab bunkId={bunkId} webhookUrl={VITE_WEBHOOK_URL} cronSecret={VITE_CRON_SECRET} />}
+            {activeTab === 'campaigns' && <CampaignsTab bunkId={bunkId} storeTables={{ customers: 'ki_customers' }} webhookUrl={VITE_WEBHOOK_URL} cronSecret={VITE_CRON_SECRET} />}
             {activeTab === 'settings' && <SettingsTab bunkId={bunkId} user={user} onLogout={onLogout} />}
           </>
         )}
@@ -469,6 +479,45 @@ function KiSales({ bunkId, products, customers, onRefresh, showToast }: { bunkId
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState('');
   const [showHistory, setShowHistory] = useState(false);
+  const [invoiceProps, setInvoiceProps] = useState<GSTInvoiceProps | null>(null);
+  const [recentSales, setRecentSales] = useState<Sale[]>([]);
+
+  const loadRecentSales = useCallback(async () => {
+    const today = getTodayIST();
+    const { data } = await supabase.from('ki_sales').select('*').eq('bunk_id', bunkId).eq('sale_date', today).order('created_at', { ascending: false }).limit(20);
+    setRecentSales((data as Sale[]) || []);
+  }, [bunkId]);
+
+  useEffect(() => { loadRecentSales(); }, [loadRecentSales]);
+
+  const openKiInvoice = async (s: Sale) => {
+    const [itemsRes, storeRes] = await Promise.all([
+      supabase.from('ki_sale_items').select('product_name, quantity, unit_price, total_price').eq('sale_id', s.id),
+      supabase.from('bunks').select('name, gstin, address, phone').eq('id', bunkId).maybeSingle(),
+    ]);
+    const items = (itemsRes.data || []) as { product_name: string; quantity: number; unit_price: number; total_price: number }[];
+    const store = storeRes.data as { name?: string; gstin?: string; address?: string; phone?: string } | null;
+    setInvoiceProps({
+      storeName: store?.name || 'Store',
+      storeGSTIN: store?.gstin || undefined,
+      storeAddress: store?.address || undefined,
+      storePhone: store?.phone || undefined,
+      invoiceNumber: `INV-${s.id.slice(-6).toUpperCase()}`,
+      invoiceDate: s.sale_date,
+      customerName: s.customer_name || 'Walk-in',
+      items: items.map(i => ({
+        description: i.product_name,
+        qty: i.quantity,
+        unit: 'pcs',
+        rate: i.unit_price || (i.total_price / i.quantity),
+        gstPct: 0,
+        amount: i.total_price,
+      })),
+      paymentMode: s.payment_mode,
+      notes: s.notes || undefined,
+      onClose: () => setInvoiceProps(null),
+    });
+  };
 
   const filteredProducts = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || (p.brand || '').toLowerCase().includes(search.toLowerCase()));
 
@@ -595,6 +644,33 @@ function KiSales({ bunkId, products, customers, onRefresh, showToast }: { bunkId
           </div>
         )}
       </div>
+
+      {/* Recent Sales with Invoice */}
+      {recentSales.length > 0 && (
+        <div className="lg:col-span-3 bg-white rounded-xl border border-gray-200 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-gray-700 text-sm">Today's Bills</h3>
+            <button onClick={loadRecentSales} className="text-xs text-orange-600 hover:underline">Refresh</button>
+          </div>
+          <div className="space-y-1.5">
+            {recentSales.map(s => (
+              <div key={s.id} className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0 text-sm">
+                <div>
+                  <span className="font-medium text-gray-800">{s.customer_name || 'Walk-in'}</span>
+                  <span className="text-xs text-gray-400 ml-2">{s.payment_mode} · {s.sale_date}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-orange-600">{inr(s.total_amount)}</span>
+                  <button onClick={() => openKiInvoice(s)} title="Print Invoice" className="p-1 rounded-lg hover:bg-orange-100 text-orange-500 transition">
+                    <Printer size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {invoiceProps && <GSTInvoice {...invoiceProps} />}
     </div>
   );
 }
@@ -1147,6 +1223,37 @@ function KiReports({ bunkId }: { bunkId: string }) {
     URL.revokeObjectURL(url);
   };
 
+  // Tally-compatible CSV export (ledger format)
+  const handleTallyExport = () => {
+    if (!data) return;
+    const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    // Helper: format date as DD-Mon-YYYY (Tally format)
+    const fmtTallyDate = (dateStr: string) => {
+      const d = new Date(dateStr);
+      return `${String(d.getDate()).padStart(2, '0')}-${MONTHS_FULL[d.getMonth()].slice(0,3)}-${d.getFullYear()}`;
+    };
+    const rows: string[][] = [
+      ['Date', 'Voucher Type', 'Debit Ledger', 'Credit Ledger', 'Amount', 'Narration'],
+    ];
+    for (const s of (data.sales || []) as { sale_date: string; customer_name: string; total_amount: number; payment_mode: string }[]) {
+      const mode = (s.payment_mode || 'cash').toLowerCase();
+      const debit = mode === 'credit' ? (s.customer_name || 'Debtor') : mode === 'upi' ? 'UPI Account' : mode === 'card' ? 'Card Account' : 'Cash';
+      rows.push([
+        fmtTallyDate(s.sale_date),
+        'Sales',
+        debit,
+        'Sales Account',
+        s.total_amount.toFixed(2),
+        `Sale to ${s.customer_name || 'Walk-in'}`,
+      ]);
+    }
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `tally-ledger-${year}-${String(month).padStart(2,'0')}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3 flex-wrap">
@@ -1163,6 +1270,11 @@ function KiReports({ bunkId }: { bunkId: string }) {
         {data && (
           <button onClick={handleExportCSV} className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-xl text-sm font-medium hover:bg-gray-50">
             <Download size={14} /> Export CSV
+          </button>
+        )}
+        {data && (
+          <button onClick={handleTallyExport} className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-xl text-sm font-medium hover:bg-gray-50" title="Export Tally-compatible ledger CSV">
+            <Download size={14} /> Export for Tally
           </button>
         )}
       </div>

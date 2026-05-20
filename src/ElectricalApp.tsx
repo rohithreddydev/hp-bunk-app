@@ -8,11 +8,17 @@ import {
   ChevronDown, ChevronRight, Loader2, CheckCircle2,
   TrendingUp, TrendingDown, DollarSign, Edit2, Home,
   AlertCircle, Filter, Settings, LogOut, BookOpen,
-  ArrowUpRight, ArrowDownLeft, Download,
+  ArrowUpRight, ArrowDownLeft, Download, Printer, MessageCircle,
 } from 'lucide-react';
 import { supabase } from './supabase';
 import { getTodayIST } from './utils';
 import { SettingsTab } from './SettingsTab';
+import { GSTInvoice, type GSTInvoiceProps } from './components/GSTInvoice';
+import { InboxTab } from './InboxTab';
+import { CampaignsTab } from './CampaignsTab';
+
+const VITE_WEBHOOK_URL = (import.meta as any).env?.VITE_WEBHOOK_URL || '';
+const VITE_CRON_SECRET = (import.meta as any).env?.VITE_CRON_SECRET || '';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface ElecProduct {
@@ -322,6 +328,7 @@ function SalesTab({ bunkId }: { bunkId: string }) {
   const [loading, setLoading] = useState(true);
   const [showBills, setShowBills] = useState(false);
   const [custPricing, setCustPricing] = useState<'retail' | 'wholesale'>('retail');
+  const [invoiceProps, setInvoiceProps] = useState<GSTInvoiceProps | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -357,6 +364,37 @@ function SalesTab({ bunkId }: { bunkId: string }) {
   const subtotal = cart.reduce((s, i) => s + i.total_amount, 0);
   const gstAmt = cart.reduce((s, i) => s + (i.total_amount * i.gst_percent / (100 + i.gst_percent)), 0);
   const total = subtotal - discount;
+
+  const openInvoice = async (s: ElecSale) => {
+    const [itemsRes, storeRes] = await Promise.all([
+      supabase.from('electrical_sale_items').select('*').eq('sale_id', s.id),
+      supabase.from('bunks').select('name, gstin, address, phone').eq('id', bunkId).maybeSingle(),
+    ]);
+    const items = (itemsRes.data || []) as ElecSaleItem[];
+    const store = storeRes.data as { name?: string; gstin?: string; address?: string; phone?: string } | null;
+    setInvoiceProps({
+      storeName: store?.name || 'Store',
+      storeGSTIN: store?.gstin || undefined,
+      storeAddress: store?.address || undefined,
+      storePhone: store?.phone || undefined,
+      invoiceNumber: `INV-${s.id.slice(-6).toUpperCase()}`,
+      invoiceDate: s.sale_date,
+      customerName: s.customer_name || (s.customer_id ? customers.find(c => c.id === s.customer_id)?.name : undefined) || 'Walk-in',
+      customerGSTIN: s.customer_id ? customers.find(c => c.id === s.customer_id)?.gstin : undefined,
+      customerAddress: s.customer_id ? customers.find(c => c.id === s.customer_id)?.address : undefined,
+      items: items.map(i => ({
+        description: i.product_name,
+        qty: i.quantity,
+        unit: i.unit || 'pcs',
+        rate: i.selling_price,
+        gstPct: i.gst_percent,
+        amount: i.total_amount,
+      })),
+      paymentMode: s.payment_mode,
+      notes: s.notes || undefined,
+      onClose: () => setInvoiceProps(null),
+    });
+  };
 
   const checkout = async () => {
     if (!cart.length) return;
@@ -415,13 +453,19 @@ function SalesTab({ bunkId }: { bunkId: string }) {
         {showBills && (
           <div className="space-y-2 max-h-48 overflow-y-auto">
             {sales.map(s => (
-              <div key={s.id} className="bg-white rounded-lg border px-4 py-2 flex justify-between text-sm">
+              <div key={s.id} className="bg-white rounded-lg border px-4 py-2 flex justify-between items-center text-sm">
                 <div><p className="font-medium">{s.customer_name || 'Walk-in'}</p><p className="text-xs text-gray-400">{s.payment_mode} · {s.payment_status}</p></div>
-                <p className="font-bold">{fmt(s.total_amount)}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-bold">{fmt(s.total_amount)}</p>
+                  <button onClick={() => openInvoice(s)} title="Print Invoice" className="p-1.5 rounded-lg hover:bg-yellow-100 text-yellow-600 transition">
+                    <Printer size={14} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         )}
+        {invoiceProps && <GSTInvoice {...invoiceProps} />}
       </div>
 
       {/* Cart */}
@@ -1109,6 +1153,8 @@ const TABS = [
   { id: 'purchases', label: 'Purchases', icon: Truck },
   { id: 'expenses', label: 'Expenses', icon: Receipt },
   { id: 'reports', label: 'Reports', icon: BarChart3 },
+  { id: 'inbox', label: 'Inbox', icon: MessageCircle },
+  { id: 'campaigns', label: 'Campaigns', icon: Receipt },
   { id: 'settings', label: 'Settings', icon: Settings },
   { id: 'suppliers', label: 'Suppliers', icon: Package },
 ];
@@ -1166,6 +1212,8 @@ export function ElectricalApp({
         {tab === 'expenses'   && <ExpensesTab bunkId={bunkId} />}
         {tab === 'reports'    && <ReportsTab bunkId={bunkId} />}
         {tab === 'suppliers'  && <SuppliersTab bunkId={bunkId} />}
+        {tab === 'inbox'      && <InboxTab bunkId={bunkId} webhookUrl={VITE_WEBHOOK_URL} cronSecret={VITE_CRON_SECRET} />}
+        {tab === 'campaigns'  && <CampaignsTab bunkId={bunkId} storeTables={{ customers: 'electrical_customers' }} webhookUrl={VITE_WEBHOOK_URL} cronSecret={VITE_CRON_SECRET} />}
         {tab === 'settings'   && (
           <SettingsTab bunkId={bunkId} user={user ?? {}} onLogout={onLogout ?? (() => {})} />
         )}

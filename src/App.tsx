@@ -48,7 +48,10 @@ const MedicalApp     = lazy(() => import('./MedicalApp').then(m => ({ default: m
 const LPGApp         = lazy(() => import('./LPGApp').then(m => ({ default: m.LPGApp })));
 const ElectricalApp  = lazy(() => import('./ElectricalApp').then(m => ({ default: m.ElectricalApp })));
 import { IntelligenceTab } from './IntelligenceTab';
+import { InboxTab } from './InboxTab';
 const rawUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
+const VITE_WEBHOOK_URL = (import.meta as any).env?.VITE_WEBHOOK_URL || '';
+const VITE_CRON_SECRET = (import.meta as any).env?.VITE_CRON_SECRET || '';
 const rawKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
 export const hasValidKeys = Boolean(rawUrl && rawKey && rawUrl !== 'undefined' && rawKey !== 'undefined');
 
@@ -4180,8 +4183,9 @@ const AppContent = () => {
     { id: 'morning',     label: 'Morning Entry', icon: Sun,        roles: ['owner', 'supervisor'], color: '#f59e0b' },
     { id: 'expenses',    label: 'Expenses',      icon: Receipt,    roles: ['owner', 'supervisor'], color: '#8b5cf6' },
     { id: 'reports',     label: 'Reports',       icon: TrendingUp, roles: ['owner'],               color: '#f43f5e' },
-    { id: 'intelligence',label: 'AI Intelligence',icon: Brain,     roles: ['owner'],               color: '#a855f7' },
-    { id: 'settings',    label: 'Settings',      icon: Settings,   roles: ['owner'],               color: '#94a3b8' },
+    { id: 'intelligence',label: 'AI Intelligence',icon: Brain,       roles: ['owner'],               color: '#a855f7' },
+    { id: 'inbox',       label: 'Inbox',          icon: MessageCircle, roles: ['owner', 'supervisor'], color: '#0891b2' },
+    { id: 'settings',    label: 'Settings',       icon: Settings,    roles: ['owner'],               color: '#94a3b8' },
   ];
 
   // Bottom-nav tabs (mobile-first navigation)
@@ -4327,6 +4331,7 @@ const AppContent = () => {
             {currentRoute === 'expenses' && <ExpenseModule />}
             {currentRoute === 'reports' && <MonthlyReports />}
             {currentRoute === 'intelligence' && <IntelligenceTab bunkId={user.bunkId || ''} />}
+            {currentRoute === 'inbox' && <InboxTab bunkId={user.bunkId || ''} webhookUrl={VITE_WEBHOOK_URL} cronSecret={VITE_CRON_SECRET} />}
             {currentRoute === 'settings' && <SettingsModule />}
           </div>
         </div>
