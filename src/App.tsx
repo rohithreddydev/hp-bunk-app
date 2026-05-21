@@ -1326,7 +1326,7 @@ const Dashboard = () => {
   const yesterdayDieselVal = (latestEntry?.dieselSold || 0) * (settings?.dieselRate || 0);
   const latestSalesValue = yesterdayPetrolVal + yesterdayDieselVal;
 
-  const yesterdayReceived = latestEntry ? (((latestEntry.collectionsCash || 0) - (latestEntry.openingBalance || 0)) + (latestEntry.collectionsBank || 0) + (latestEntry.collectionsDigital || 0) + (latestEntry.collectionDtp || 0) + (latestEntry.collectionsCard || 0)) : 0;
+  const yesterdayReceived = latestEntry ? ((latestEntry.balanceCash || 0) - (latestEntry.collectionsCash || 0) + (latestEntry.collectionsBank || 0) + (latestEntry.collectionsDigital || 0) + (latestEntry.collectionDtp || 0) + (latestEntry.collectionsCard || 0)) : 0;
   const mtdExpenses = expenses.filter(e => e.date && typeof e.date === 'string' && e.date.startsWith(getCurrentMonthStr())).reduce((sum, e) => sum + (e.amount || 0), 0);
 
   // Status Card
@@ -2640,9 +2640,11 @@ const MorningEntryForm = () => {
   }, 0);
   // Standalone advance rows (advance-only entries, no credit sale)
   const periodAdvances = periodTransactions.filter(t => t.type === 'advance').reduce((sum, t) => sum + (t.amount || 0), 0);
+  // Payments from credit customers: subtract from received (they inflate cash but aren't today's fuel revenue)
+  const periodPayments = periodTransactions.filter(t => t.type === 'payment').reduce((sum, t) => sum + (t.amount || 0), 0);
   const currentPeriodExpenses = expenses.filter(e => (e.date || '') > previousEntryDate && (e.date || '') <= targetDate).reduce((sum, e) => sum + (e.amount || 0), 0);
 
-  const totalAccounted = (totalCollected - openingBal) + periodCreditSales + periodAdvances + currentPeriodExpenses;
+  const totalAccounted = (totalCollected - openingBal) - periodPayments + periodCreditSales + periodAdvances + currentPeriodExpenses;
   const variance = totalAccounted - totalSalesVal;
 
   const projectedDigitalAccountBal = (settings?.currentHpBalance || 0) + (Number(form.dtpRaw) || 0) + (Number(form.digitalRaw) || 0);
@@ -2828,6 +2830,7 @@ const MorningEntryForm = () => {
                     <div className="flex justify-between"><span>End of Day Vault Cash</span><span>{formatRs(Number(form.cashRaw))}</span></div>
                     <div className="flex justify-between text-orange-600"><span>Less: Opening Float</span><span>- {formatRs(openingBal)}</span></div>
                     <div className="flex justify-between"><span>Digital Remittances</span><span>{formatRs(totalCollected - Number(form.cashRaw))}</span></div>
+                    {periodPayments > 0 && <div className="flex justify-between text-red-600"><span>Less: Credit Payments</span><span>- {formatRs(periodPayments)}</span></div>}
                     <div className="flex justify-between text-blue-700"><span>Period Credit Extended</span><span>{formatRs(periodCreditSales)}</span></div>
                     <div className="flex justify-between text-blue-700"><span>Driver Advances</span><span>{formatRs(periodAdvances)}</span></div>
                     <div className="flex justify-between text-purple-700"><span>Period Expenses</span><span>{formatRs(currentPeriodExpenses)}</span></div>
@@ -2899,7 +2902,7 @@ const MorningEntryForm = () => {
                 <tr key={e.id || `entry-${idx}`} className={`hover:bg-gray-50 transition ${editId === e.id ? 'bg-blue-50/50' : ''}`}>
                   <td className="p-4 whitespace-nowrap font-medium">{formatISTDate(e.date)}</td>
                   <td className="p-4 whitespace-nowrap">{formatRs(e.petrolSold * (e.petrolRateAtEntry || settings.petrolRate || 0) + e.dieselSold * (e.dieselRateAtEntry || settings.dieselRate || 0))}</td>
-                  <td className="p-4 whitespace-nowrap text-gray-600">{formatRs(((e.collectionsCash || 0) - (e.openingBalance || 0)) + (e.collectionsBank || 0) + (e.collectionsDigital || 0) + (e.collectionDtp || 0) + (e.collectionsCard || 0))}</td>
+                  <td className="p-4 whitespace-nowrap text-gray-600">{formatRs((e.balanceCash || 0) - (e.collectionsCash || 0) + (e.collectionsBank || 0) + (e.collectionsDigital || 0) + (e.collectionDtp || 0) + (e.collectionsCard || 0))}</td>
                   <td className="p-4 whitespace-nowrap text-orange-600 font-medium">{(() => {
                     // Compute credit extended for this entry's date range dynamically
                     // so bot-submitted entries (which don't write collections_credit) show correctly.
@@ -3363,6 +3366,8 @@ const FuelStockModule = () => {
 const MonthlyReports = () => {
   const { morningEntries, transactions, expenses, fuelPurchases, customers, settings, dataLoading } = useAppContext();
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthStr());
+  const [tallyLoading, setTallyLoading] = useState(false);
+  const [tallyError,   setTallyError]   = useState<string | null>(null);
 
   const monthEntries = morningEntries.filter(e => e.date?.startsWith(selectedMonth));
   const monthTx = transactions.filter(t => t.date?.startsWith(selectedMonth));
@@ -3394,6 +3399,57 @@ const MonthlyReports = () => {
     URL.revokeObjectURL(url);
   };
 
+  // Tally XML export — calls backend /api/tally-export with the month's date range
+  const handleExportTally = async () => {
+    setTallyError(null);
+    const webhookUrl = VITE_WEBHOOK_URL;
+    if (!webhookUrl) {
+      setTallyError('Webhook URL not configured (VITE_WEBHOOK_URL missing).');
+      return;
+    }
+    setTallyLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) { setTallyError('Session expired — please log in again.'); return; }
+
+      // Build date range for the selected month
+      const fromDate = `${selectedMonth}-01`;
+      // Last day of month: set day=1 of next month, subtract 1 day
+      const nextMonth = new Date(`${selectedMonth}-01`);
+      nextMonth.setMonth(nextMonth.getMonth() + 1);
+      nextMonth.setDate(nextMonth.getDate() - 1);
+      const toDate = nextMonth.toISOString().split('T')[0];
+
+      const resp = await fetch(
+        `${webhookUrl}/api/tally-export?from=${fromDate}&to=${toDate}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: resp.statusText }));
+        throw new Error(err.error || `Server error ${resp.status}`);
+      }
+
+      // Trigger browser download
+      const blob = await resp.blob();
+      const url  = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href  = url;
+      // Use filename from Content-Disposition if available, else build one
+      const cd = resp.headers.get('Content-Disposition') || '';
+      const fnMatch = cd.match(/filename="?([^"]+)"?/);
+      link.download = fnMatch?.[1] || `FuelDesk_Tally_${selectedMonth}.xml`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setTallyError(err.message || 'Tally export failed. Please try again.');
+    } finally {
+      setTallyLoading(false);
+    }
+  };
+
   if (dataLoading) return <div className="flex justify-center p-20"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>;
 
   return (
@@ -3403,9 +3459,40 @@ const MonthlyReports = () => {
           <h2 className="text-2xl font-black text-gray-900">Monthly Reports</h2>
           <p className="text-gray-400 text-sm mt-0.5">Full P&amp;L statement for the selected month.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="border p-2 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-bold text-blue-900 bg-white shadow-sm" />
           <button onClick={handleExportCSV} className="flex items-center gap-2 px-4 py-2 bg-blue-800 text-white rounded-lg font-bold hover:bg-blue-900 transition shadow-sm"><Download size={16} /> Export CSV</button>
+          {/* ── Tally XML export ── */}
+          <button
+            onClick={handleExportTally}
+            disabled={tallyLoading}
+            title="Download TallyPrime-importable XML for this month"
+            className="flex items-center gap-2 px-4 py-2 bg-emerald-700 text-white rounded-lg font-bold hover:bg-emerald-800 transition shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {tallyLoading
+              ? <Loader2 size={16} className="animate-spin" />
+              : <Download size={16} />}
+            {tallyLoading ? 'Generating…' : 'Export Tally XML'}
+          </button>
+        </div>
+      </div>
+      {/* Tally error banner */}
+      {tallyError && (
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+          <AlertCircle size={16} className="mt-0.5 shrink-0" />
+          <div>
+            <span className="font-bold">Tally export failed: </span>{tallyError}
+            <button onClick={() => setTallyError(null)} className="ml-3 underline text-red-500">Dismiss</button>
+          </div>
+        </div>
+      )}
+      {/* Tally import instructions — shown after a successful download (when not loading & no error) */}
+      <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-xs text-emerald-800 flex items-start gap-3">
+        <span className="text-lg leading-none mt-0.5">📊</span>
+        <div>
+          <span className="font-bold">Tally Import Guide: </span>
+          Open TallyPrime → <strong>Gateway of Tally → Import → Data</strong> → select the downloaded XML file → click <strong>Import</strong>.
+          Share the file with your accountant — they'll handle the rest.
         </div>
       </div>
 
